@@ -4,11 +4,44 @@
  * SDK for connecting to and controlling Voltra fitness devices.
  *
  * This SDK provides:
+ * - High-level VoltraClient for simplified device interaction
  * - BLE adapters for React Native, Web, and Node.js
  * - Voltra protocol implementation (authentication, commands, telemetry)
  * - Device discovery and connection management
  * - Real-time telemetry decoding
+ *
+ * @example
+ * ```typescript
+ * import { VoltraClient, WebBLEAdapter, BLE } from '@voltra/node-sdk';
+ *
+ * const adapter = new WebBLEAdapter({ ble: BLE });
+ * const client = new VoltraClient({ adapter });
+ *
+ * const devices = await client.scan();
+ * await client.connect(devices[0]);
+ * await client.setWeight(50);
+ *
+ * client.onFrame((frame) => {
+ *   console.log('Position:', frame.position);
+ * });
+ *
+ * await client.startRecording();
+ * ```
  */
+
+// =============================================================================
+// High-Level API
+// =============================================================================
+
+export {
+  VoltraClient,
+  type VoltraClientOptions,
+  type VoltraClientState,
+  type VoltraClientEvent,
+  type VoltraClientEventListener,
+  type FrameListener,
+  type ScanOptions,
+} from './sdk';
 
 // =============================================================================
 // Platform Adapters
