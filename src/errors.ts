@@ -86,11 +86,7 @@ export class VoltraSDKError extends Error {
  * Thrown when a BLE connection fails or is lost.
  */
 export class ConnectionError extends VoltraSDKError {
-  constructor(
-    message: string,
-    code: ErrorCode = ErrorCode.CONNECTION_FAILED,
-    cause?: Error
-  ) {
+  constructor(message: string, code: ErrorCode = ErrorCode.CONNECTION_FAILED, cause?: Error) {
     super(message, code, cause);
     this.name = 'ConnectionError';
   }
@@ -139,12 +135,7 @@ export class InvalidSettingError extends VoltraSDKError {
   public readonly value: unknown;
   public readonly validValues?: readonly unknown[];
 
-  constructor(
-    setting: string,
-    value: unknown,
-    validValues?: readonly unknown[],
-    message?: string
-  ) {
+  constructor(setting: string, value: unknown, validValues?: readonly unknown[], message?: string) {
     const msg =
       message ??
       `Invalid value for ${setting}: ${value}${validValues ? `. Valid values: ${validValues.join(', ')}` : ''}`;

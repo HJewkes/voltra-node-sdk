@@ -22,14 +22,9 @@ declare module 'react-native-ble-plx' {
     monitorCharacteristicForService(
       serviceUUID: string,
       characteristicUUID: string,
-      callback: (
-        error: Error | null,
-        characteristic: { value: string | null } | null
-      ) => void
+      callback: (error: Error | null, characteristic: { value: string | null } | null) => void
     ): { remove: () => void };
-    onDisconnected(
-      callback: (error: Error | null, device: Device) => void
-    ): { remove: () => void };
+    onDisconnected(callback: (error: Error | null, device: Device) => void): { remove: () => void };
     cancelConnection(): Promise<Device>;
   }
 
@@ -66,9 +61,6 @@ declare module 'react-native-ble-plx' {
       callback: (error: Error | null, device: Device | null) => void
     ): void;
     stopDeviceScan(): void;
-    connectToDevice(
-      deviceId: string,
-      options?: { autoConnect?: boolean }
-    ): Promise<Device>;
+    connectToDevice(deviceId: string, options?: { autoConnect?: boolean }): Promise<Device>;
   }
 }

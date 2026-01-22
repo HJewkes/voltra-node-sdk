@@ -139,13 +139,7 @@ export {
 // Protocol Constants
 // =============================================================================
 
-export {
-  BLE,
-  Timing,
-  Auth,
-  Init,
-  Workout,
-} from './voltra/protocol/constants';
+export { BLE, Timing, Auth, Init, Workout } from './voltra/protocol/constants';
 
 // =============================================================================
 // Errors

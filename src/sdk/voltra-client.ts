@@ -711,7 +711,9 @@ export class VoltraClient {
 
   private ensureAdapter(): void {
     if (!this.adapter) {
-      throw new Error('No adapter configured. Call setAdapter() or provide adapter in constructor.');
+      throw new Error(
+        'No adapter configured. Call setAdapter() or provide adapter in constructor.'
+      );
     }
   }
 

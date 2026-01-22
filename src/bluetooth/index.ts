@@ -15,7 +15,11 @@ export type { BLEConnectionState } from './models/connection';
 
 // Models - Environment
 export type { BLEEnvironment, BLEEnvironmentInfo } from './models/environment';
-export { detectBLEEnvironment, isBLEAvailable, createNativeEnvironmentInfo } from './models/environment';
+export {
+  detectBLEEnvironment,
+  isBLEAvailable,
+  createNativeEnvironmentInfo,
+} from './models/environment';
 
 // Adapters
 export {

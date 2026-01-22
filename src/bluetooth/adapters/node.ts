@@ -78,9 +78,7 @@ export class NodeBLEAdapter extends WebBluetoothBase {
         const webbluetooth = await import('webbluetooth');
         BluetoothClass = webbluetooth.Bluetooth;
       } catch {
-        throw new Error(
-          'webbluetooth package not found. Install with: npm install webbluetooth'
-        );
+        throw new Error('webbluetooth package not found. Install with: npm install webbluetooth');
       }
     }
   }
