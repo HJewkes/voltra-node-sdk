@@ -5,31 +5,26 @@
   "main": "./dist/cjs/index.js",
   "module": "./dist/esm/index.js",
   "types": "./dist/types/index.d.ts",
+  "sideEffects": false,
   "exports": {
     ".": {
-      "import": "./dist/esm/index.js",
-      "require": "./dist/cjs/index.js",
-      "types": "./dist/types/index.d.ts"
-    },
-    "./react": {
-      "import": "./dist/esm/sdk/hooks.js",
-      "require": "./dist/cjs/sdk/hooks.js",
-      "types": "./dist/types/sdk/hooks.d.ts"
-    },
-    "./node": {
-      "import": "./dist/esm/bluetooth/adapters/node.js",
-      "require": "./dist/cjs/bluetooth/adapters/node.js",
-      "types": "./dist/types/bluetooth/adapters/node.d.ts"
+      "import": {
+        "types": "./dist/types/index.d.ts",
+        "default": "./dist/esm/index.js"
+      },
+      "require": {
+        "types": "./dist/types/index.d.ts",
+        "default": "./dist/cjs/index.js"
+      }
     }
   },
   "files": [
-    "dist",
-    "src/voltra/protocol/data/*.json"
+    "dist"
   ],
   "scripts": {
-    "build": "npm run build:esm && npm run build:cjs",
-    "build:esm": "tsc -p tsconfig.build.json",
-    "build:cjs": "tsc -p tsconfig.build.json --module commonjs --outDir dist/cjs",
+    "build": "npm run clean && npm run build:esm && npm run build:cjs",
+    "build:esm": "tsc -p tsconfig.esm.json",
+    "build:cjs": "tsc -p tsconfig.cjs.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
