@@ -16,6 +16,16 @@
         "types": "./dist/types/index.d.ts",
         "default": "./dist/cjs/index.js"
       }
+    },
+    "./react": {
+      "import": {
+        "types": "./dist/types/react/index.d.ts",
+        "default": "./dist/esm/react/index.js"
+      },
+      "require": {
+        "types": "./dist/types/react/index.d.ts",
+        "default": "./dist/cjs/react/index.js"
+      }
     }
   },
   "files": [
