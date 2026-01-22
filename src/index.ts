@@ -95,6 +95,24 @@ export {
 } from './voltra/protocol/constants';
 
 // =============================================================================
+// Errors
+// =============================================================================
+
+export {
+  VoltraSDKError,
+  ConnectionError,
+  AuthenticationError,
+  TimeoutError,
+  NotConnectedError,
+  InvalidSettingError,
+  BluetoothUnavailableError,
+  CommandError,
+  TelemetryError,
+  ErrorCode,
+  type ErrorCode as ErrorCodeType,
+} from './errors';
+
+// =============================================================================
 // Utilities
 // =============================================================================
 
