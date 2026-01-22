@@ -1,0 +1,59 @@
+{
+  "_comment": "Voltra BLE Protocol - Authentication, Initialization, and Telemetry",
+  "_version": "1.1.0",
+  
+  "ble": {
+    "service_uuid": "E4DADA34-0867-8783-9F70-2CA29216C7E4",
+    "notify_char_uuid": "55CA1E52-7354-25DE-6AFC-B7DF1E8816AC",
+    "write_char_uuid": "A010891D-F50F-44F0-901F-9A2421A9E050",
+    "device_name_prefix": "VTR-"
+  },
+  
+  "auth": {
+    "_comment": "41-byte device IDs with proprietary checksums",
+    "iphone": "552904c90110000020004f6950686f6e6500000000000000000000000000000084ab1a5f29200172d8",
+    "ipad": "552904c90110000020004f69506164000000000000000000000000000000000084ab1a5f292001ea4f"
+  },
+  
+  "init": {
+    "_comment": "Minimal 2-command init sequence (reduced from 22+ in Beyond+ app)",
+    "commands": [
+      "550f0801aad200002000ff00aa04194000",
+      "551f044eaa100000200027811065f8c6b9179047b797d3351c04bffb925cd64100"
+    ]
+  },
+  
+  "workout": {
+    "_comment": "Workout control commands",
+    "prepare": "551204c7aa1014002000110100b04f01db10",
+    "setup": "55130403aa10150020000f02006a50823e8f2f",
+    "go": "55130403aa1016002000110100893e05008173",
+    "stop": "55130403aa101b002000110100893e040037dd"
+  },
+  
+  "telemetry": {
+    "_comment": "Telemetry parsing configuration - message types, byte offsets, movement phases",
+    "message_types": {
+      "_comment": "First 4 bytes of notifications identify message type",
+      "stream": "553a0470",
+      "rep_summary": "554a04c6",
+      "set_summary": "554f0439",
+      "status_update": "553404ac"
+    },
+    "offsets": {
+      "_comment": "Byte offsets for parsing telemetry stream messages",
+      "sequence": 6,
+      "phase": 13,
+      "position": 24,
+      "force": 26,
+      "velocity": 28
+    },
+    "phases": {
+      "_comment": "Movement phase values (byte at offset 13)",
+      "idle": 0,
+      "concentric": 1,
+      "hold": 2,
+      "eccentric": 3
+    }
+  }
+}
