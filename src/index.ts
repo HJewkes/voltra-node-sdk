@@ -40,25 +40,28 @@ export {
   type CreateBLEAdapterConfig,
 } from './bluetooth/adapters';
 
-// Models
+// Models - Device
 export {
-  // Device
   type DiscoveredDevice,
   getDeviceDisplayName,
   sortBySignalStrength,
-  // Connection state
+} from './bluetooth/models/device';
+
+// Models - Connection
+export {
   type BLEConnectionState,
   isValidBLETransition,
   BLEConnectionStateModel,
-  // Environment
+} from './bluetooth/models/connection';
+
+// Models - Environment
+export {
   type BLEEnvironment,
   type BLEEnvironmentInfo,
   detectBLEEnvironment,
   isBLEAvailable,
   createNativeEnvironmentInfo,
-} from './bluetooth/models/device';
-export * from './bluetooth/models/connection';
-export * from './bluetooth/models/environment';
+} from './bluetooth/models/environment';
 
 // Controllers
 export {
