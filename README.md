@@ -3,17 +3,17 @@
 SDK for connecting to and controlling Voltra fitness devices.
 
 [![npm version](https://img.shields.io/npm/v/@voltras/node-sdk.svg)](https://www.npmjs.com/package/@voltras/node-sdk)
-[![CI](https://github.com/voltra/node-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/voltra/node-sdk/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Features
 
-- **Simple API**: `VoltraManager` handles discovery, returns `VoltraClient` for device control
+- **Device Control**: Configure weight (5-200 lbs), chains (0-100 lbs), and eccentric load (-195% to +195%)
+- **Real-time Telemetry**: Stream position, velocity, and force data during workouts
+- **Recording Lifecycle**: Prepare, start, and stop recording with motor engagement control
 - **Cross-platform**: Web browsers, Node.js, and React Native
-- **Multi-device**: Connect to multiple devices simultaneously
-- **React hooks**: Clean `useVoltraScanner` and `useVoltraDevice` hooks
+- **Multi-device**: Connect to and control multiple devices simultaneously
+- **React Hooks**: `useVoltraScanner` and `useVoltraDevice` for seamless React integration
 - **TypeScript**: Full type definitions included
-- **Real-time telemetry**: Stream position, velocity, and force data
 
 ## Installation
 
@@ -21,201 +21,276 @@ SDK for connecting to and controlling Voltra fitness devices.
 npm install @voltras/node-sdk
 ```
 
-### Platform dependencies
+### Platform Dependencies
 
 | Platform | Additional Install |
 |----------|-------------------|
+| Web browsers | None (uses native Bluetooth API) |
+| Node.js | `npm install webbluetooth` (polyfill) |
 | React Native | `npm install react-native-ble-plx` |
-| Node.js | `npm install webbluetooth` |
-| Web browsers | None (uses Web Bluetooth API) |
 
 ## Quick Start
 
-### Web / Node.js
+The typical workflow is: **scan for devices → let user select → connect → configure → workout → disconnect**.
 
 ```typescript
-import { VoltraManager } from '@voltras/node-sdk';
+import { VoltraManager, type DiscoveredDevice, type TelemetryFrame } from '@voltras/node-sdk';
 
-// Create manager (auto-detects platform)
+// 1. Create a manager (auto-detects platform)
 const manager = new VoltraManager();
 
-// Scan and connect to first device
-const client = await manager.connectFirst();
+// 2. Scan for devices
+const devices = await manager.scan({ timeout: 10000 });
+console.log('Found devices:', devices.map(d => d.name));
 
-// Or connect by name
-const client = await manager.connectByName('VTR-123456');
+// 3. Let user select a device (or connect programmatically)
+const selectedDevice = devices[0]; // In a real app, user would choose
+const client = await manager.connect(selectedDevice);
 
-// Control the device
-await client.setWeight(50);
+// 4. Configure resistance settings
+await client.setWeight(50);      // 5-200 lbs (increments of 5)
+await client.setChains(25);      // 0-100 lbs (reverse resistance)
+await client.setEccentric(10);   // -195 to +195 (eccentric load %)
 
-client.onFrame((frame) => {
-  console.log('Position:', frame.position, 'Velocity:', frame.velocity);
+// 5. Subscribe to real-time telemetry
+client.onFrame((frame: TelemetryFrame) => {
+  console.log(`Position: ${frame.position}, Velocity: ${frame.velocity}, Force: ${frame.force}`);
 });
 
+// 6. Start recording (engages motor)
 await client.startRecording();
-// ... workout ...
+
+// ... user performs workout ...
+
+// 7. Stop recording (disengages motor)
 await client.stopRecording();
 
-// Cleanup
+// 8. Cleanup
+await manager.disconnectAll();
 manager.dispose();
 ```
+
+### Convenience Methods
+
+For simpler scenarios, you can skip manual device selection:
+
+```typescript
+// Connect to first available device
+const client = await manager.connectFirst();
+
+// Connect by device name
+const client = await manager.connectByName('VTR-123456');
+```
+
+## Core Concepts
+
+### Resistance Settings
+
+Control the device's resistance in three ways:
+
+| Setting | Range | Description |
+|---------|-------|-------------|
+| **Weight** | 5-200 lbs | Primary resistance (increments of 5) |
+| **Chains** | 0-100 lbs | Reverse resistance - reduces load as you extend |
+| **Eccentric** | -195% to +195% | Adjusts eccentric (lowering) phase relative to concentric |
+
+```typescript
+// Set all resistance parameters
+await client.setWeight(75);       // 75 lbs primary resistance
+await client.setChains(20);       // 20 lbs chain reduction
+await client.setEccentric(-25);   // 25% less resistance on eccentric
+
+// Query current settings
+console.log(client.settings);
+// { weight: 75, chains: 20, eccentric: -25 }
+
+// Get available values for each setting
+const weights = client.getAvailableWeights();     // [5, 10, 15, ..., 200]
+const chains = client.getAvailableChains();       // [0, 1, 2, ..., 100]
+const eccentric = client.getAvailableEccentric(); // [-195, -190, ..., 195]
+```
+
+### Recording Lifecycle
+
+Recording controls the motor engagement:
+
+```typescript
+// Option 1: Simple start/stop (auto-prepares if needed)
+await client.startRecording();  // Prepares then starts
+// ... workout ...
+await client.stopRecording();   // Stops and disengages motor
+
+// Option 2: Manual prepare for lower latency between sets
+await client.prepareRecording();  // Pre-engages motor (state: 'ready')
+await client.startRecording();    // Instant start (state: 'active')
+await client.endSet();            // End set but stay prepared (state: 'ready')
+await client.startRecording();    // Next set instant start
+await client.stopRecording();     // Fully disengage (state: 'idle')
+
+// Monitor recording state
+console.log(client.recordingState);  // 'idle' | 'preparing' | 'ready' | 'active' | 'stopping'
+console.log(client.isRecording);     // true when state === 'active'
+```
+
+### Real-time Telemetry
+
+Receive movement data at ~100Hz when recording:
+
+```typescript
+// Subscribe to telemetry frames
+const unsubscribe = client.onFrame((frame) => {
+  console.log({
+    sequence: frame.sequence,   // Packet sequence number
+    timestamp: frame.timestamp, // Unix ms when received
+    phase: frame.phase,         // Movement phase (0-4)
+    position: frame.position,   // Position in movement (0-600)
+    velocity: frame.velocity,   // Current velocity
+    force: frame.force,         // Force being applied
+  });
+});
+
+// Unsubscribe when done
+unsubscribe();
+```
+
+### Connection States
+
+Monitor the connection lifecycle:
+
+```typescript
+// Subscribe to all events
+client.subscribe((event) => {
+  switch (event.type) {
+    case 'connectionStateChanged':
+      console.log('State:', event.state);
+      // 'disconnected' | 'connecting' | 'authenticating' | 'connected'
+      break;
+    case 'recordingStateChanged':
+      console.log('Recording:', event.state);
+      break;
+    case 'frame':
+      console.log('Telemetry:', event.frame);
+      break;
+    case 'error':
+      console.error('Error:', event.error);
+      break;
+  }
+});
+
+// Or subscribe to specific events
+client.onConnectionStateChange((state) => {
+  console.log('Connection state:', state);
+});
+```
+
+## Platform-Specific Setup
 
 ### React Native
 
 ```typescript
 import { VoltraManager } from '@voltras/node-sdk';
 
-// Specify native platform
+// Use forNative() to get React Native BLE support
 const manager = VoltraManager.forNative();
-// or: new VoltraManager({ platform: 'native' })
 
 // Rest of the API is identical
-const client = await manager.connectFirst();
+const devices = await manager.scan();
+const client = await manager.connect(devices[0]);
 ```
 
 ### React Hooks
 
 ```tsx
-import { VoltraManager } from '@voltras/node-sdk';
+import { useMemo, useState } from 'react';
+import { VoltraManager, type DiscoveredDevice, type VoltraClient } from '@voltras/node-sdk';
 import { useVoltraScanner, useVoltraDevice } from '@voltras/node-sdk/react';
 
 function WorkoutScreen() {
   const manager = useMemo(() => VoltraManager.forNative(), []);
   const [client, setClient] = useState<VoltraClient | null>(null);
 
-  // Scanner state
-  const { devices, isScanning, scan } = useVoltraScanner(manager);
+  // Scanner hook - manages scan state and discovered devices
+  const { devices, isScanning, scan, error: scanError } = useVoltraScanner(manager);
 
-  // Device state
-  const { connectionState, currentFrame, isRecording } = useVoltraDevice(client);
+  // Device hook - tracks connection state and telemetry
+  const { connectionState, isConnected, isRecording, currentFrame, settings } = useVoltraDevice(client);
 
   const handleConnect = async (device: DiscoveredDevice) => {
     const connected = await manager.connect(device);
+    await connected.setWeight(50);
     setClient(connected);
   };
 
   return (
     <View>
-      <Button onPress={() => scan()}>
-        {isScanning ? 'Scanning...' : 'Scan'}
-      </Button>
+      {/* Scanning */}
+      {!isConnected && (
+        <>
+          <Button onPress={() => scan({ timeout: 10000 })}>
+            {isScanning ? 'Scanning...' : 'Scan for Devices'}
+          </Button>
+          {devices.map((device) => (
+            <Button key={device.id} onPress={() => handleConnect(device)}>
+              {device.name}
+            </Button>
+          ))}
+        </>
+      )}
 
-      {devices.map((device) => (
-        <Button key={device.id} onPress={() => handleConnect(device)}>
-          {device.name}
-        </Button>
-      ))}
-
-      {connectionState === 'connected' && (
-        <Text>Position: {currentFrame?.position}</Text>
+      {/* Connected */}
+      {isConnected && (
+        <>
+          <Text>Weight: {settings?.weight} lbs</Text>
+          <Text>Position: {currentFrame?.position ?? '--'}</Text>
+          <Button onPress={() => client?.startRecording()}>Start</Button>
+          <Button onPress={() => client?.stopRecording()}>Stop</Button>
+        </>
       )}
     </View>
   );
 }
 ```
 
-## Multi-Device
+## Multi-Device Support
+
+Connect to and control multiple Voltra devices simultaneously:
 
 ```typescript
 const manager = new VoltraManager();
 
-// Listen for device events
+// Listen for connection events
 manager.onDeviceConnected((client, deviceId, deviceName) => {
-  console.log('Connected:', deviceName);
-  client.onFrame((frame) => console.log(`[${deviceName}]`, frame.position));
+  console.log(`Connected: ${deviceName}`);
+  
+  // Configure each device
+  client.setWeight(50);
+  
+  // Handle telemetry per device
+  client.onFrame((frame) => {
+    console.log(`[${deviceName}] pos=${frame.position}`);
+  });
 });
 
-// Connect to multiple devices
+manager.onDeviceDisconnected((deviceId) => {
+  console.log(`Disconnected: ${deviceId}`);
+});
+
+// Scan and connect to multiple devices
 const devices = await manager.scan();
-await manager.connect(devices[0]);
-await manager.connect(devices[1]);
+for (const device of devices) {
+  await manager.connect(device);
+}
 
-// Access individual clients
+// Access specific client by ID
 const client = manager.getClient(devices[0].id);
-await client?.setWeight(50);
 
-// Or get all clients
+// Or iterate all connected clients
 for (const client of manager.getAllClients()) {
   await client.startRecording();
 }
-```
 
-## API Reference
-
-### VoltraManager
-
-Main entry point for the SDK.
-
-```typescript
-const manager = new VoltraManager(options?);
-// or
-const manager = VoltraManager.forWeb();
-const manager = VoltraManager.forNode();
-const manager = VoltraManager.forNative();
-```
-
-**Methods:**
-- `scan(options?)` - Scan for Voltra devices
-- `connect(device)` - Connect and return a VoltraClient
-- `connectFirst(options?)` - Connect to first available device
-- `connectByName(name, options?)` - Scan + connect by device name
-- `getClient(deviceId)` - Get connected client by ID
-- `getAllClients()` - Get all connected clients
-- `disconnect(deviceId)` - Disconnect specific device
-- `disconnectAll()` - Disconnect all devices
-- `dispose()` - Clean up resources
-
-### VoltraClient
-
-Controls a single connected device.
-
-**Methods:**
-- `setWeight(lbs)` - Set weight (5-200 in increments of 5)
-- `setChains(lbs)` - Set chains (0-100)
-- `setEccentric(percent)` - Set eccentric adjustment (-195 to +195)
-- `startRecording()` - Start recording
-- `stopRecording()` - Stop recording
-- `onFrame(callback)` - Subscribe to telemetry frames
-- `disconnect()` - Disconnect from device
-
-**Properties:**
-- `connectionState` - 'disconnected' | 'connecting' | 'authenticating' | 'connected'
-- `isConnected` - Whether connected
-- `settings` - Current device settings
-- `recordingState` - 'idle' | 'preparing' | 'ready' | 'active' | 'stopping'
-- `isRecording` - Whether recording
-
-### TelemetryFrame
-
-```typescript
-interface TelemetryFrame {
-  sequence: number;   // Packet sequence number
-  timestamp: number;  // Unix ms when received
-  phase: number;      // Movement phase (see MovementPhase)
-  position: number;   // Position (0-600 raw)
-  velocity: number;   // Velocity (raw value)
-  force: number;      // Force (signed value)
-}
-```
-
-### React Hooks
-
-```typescript
-import { useVoltraScanner, useVoltraDevice } from '@voltras/node-sdk/react';
-
-// Scanner state
-const { devices, isScanning, scan, error, clear } = useVoltraScanner(manager);
-
-// Device state
-const {
-  connectionState,
-  isConnected,
-  recordingState,
-  isRecording,
-  currentFrame,
-  settings,
-  error,
-} = useVoltraDevice(client);
+// Disconnect all when done
+await manager.disconnectAll();
 ```
 
 ## Error Handling
@@ -226,46 +301,131 @@ import {
   ConnectionError,
   AuthenticationError,
   NotConnectedError,
+  InvalidSettingError,
+  CommandError,
+  TimeoutError,
 } from '@voltras/node-sdk';
 
 try {
-  await manager.connectByName('VTR-123');
+  await manager.connect(device);
 } catch (error) {
   if (error instanceof ConnectionError) {
-    console.log('Connection failed:', error.code);
+    console.log('Connection failed:', error.code, error.message);
+  } else if (error instanceof AuthenticationError) {
+    console.log('Device authentication failed');
+  } else if (error instanceof TimeoutError) {
+    console.log('Operation timed out');
+  }
+}
+
+try {
+  await client.setWeight(999); // Invalid weight
+} catch (error) {
+  if (error instanceof InvalidSettingError) {
+    console.log(`Invalid ${error.setting}: ${error.value}`);
+    console.log('Available values:', error.availableValues);
   }
 }
 ```
 
 ## Examples
 
-See the [examples](./examples) directory:
+Complete working examples for each platform:
 
-- [Node.js](./examples/node) - CLI examples
-- [Web Browser](./examples/web) - Interactive demo
-- [React Native](./examples/react-native) - Expo app
+| Platform | Description | Code |
+|----------|-------------|------|
+| **Node.js** | CLI app with scanning, settings, and telemetry | [examples/node/](./examples/node) |
+| **Web** | Interactive browser demo with UI | [examples/web/](./examples/web) |
+| **React Native** | Expo app with hooks | [examples/react-native/](./examples/react-native) |
+
+## API Reference
+
+### VoltraManager
+
+Main entry point - handles device discovery and connection management.
+
+```typescript
+// Create with auto-detection
+const manager = new VoltraManager();
+
+// Or specify platform
+const manager = VoltraManager.forWeb();
+const manager = VoltraManager.forNode();
+const manager = VoltraManager.forNative();
+```
+
+| Method | Description |
+|--------|-------------|
+| `scan(options?)` | Scan for Voltra devices |
+| `connect(device)` | Connect to a device, returns `VoltraClient` |
+| `connectFirst(options?)` | Connect to first available device |
+| `connectByName(name, options?)` | Scan and connect by device name |
+| `getClient(deviceId)` | Get client for connected device |
+| `getAllClients()` | Get all connected clients |
+| `disconnect(deviceId)` | Disconnect specific device |
+| `disconnectAll()` | Disconnect all devices |
+| `dispose()` | Clean up all resources |
+
+### VoltraClient
+
+Controls a single connected device.
+
+| Method | Description |
+|--------|-------------|
+| `setWeight(lbs)` | Set weight (5-200 in increments of 5) |
+| `setChains(lbs)` | Set chains (0-100) |
+| `setEccentric(percent)` | Set eccentric (-195 to +195) |
+| `prepareRecording()` | Pre-engage motor for low-latency start |
+| `startRecording()` | Start recording (engages motor) |
+| `stopRecording()` | Stop recording (disengages motor) |
+| `endSet()` | End set but stay prepared |
+| `onFrame(callback)` | Subscribe to telemetry frames |
+| `subscribe(callback)` | Subscribe to all events |
+| `disconnect()` | Disconnect from device |
+| `dispose()` | Clean up resources |
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `connectionState` | string | 'disconnected' \| 'connecting' \| 'authenticating' \| 'connected' |
+| `isConnected` | boolean | Whether connected |
+| `recordingState` | string | 'idle' \| 'preparing' \| 'ready' \| 'active' \| 'stopping' |
+| `isRecording` | boolean | Whether recording is active |
+| `settings` | object | Current { weight, chains, eccentric } |
+| `connectedDeviceId` | string | Connected device ID |
+| `connectedDeviceName` | string | Connected device name |
+
+### TelemetryFrame
+
+```typescript
+interface TelemetryFrame {
+  sequence: number;   // Packet sequence number
+  timestamp: number;  // Unix ms when received
+  phase: number;      // Movement phase (0-4)
+  position: number;   // Position in movement (0-600)
+  velocity: number;   // Current velocity
+  force: number;      // Force being applied (signed)
+}
+```
 
 ## Documentation
 
-### Getting Started
+### Getting Started Guides
 
-Step-by-step setup guides for each platform:
+Step-by-step tutorials for using the SDK in your app:
 
-- [Node.js](./docs/getting-started/node.md) - Prerequisites, setup, running examples
-- [Web Browser](./docs/getting-started/web.md) - Browser requirements, HTTPS, Vite setup
-- [React Native](./docs/getting-started/react-native.md) - Expo, permissions, development builds
+- [Node.js](./docs/getting-started/node.md) - Build a CLI fitness app
+- [Web Browser](./docs/getting-started/web.md) - Build a web-based workout tracker
+- [React Native](./docs/getting-started/react-native.md) - Build a mobile fitness app
 
-### Concepts
+### Technical Deep-Dives
 
-Technical deep-dives:
-
-- [Bluetooth Protocol](./docs/concepts/bluetooth-protocol.md) - Voltra BLE protocol, commands, telemetry format
-- [Platform Adapters](./docs/concepts/platform-adapters.md) - Native vs Web vs Node.js differences
+- [Bluetooth Protocol](./docs/concepts/bluetooth-protocol.md) - BLE protocol, commands, telemetry format
+- [Platform Adapters](./docs/concepts/platform-adapters.md) - How adapters work across platforms
 
 ### Other
 
 - [Troubleshooting](./docs/troubleshooting.md) - Common issues and solutions
-- [Roadmap](./docs/roadmap/) - Planned features (ReplayBLEAdapter, etc.)
+- [Roadmap](./docs/roadmap/) - Planned features
 
 ## License
 

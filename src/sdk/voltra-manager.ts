@@ -487,27 +487,35 @@ export class VoltraManager {
   }
 
   private createAdapterFactory(platform: Platform): AdapterFactory {
+    // Map BLE constant (SCREAMING_SNAKE_CASE) to BLEServiceConfig (camelCase)
+    const bleConfig = {
+      serviceUUID: BLE.SERVICE_UUID,
+      notifyCharUUID: BLE.NOTIFY_CHAR_UUID,
+      writeCharUUID: BLE.WRITE_CHAR_UUID,
+      deviceNamePrefix: BLE.DEVICE_NAME_PREFIX,
+    };
+
     switch (platform) {
       case 'web':
         return () => {
           // Dynamic import to avoid bundling issues
           // eslint-disable-next-line @typescript-eslint/no-require-imports
           const { WebBLEAdapter } = require('../bluetooth/adapters/web');
-          return new WebBLEAdapter({ ble: BLE });
+          return new WebBLEAdapter({ ble: bleConfig });
         };
 
       case 'node':
         return () => {
           // eslint-disable-next-line @typescript-eslint/no-require-imports
           const { NodeBLEAdapter } = require('../bluetooth/adapters/node');
-          return new NodeBLEAdapter({ ble: BLE });
+          return new NodeBLEAdapter({ ble: bleConfig });
         };
 
       case 'native':
         return () => {
           // eslint-disable-next-line @typescript-eslint/no-require-imports
           const { NativeBLEAdapter } = require('../bluetooth/adapters/native');
-          return new NativeBLEAdapter({ ble: BLE });
+          return new NativeBLEAdapter({ ble: bleConfig });
         };
 
       default:

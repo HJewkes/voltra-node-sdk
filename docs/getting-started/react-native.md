@@ -1,101 +1,47 @@
 # Getting Started: React Native
 
-This guide walks you through running the React Native (Expo) example from scratch.
+Build mobile fitness apps that connect to Voltra devices using React Native and Expo.
 
 ## Prerequisites
 
-### 1. Install Node.js
+### 1. Development Environment
 
-Download and install Node.js 18 or later from [nodejs.org](https://nodejs.org/).
+- Node.js 18 or later
+- Expo CLI: `npm install -g expo-cli` (or use npx)
 
-```bash
-node --version  # Should show v18.x.x or higher
-npm --version   # Should show 9.x.x or higher
-```
+### 2. Physical Device Required
 
-### 2. Install Expo CLI
+**Bluetooth requires a physical device** - simulators don't support BLE:
 
-```bash
-npm install -g expo-cli
-```
+- iOS: Physical iPhone/iPad (iOS Simulator doesn't support Bluetooth)
+- Android: Physical device recommended (some emulators have limited BLE support)
 
-Or use npx (no global install needed):
-```bash
-npx expo --version
-```
-
-### 3. Mobile Device or Emulator
-
-**Physical Device (Recommended)**:
-- Install **Expo Go** app from App Store (iOS) or Play Store (Android)
-- Device must have Bluetooth capability
-- iOS Simulator does NOT support Bluetooth
-
-**Android Emulator**:
-- Some Android emulators support Bluetooth passthrough
-- Physical device is more reliable
-
-### 4. Voltra Device
+### 3. Voltra Device
 
 - Power on your Voltra device
 - Ensure it's not connected to another app
 
 ---
 
-## Setup
+## Project Setup
 
-### 1. Clone or Download the SDK
-
-```bash
-git clone https://github.com/voltra/node-sdk.git
-cd node-sdk
-```
-
-### 2. Install SDK Dependencies
+### Option 1: New Expo Project
 
 ```bash
-npm install
+npx create-expo-app my-voltra-app --template blank-typescript
+cd my-voltra-app
+npm install @voltras/node-sdk react-native-ble-plx
 ```
 
-### 3. Build the SDK
+### Option 2: Existing Project
 
 ```bash
-npm run build
+npm install @voltras/node-sdk react-native-ble-plx
 ```
 
-### 4. Navigate to React Native Example
+### Configure Permissions
 
-```bash
-cd examples/react-native
-```
-
-### 5. Install Example Dependencies
-
-```bash
-npm install
-```
-
-This installs:
-- `expo` - React Native framework
-- `expo-router` - File-based routing
-- `react-native-ble-plx` - Bluetooth library
-- `@voltras/node-sdk` - Links to the parent SDK
-
----
-
-## iOS Setup (Additional Steps)
-
-### 1. Install iOS Dependencies
-
-```bash
-npx pod-install
-# or
-cd ios && pod install && cd ..
-```
-
-### 2. Configure Bluetooth Permissions
-
-The example's `app.json` already includes the required iOS permissions. If creating your own app, add to `app.json`:
+Add to `app.json`:
 
 ```json
 {
@@ -105,22 +51,7 @@ The example's `app.json` already includes the required iOS permissions. If creat
         "NSBluetoothAlwaysUsageDescription": "Required to connect to your Voltra device",
         "NSBluetoothPeripheralUsageDescription": "Required to connect to your Voltra device"
       }
-    }
-  }
-}
-```
-
----
-
-## Android Setup (Additional Steps)
-
-### 1. Configure Permissions
-
-The example's `app.json` already includes required permissions. For your own app, add:
-
-```json
-{
-  "expo": {
+    },
     "android": {
       "permissions": [
         "android.permission.BLUETOOTH",
@@ -129,80 +60,645 @@ The example's `app.json` already includes required permissions. For your own app
         "android.permission.BLUETOOTH_CONNECT",
         "android.permission.ACCESS_FINE_LOCATION"
       ]
-    }
+    },
+    "plugins": [
+      ["react-native-ble-plx", { "isBackgroundEnabled": false }]
+    ]
   }
 }
 ```
 
-### 2. Enable Location Services
+---
 
-Android requires Location Services to be enabled for Bluetooth scanning (this is a platform requirement, not something we can change).
+## Your First App
+
+Create `App.tsx`:
+
+```tsx
+import React, { useMemo, useState } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  FlatList,
+  StyleSheet,
+  SafeAreaView,
+  Alert,
+} from 'react-native';
+import {
+  VoltraManager,
+  type DiscoveredDevice,
+  type VoltraClient,
+} from '@voltras/node-sdk';
+import { useVoltraScanner, useVoltraDevice } from '@voltras/node-sdk/react';
+
+export default function App() {
+  // Create manager for React Native platform
+  const manager = useMemo(() => VoltraManager.forNative(), []);
+
+  // State for selected client
+  const [client, setClient] = useState<VoltraClient | null>(null);
+
+  // Scanner hook - handles scanning state and device discovery
+  const { devices, isScanning, scan, error: scanError } = useVoltraScanner(manager);
+
+  // Device hook - tracks connection state and telemetry
+  const {
+    connectionState,
+    isConnected,
+    isRecording,
+    currentFrame,
+    settings,
+  } = useVoltraDevice(client);
+
+  // Selected weight
+  const [selectedWeight, setSelectedWeight] = useState(50);
+
+  // Handlers
+  const handleScan = async () => {
+    try {
+      await scan({ timeout: 10000 });
+    } catch (e) {
+      Alert.alert('Scan Failed', String(e));
+    }
+  };
+
+  const handleConnect = async (device: DiscoveredDevice) => {
+    try {
+      const connected = await manager.connect(device);
+      await connected.setWeight(selectedWeight);
+      setClient(connected);
+    } catch (e) {
+      Alert.alert('Connection Failed', String(e));
+    }
+  };
+
+  const handleDisconnect = async () => {
+    await manager.disconnectAll();
+    setClient(null);
+  };
+
+  const handleWeightChange = async (weight: number) => {
+    setSelectedWeight(weight);
+    if (client?.isConnected) {
+      try {
+        await client.setWeight(weight);
+      } catch (e) {
+        Alert.alert('Error', `Failed to set weight: ${e}`);
+      }
+    }
+  };
+
+  const handleStartRecording = async () => {
+    try {
+      await client?.startRecording();
+    } catch (e) {
+      Alert.alert('Error', String(e));
+    }
+  };
+
+  const handleStopRecording = async () => {
+    try {
+      await client?.stopRecording();
+    } catch (e) {
+      Alert.alert('Error', String(e));
+    }
+  };
+
+  // Render device item
+  const renderDevice = ({ item }: { item: DiscoveredDevice }) => (
+    <TouchableOpacity
+      style={styles.deviceItem}
+      onPress={() => handleConnect(item)}
+    >
+      <Text style={styles.deviceName}>{item.name ?? 'Unknown'}</Text>
+      <Text style={styles.deviceId}>{item.id}</Text>
+    </TouchableOpacity>
+  );
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <Text style={styles.title}>Voltra Workout</Text>
+
+      {/* Connection Status */}
+      <View style={styles.statusCard}>
+        <View style={styles.statusRow}>
+          <View
+            style={[
+              styles.statusDot,
+              isConnected && styles.statusDotConnected,
+              isRecording && styles.statusDotRecording,
+            ]}
+          />
+          <Text style={styles.statusText}>
+            {isRecording
+              ? 'Recording'
+              : connectionState.charAt(0).toUpperCase() + connectionState.slice(1)}
+          </Text>
+        </View>
+        {isConnected && (
+          <TouchableOpacity style={styles.disconnectBtn} onPress={handleDisconnect}>
+            <Text style={styles.disconnectBtnText}>Disconnect</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Scanner - shown when not connected */}
+      {!isConnected && (
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={[styles.button, isScanning && styles.buttonDisabled]}
+            onPress={handleScan}
+            disabled={isScanning}
+          >
+            <Text style={styles.buttonText}>
+              {isScanning ? 'Scanning...' : 'Scan for Devices'}
+            </Text>
+          </TouchableOpacity>
+
+          {scanError && <Text style={styles.errorText}>{scanError.message}</Text>}
+
+          <FlatList
+            data={devices}
+            renderItem={renderDevice}
+            keyExtractor={(item) => item.id}
+            style={styles.deviceList}
+            ListEmptyComponent={
+              <Text style={styles.emptyText}>
+                {isScanning ? 'Searching...' : 'No devices found'}
+              </Text>
+            }
+          />
+        </View>
+      )}
+
+      {/* Controls - shown when connected */}
+      {isConnected && (
+        <>
+          {/* Weight Selection */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Weight</Text>
+            <View style={styles.weightRow}>
+              {[25, 50, 75, 100].map((weight) => (
+                <TouchableOpacity
+                  key={weight}
+                  style={[
+                    styles.weightBtn,
+                    selectedWeight === weight && styles.weightBtnSelected,
+                  ]}
+                  onPress={() => handleWeightChange(weight)}
+                >
+                  <Text
+                    style={[
+                      styles.weightBtnText,
+                      selectedWeight === weight && styles.weightBtnTextSelected,
+                    ]}
+                  >
+                    {weight}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          {/* Workout Controls */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Workout</Text>
+            <View style={styles.workoutRow}>
+              <TouchableOpacity
+                style={[styles.startBtn, isRecording && styles.buttonDisabled]}
+                onPress={handleStartRecording}
+                disabled={isRecording}
+              >
+                <Text style={styles.buttonText}>Start</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.stopBtn, !isRecording && styles.buttonDisabled]}
+                onPress={handleStopRecording}
+                disabled={!isRecording}
+              >
+                <Text style={styles.buttonText}>Stop</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Real-time Metrics */}
+          <View style={styles.metricsCard}>
+            <View style={styles.metric}>
+              <Text style={styles.metricValue}>
+                {currentFrame?.position.toFixed(0) ?? '--'}
+              </Text>
+              <Text style={styles.metricLabel}>Position</Text>
+            </View>
+            <View style={styles.metric}>
+              <Text style={styles.metricValue}>
+                {currentFrame?.velocity.toFixed(2) ?? '--'}
+              </Text>
+              <Text style={styles.metricLabel}>Velocity</Text>
+            </View>
+            <View style={styles.metric}>
+              <Text style={styles.metricValue}>
+                {currentFrame?.force.toFixed(0) ?? '--'}
+              </Text>
+              <Text style={styles.metricLabel}>Force</Text>
+            </View>
+          </View>
+
+          {/* Current Settings */}
+          <View style={styles.settingsInfo}>
+            <Text style={styles.settingsText}>
+              Weight: {settings?.weight ?? 0} lbs | 
+              Chains: {settings?.chains ?? 0} lbs | 
+              Eccentric: {settings?.eccentric ?? 0}%
+            </Text>
+          </View>
+        </>
+      )}
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#1a1a2e',
+    padding: 16,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#4ecdc4',
+    marginBottom: 20,
+  },
+  statusCard: {
+    backgroundColor: '#16213e',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  statusDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#666',
+    marginRight: 8,
+  },
+  statusDotConnected: {
+    backgroundColor: '#4ecdc4',
+  },
+  statusDotRecording: {
+    backgroundColor: '#ff6b6b',
+  },
+  statusText: {
+    color: '#eee',
+    fontSize: 16,
+  },
+  disconnectBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#ff6b6b',
+    borderRadius: 6,
+  },
+  disconnectBtnText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  section: {
+    marginBottom: 20,
+  },
+  sectionTitle: {
+    color: '#888',
+    fontSize: 14,
+    marginBottom: 8,
+    textTransform: 'uppercase',
+  },
+  button: {
+    backgroundColor: '#4ecdc4',
+    padding: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  buttonDisabled: {
+    backgroundColor: '#444',
+  },
+  buttonText: {
+    color: '#1a1a2e',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  deviceList: {
+    marginTop: 16,
+    maxHeight: 200,
+  },
+  deviceItem: {
+    backgroundColor: '#16213e',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  deviceName: {
+    color: '#eee',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  deviceId: {
+    color: '#666',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  emptyText: {
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 16,
+  },
+  errorText: {
+    color: '#ff6b6b',
+    marginTop: 8,
+  },
+  weightRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  weightBtn: {
+    flex: 1,
+    padding: 12,
+    backgroundColor: '#16213e',
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  weightBtnSelected: {
+    backgroundColor: '#4ecdc4',
+  },
+  weightBtnText: {
+    color: '#eee',
+    fontWeight: '600',
+    fontSize: 16,
+  },
+  weightBtnTextSelected: {
+    color: '#1a1a2e',
+  },
+  workoutRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  startBtn: {
+    flex: 1,
+    backgroundColor: '#4ecdc4',
+    padding: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  stopBtn: {
+    flex: 1,
+    backgroundColor: '#ff6b6b',
+    padding: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  metricsCard: {
+    backgroundColor: '#16213e',
+    borderRadius: 12,
+    padding: 20,
+    flexDirection: 'row',
+    marginBottom: 16,
+  },
+  metric: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  metricValue: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#4ecdc4',
+  },
+  metricLabel: {
+    color: '#888',
+    fontSize: 12,
+    marginTop: 4,
+    textTransform: 'uppercase',
+  },
+  settingsInfo: {
+    alignItems: 'center',
+  },
+  settingsText: {
+    color: '#666',
+    fontSize: 12,
+  },
+});
+```
 
 ---
 
-## Running the Example
+## Running the App
 
-### Option 1: Expo Go (Quickest)
+### Development Build (Required for BLE)
 
-```bash
-npm start
-```
-
-This shows a QR code. Scan it with:
-- **iOS**: Camera app → tap the notification
-- **Android**: Expo Go app → Scan QR code
-
-**Note**: Expo Go has limitations. For full Bluetooth support, use a development build.
-
-### Option 2: Development Build (Recommended)
-
-For reliable Bluetooth support, create a development build:
+Bluetooth requires native code, so you need a development build:
 
 ```bash
-# iOS
+# iOS (requires Mac with Xcode)
 npx expo run:ios --device
 
 # Android
 npx expo run:android --device
 ```
 
-This builds and installs the app directly on your connected device.
+### Why Not Expo Go?
+
+Expo Go doesn't include `react-native-ble-plx`. You'll see this error:
+
+```
+Error: BleManager not found
+```
+
+Use a development build instead.
 
 ---
 
-## Using the Demo App
+## Understanding the Hooks
 
-1. **Launch the app** on your device
-2. **Tap "Scan for Devices"** - Requests Bluetooth permission if needed
-3. **Wait for scan** - Nearby Voltra devices appear in the list
-4. **Tap a device** to connect
-5. **Select weight** using the buttons (25, 50, 75, 100 lbs)
-6. **Tap "Start"** to begin recording
-7. **Move the Voltra** - Watch metrics update in real-time
-8. **Tap "Stop"** when done
-9. **Tap "Disconnect"** to release the device
+### useVoltraScanner
 
----
-
-## Understanding the Code
-
-The example uses the SDK's React hooks:
+Manages device discovery:
 
 ```typescript
-import { VoltraManager } from '@voltras/node-sdk';
-import { useVoltraScanner, useVoltraDevice } from '@voltras/node-sdk/react';
+const { 
+  devices,      // DiscoveredDevice[] - found devices
+  isScanning,   // boolean - scanning in progress
+  scan,         // (options?) => Promise<void> - trigger scan
+  error,        // Error | null - last scan error
+  clear,        // () => void - clear discovered devices
+} = useVoltraScanner(manager);
+```
 
-function App() {
-  // Create manager for native platform
-  const manager = useMemo(() => VoltraManager.forNative(), []);
-  
-  // Scanner hook - devices, scanning state, scan function
-  const { devices, isScanning, scan } = useVoltraScanner(manager);
-  
-  // Device hook - connection state, current frame, settings
-  const { connectionState, currentFrame, isRecording } = useVoltraDevice(client);
-  
-  // ...
+### useVoltraDevice
+
+Tracks connected device state:
+
+```typescript
+const {
+  connectionState,  // 'disconnected' | 'connecting' | 'authenticating' | 'connected'
+  isConnected,      // boolean
+  recordingState,   // 'idle' | 'preparing' | 'ready' | 'active' | 'stopping'
+  isRecording,      // boolean
+  currentFrame,     // TelemetryFrame | null - latest telemetry
+  settings,         // { weight, chains, eccentric } | null
+  error,            // Error | null
+} = useVoltraDevice(client);
+```
+
+---
+
+## Advanced Patterns
+
+### Full Settings Control
+
+```tsx
+function SettingsPanel({ client }: { client: VoltraClient }) {
+  const [weight, setWeight] = useState(50);
+  const [chains, setChains] = useState(0);
+  const [eccentric, setEccentric] = useState(0);
+
+  const applySettings = async () => {
+    await client.setWeight(weight);
+    await client.setChains(chains);
+    await client.setEccentric(eccentric);
+  };
+
+  return (
+    <View>
+      <Text>Weight: {weight} lbs</Text>
+      <Slider
+        minimumValue={5}
+        maximumValue={200}
+        step={5}
+        value={weight}
+        onSlidingComplete={setWeight}
+      />
+
+      <Text>Chains: {chains} lbs</Text>
+      <Slider
+        minimumValue={0}
+        maximumValue={100}
+        step={1}
+        value={chains}
+        onSlidingComplete={setChains}
+      />
+
+      <Text>Eccentric: {eccentric}%</Text>
+      <Slider
+        minimumValue={-195}
+        maximumValue={195}
+        step={5}
+        value={eccentric}
+        onSlidingComplete={setEccentric}
+      />
+
+      <Button title="Apply" onPress={applySettings} />
+    </View>
+  );
+}
+```
+
+### Rep Counter
+
+```tsx
+function useRepCounter(client: VoltraClient | null) {
+  const [repCount, setRepCount] = useState(0);
+  const inRep = useRef(false);
+
+  useEffect(() => {
+    if (!client) return;
+
+    const unsubscribe = client.onFrame((frame) => {
+      // Detect rep start (high velocity)
+      if (!inRep.current && Math.abs(frame.velocity) > 1.0) {
+        inRep.current = true;
+      }
+      
+      // Detect rep end (velocity drops)
+      if (inRep.current && Math.abs(frame.velocity) < 0.1) {
+        inRep.current = false;
+        setRepCount((c) => c + 1);
+      }
+    });
+
+    return unsubscribe;
+  }, [client]);
+
+  return { repCount, resetCount: () => setRepCount(0) };
+}
+```
+
+### Workout Timer
+
+```tsx
+function useWorkoutTimer(isRecording: boolean) {
+  const [seconds, setSeconds] = useState(0);
+  const startTime = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (isRecording) {
+      startTime.current = Date.now();
+      const interval = setInterval(() => {
+        setSeconds(Math.floor((Date.now() - startTime.current!) / 1000));
+      }, 1000);
+      return () => clearInterval(interval);
+    } else {
+      startTime.current = null;
+      setSeconds(0);
+    }
+  }, [isRecording]);
+
+  const formatted = `${Math.floor(seconds / 60)}:${(seconds % 60).toString().padStart(2, '0')}`;
+  return { seconds, formatted };
+}
+```
+
+---
+
+## Permissions Handling
+
+### iOS
+
+iOS will prompt for Bluetooth permission automatically. If denied, guide users to Settings:
+
+```typescript
+import { Linking, Platform } from 'react-native';
+
+async function openSettings() {
+  if (Platform.OS === 'ios') {
+    await Linking.openURL('app-settings:');
+  }
+}
+```
+
+### Android
+
+Android requires both Bluetooth and Location permissions:
+
+```typescript
+import { PermissionsAndroid, Platform } from 'react-native';
+
+async function requestPermissions() {
+  if (Platform.OS !== 'android') return true;
+
+  const granted = await PermissionsAndroid.requestMultiple([
+    PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+    PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+    PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+  ]);
+
+  return Object.values(granted).every(
+    (status) => status === PermissionsAndroid.RESULTS.GRANTED
+  );
 }
 ```
 
@@ -210,67 +706,30 @@ function App() {
 
 ## Troubleshooting
 
-### "Bluetooth permission denied"
+### "BleManager not found"
 
-**iOS**: 
-- Go to Settings → Privacy → Bluetooth → Enable for your app
-- Or reinstall the app to re-trigger the permission prompt
-
-**Android**:
-- Go to Settings → Apps → Your App → Permissions → Enable Bluetooth and Location
-- Ensure Location Services are ON (required for BLE scanning)
+You're running in Expo Go. Create a development build instead.
 
 ### Scan returns no devices
 
-1. Is the Voltra powered on?
-2. Is it connected to Beyond+ or another app? Disconnect first
-3. Is Bluetooth enabled on your device?
-4. (Android) Is Location Services enabled?
-5. Are you within range (~10 meters)?
-
-### App crashes on launch
-
-- Ensure you're using a development build, not Expo Go
-- Check that `react-native-ble-plx` is properly installed
-- Run `npx pod-install` for iOS
-
-### "BleManager not found" error
-
-The `react-native-ble-plx` library requires native code. You cannot use Expo Go for full functionality - create a development build instead.
+1. Is Bluetooth enabled on your phone?
+2. (Android) Is Location Services enabled?
+3. Is the Voltra powered on?
+4. Is it connected to Beyond+ or another app?
 
 ### iOS Simulator doesn't find devices
 
-iOS Simulator does not support Bluetooth. You must test on a physical iOS device.
+iOS Simulator doesn't support Bluetooth. Use a physical iPhone.
 
-### Android emulator doesn't find devices
+### "Bluetooth permission denied"
 
-Most Android emulators don't support Bluetooth passthrough. Use a physical Android device.
-
----
-
-## Building for Production
-
-### iOS
-
-```bash
-npx expo build:ios
-# or
-eas build --platform ios
-```
-
-### Android
-
-```bash
-npx expo build:android
-# or
-eas build --platform android
-```
+- iOS: Settings → Privacy → Bluetooth → Enable for your app
+- Android: Settings → Apps → Your App → Permissions → Enable Bluetooth and Location
 
 ---
 
 ## Next Steps
 
-- Review `app/index.tsx` to understand the full implementation
-- Explore the SDK's React hooks in `src/react/hooks.ts`
-- Check `docs/concepts/platform-adapters.md` for native adapter details
-- See `docs/troubleshooting.md` for common issues
+- See the [complete example](../../examples/react-native) with navigation
+- Read about [platform adapters](../concepts/platform-adapters.md)
+- Check [troubleshooting](../troubleshooting.md) for more solutions

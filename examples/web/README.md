@@ -1,16 +1,21 @@
 # Web Browser Example
 
-Example web application demonstrating the Voltra SDK with the Web Bluetooth API.
+Interactive web application demonstrating all features of the Voltra SDK using the Web Bluetooth API.
 
 ## Prerequisites
 
-- A browser that supports Web Bluetooth (Chrome, Edge, Opera)
-- A Voltra device
-- HTTPS or localhost (required for Web Bluetooth)
+- Chrome, Edge, or Opera (browsers that support Web Bluetooth)
+- A Voltra device (powered on, not connected to another app)
+- HTTPS or localhost (Web Bluetooth security requirement)
 
 ## Setup
 
+From the SDK root directory:
+
 ```bash
+npm install
+npm run build
+cd examples/web
 npm install
 ```
 
@@ -20,31 +25,93 @@ npm install
 npm run dev
 ```
 
-Then open http://localhost:5173 in your browser.
+Open http://localhost:5173 in Chrome, Edge, or Opera.
 
-## Features
+## Features Demonstrated
 
-- Scan for and connect to Voltra devices
-- Configure weight settings
-- Start/stop workout recording
-- Real-time telemetry display (position, velocity, force)
-- Connection status and logging
+### Device Connection
+- **Device picker** - Browser-native Bluetooth device selection
+- **Connection states** - Visual feedback during connecting/authenticating
+- **Status display** - Real-time connection status
 
-## How It Works
+### Resistance Settings
+- **Weight** - Primary resistance (5-200 lbs in increments of 5)
+- **Chains** - Reverse resistance slider (0-100 lbs)
+- **Eccentric** - Eccentric load adjustment slider (-195% to +195%)
+- **Apply settings** - Send all settings to device with one click
 
-1. Click "Scan for Device" - this triggers the browser's Bluetooth device picker
-2. Select your Voltra device from the list
-3. Configure weight settings
-4. Click "Start Recording" to begin a workout
-5. Watch the metrics update in real-time
-6. Click "Stop Recording" when done
-7. Click "Disconnect" to close the connection
+### Workout Recording
+- **Start/Stop** - Control motor engagement
+- **Real-time telemetry** - Position, velocity, and force metrics
+- **Frame counter** - Track collected telemetry frames
+- **Activity log** - Detailed event and error logging
 
-## Browser Notes
+## How to Use
 
-- **Chrome/Edge/Opera**: Full support for Web Bluetooth
-- **Firefox**: Not supported (no Web Bluetooth)
-- **Safari**: Limited support (requires enabling experimental features)
+1. **Click "Scan for Device"** - Opens browser's Bluetooth picker
+2. **Select your Voltra** - Look for `VTR-XXXXXX` in the list
+3. **Configure settings** - Adjust weight, chains, and eccentric
+4. **Click "Apply Settings"** - Sends configuration to device
+5. **Click "Start Recording"** - Engages motor, begins telemetry
+6. **Perform your workout** - Watch metrics update in real-time
+7. **Click "Stop Recording"** - Disengages motor
+8. **Click "Disconnect"** - Closes connection when done
 
-The Web Bluetooth API requires user gesture to initiate scanning, which is why
-the "Scan for Device" button triggers the browser's native device picker dialog.
+## Browser Support
+
+| Browser | Support |
+|---------|---------|
+| Chrome (desktop & Android) | Full support |
+| Edge | Full support |
+| Opera | Full support |
+| Firefox | Not supported |
+| Safari | Not supported |
+| iOS browsers | Not supported (all use WebKit) |
+
+## Technical Notes
+
+### User Gesture Requirement
+
+Web Bluetooth requires a user gesture (click, tap) to trigger scanning. This is why:
+- Scanning must be triggered by a button click
+- You cannot auto-scan on page load
+- The browser shows a native picker dialog
+
+### HTTPS Requirement
+
+Web Bluetooth only works on secure contexts:
+- `https://` URLs in production
+- `localhost` or `127.0.0.1` for development
+
+### Device Selection Differences
+
+Unlike Node.js where `scan()` returns all devices, in browsers:
+- `scan()` shows a picker and returns only the selected device
+- `connectFirst()` effectively does the same thing
+- Multi-device support requires multiple user interactions
+
+## Building for Production
+
+```bash
+npm run build
+```
+
+This creates a `dist/` folder with static files. Deploy to any HTTPS-enabled web server.
+
+## Troubleshooting
+
+**Device picker doesn't appear:**
+- Are you using Chrome, Edge, or Opera?
+- Did you click the button? (User gesture required)
+- Is Bluetooth enabled on your computer?
+
+**Device not shown in picker:**
+- Is the Voltra powered on?
+- Is it connected to Beyond+ or another app?
+- Are you within Bluetooth range?
+
+**"SecurityError: requestDevice requires secure context":**
+- Must use `https://` or `localhost`
+
+**"NotFoundError: User cancelled the chooser":**
+- User closed the picker without selecting - normal behavior
