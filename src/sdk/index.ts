@@ -1,7 +1,8 @@
 /**
  * SDK - High-level API
  *
- * Exports the VoltraClient, VoltraManager, and related types for device interaction.
+ * VoltraManager is the main entry point. It handles device discovery and returns
+ * VoltraClient instances for controlling individual devices.
  */
 
 export { VoltraClient } from './voltra-client';
@@ -18,10 +19,10 @@ export type {
 } from './types';
 
 export type {
+  Platform,
   VoltraManagerOptions,
   VoltraManagerEvent,
   VoltraManagerEventListener,
-  DeviceConnectedCallback,
-  DeviceDisconnectedCallback,
+  ConnectByNameOptions,
   AdapterFactory,
 } from './voltra-manager';

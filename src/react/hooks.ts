@@ -1,37 +1,40 @@
 /**
  * React Hooks for Voltra SDK
  *
- * Provides React hooks for device scanning and connection management.
+ * Clean, focused hooks for device scanning and state management.
  *
  * @example
  * ```tsx
- * import { useScanner, useVoltraClient } from '@voltra/node-sdk/react';
- * import { WebBLEAdapter, BLE } from '@voltra/node-sdk';
+ * import { VoltraManager } from '@voltra/node-sdk';
+ * import { useVoltraScanner, useVoltraDevice } from '@voltra/node-sdk/react';
  *
- * function DeviceScreen() {
- *   const adapter = useMemo(() => new WebBLEAdapter({ ble: BLE }), []);
- *   const { devices, isScanning, scan, error: scanError } = useScanner(adapter);
- *   const {
- *     client,
- *     connectionState,
- *     currentFrame,
- *     error: clientError,
- *     connect,
- *     disconnect,
- *   } = useVoltraClient(adapter);
+ * function WorkoutScreen() {
+ *   const manager = useMemo(() => new VoltraManager(), []);
+ *   const [client, setClient] = useState<VoltraClient | null>(null);
+ *
+ *   // Scanner state
+ *   const { devices, isScanning, scan } = useVoltraScanner(manager);
+ *
+ *   // Device state (when connected)
+ *   const { connectionState, currentFrame, settings } = useVoltraDevice(client);
+ *
+ *   const handleConnect = async (device: DiscoveredDevice) => {
+ *     const connected = await manager.connect(device);
+ *     setClient(connected);
+ *   };
  *
  *   return (
  *     <View>
- *       <Button onPress={() => scan()} disabled={isScanning}>
- *         {isScanning ? 'Scanning...' : 'Scan for Devices'}
+ *       <Button onPress={() => scan()}>
+ *         {isScanning ? 'Scanning...' : 'Scan'}
  *       </Button>
- *       {devices.map((device) => (
- *         <Button key={device.id} onPress={() => connect(device)}>
- *           {device.name ?? device.id}
+ *       {devices.map((d) => (
+ *         <Button key={d.id} onPress={() => handleConnect(d)}>
+ *           {d.name}
  *         </Button>
  *       ))}
- *       {connectionState === 'connected' && currentFrame && (
- *         <Text>Position: {currentFrame.position}</Text>
+ *       {connectionState === 'connected' && (
+ *         <Text>Position: {currentFrame?.position}</Text>
  *       )}
  *     </View>
  *   );
@@ -39,161 +42,119 @@
  * ```
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import type { BLEAdapter } from '../bluetooth/adapters/types';
+import { useState, useEffect, useCallback } from 'react';
 import type { DiscoveredDevice } from '../bluetooth/models/device';
 import type { TelemetryFrame } from '../voltra/models/telemetry';
 import type { VoltraConnectionState } from '../voltra/models/connection';
 import type { VoltraDeviceSettings, VoltraRecordingState } from '../voltra/models/device';
-import { filterVoltraDevices } from '../voltra/models/device-filter';
-import { VoltraClient } from '../sdk/voltra-client';
+import type { VoltraManager } from '../sdk/voltra-manager';
+import type { VoltraClient } from '../sdk/voltra-client';
 import type { ScanOptions } from '../sdk/types';
 
 // =============================================================================
-// useScanner
+// useVoltraScanner
 // =============================================================================
 
 /**
- * Options for useScanner hook.
+ * Scanner state and controls.
  */
-export interface UseScannerOptions {
-  /**
-   * Whether to automatically filter for Voltra devices only.
-   * Default: true
-   */
-  filterVoltra?: boolean;
-
-  /**
-   * Default scan timeout in milliseconds.
-   * Default: 10000
-   */
-  defaultTimeout?: number;
-}
-
-/**
- * Return type for useScanner hook.
- */
-export interface UseScannerResult {
-  /** Discovered devices from the last scan */
+export interface VoltraScannerState {
+  /** Devices discovered in the last scan */
   devices: DiscoveredDevice[];
-  /** Whether a scan is currently in progress */
+  /** Whether a scan is in progress */
   isScanning: boolean;
-  /** Error from the last scan attempt, if any */
+  /** Error from the last scan, if any */
   error: Error | null;
   /** Start scanning for devices */
   scan: (options?: ScanOptions) => Promise<DiscoveredDevice[]>;
-  /** Clear the discovered devices list */
-  clearDevices: () => void;
+  /** Clear discovered devices */
+  clear: () => void;
 }
 
 /**
  * Hook for scanning for Voltra devices.
  *
- * @param adapter BLE adapter to use for scanning
- * @param options Scanner options
+ * @param manager VoltraManager instance
  * @returns Scanner state and controls
  */
-export function useScanner(
-  adapter: BLEAdapter | null,
-  options: UseScannerOptions = {}
-): UseScannerResult {
-  const { filterVoltra = true, defaultTimeout = 10000 } = options;
-
+export function useVoltraScanner(manager: VoltraManager | null): VoltraScannerState {
   const [devices, setDevices] = useState<DiscoveredDevice[]>([]);
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
+  // Sync with manager's scan state
+  useEffect(() => {
+    if (!manager) return;
+
+    const unsubscribe = manager.subscribe((event) => {
+      switch (event.type) {
+        case 'scanStarted':
+          setIsScanning(true);
+          setError(null);
+          break;
+        case 'scanStopped':
+          setIsScanning(false);
+          setDevices(event.devices);
+          break;
+      }
+    });
+
+    // Sync initial state
+    setDevices(manager.devices);
+    setIsScanning(manager.isScanning);
+
+    return unsubscribe;
+  }, [manager]);
+
   const scan = useCallback(
-    async (scanOptions: ScanOptions = {}): Promise<DiscoveredDevice[]> => {
-      if (!adapter) {
-        const err = new Error('No adapter provided');
+    async (options?: ScanOptions): Promise<DiscoveredDevice[]> => {
+      if (!manager) {
+        const err = new Error('No manager provided');
         setError(err);
         throw err;
       }
 
-      const timeout = scanOptions.timeout ?? defaultTimeout;
-      const shouldFilter = scanOptions.filterVoltra ?? filterVoltra;
-
-      setIsScanning(true);
-      setError(null);
-
       try {
-        const foundDevices = await adapter.scan(timeout);
-        const filtered = shouldFilter ? filterVoltraDevices(foundDevices) : foundDevices;
-        setDevices(filtered);
-        return filtered;
+        return await manager.scan(options);
       } catch (e) {
         const err = e instanceof Error ? e : new Error(String(e));
         setError(err);
         throw err;
-      } finally {
-        setIsScanning(false);
       }
     },
-    [adapter, defaultTimeout, filterVoltra]
+    [manager]
   );
 
-  const clearDevices = useCallback(() => {
+  const clear = useCallback(() => {
     setDevices([]);
     setError(null);
   }, []);
 
-  return { devices, isScanning, error, scan, clearDevices };
+  return { devices, isScanning, error, scan, clear };
 }
 
 // =============================================================================
-// useVoltraClient
+// useVoltraDevice
 // =============================================================================
 
 /**
- * Options for useVoltraClient hook.
+ * Device state.
  */
-export interface UseVoltraClientOptions {
-  /**
-   * Enable auto-reconnect on connection loss.
-   * Default: false
-   */
-  autoReconnect?: boolean;
-}
-
-/**
- * Return type for useVoltraClient hook.
- */
-export interface UseVoltraClientResult {
-  /** The VoltraClient instance (null until first connection) */
-  client: VoltraClient | null;
+export interface VoltraDeviceState {
   /** Current connection state */
   connectionState: VoltraConnectionState;
-  /** Whether connected to a device */
+  /** Whether connected */
   isConnected: boolean;
   /** Current recording state */
   recordingState: VoltraRecordingState;
-  /** Whether currently recording */
+  /** Whether recording is active */
   isRecording: boolean;
   /** Current device settings */
   settings: VoltraDeviceSettings;
   /** Most recent telemetry frame */
   currentFrame: TelemetryFrame | null;
-  /** Error from the last operation, if any */
+  /** Last error, if any */
   error: Error | null;
-  /** Connect to a device */
-  connect: (device: DiscoveredDevice) => Promise<void>;
-  /** Disconnect from current device */
-  disconnect: () => Promise<void>;
-  /** Set weight in pounds */
-  setWeight: (lbs: number) => Promise<void>;
-  /** Set chains in pounds */
-  setChains: (lbs: number) => Promise<void>;
-  /** Set eccentric adjustment */
-  setEccentric: (percent: number) => Promise<void>;
-  /** Prepare for recording */
-  prepareRecording: () => Promise<void>;
-  /** Start recording */
-  startRecording: () => Promise<void>;
-  /** Stop recording */
-  stopRecording: () => Promise<void>;
-  /** End current set (stay in workout mode) */
-  endSet: () => Promise<void>;
 }
 
 const DEFAULT_SETTINGS: VoltraDeviceSettings = {
@@ -202,149 +163,213 @@ const DEFAULT_SETTINGS: VoltraDeviceSettings = {
   eccentric: 0,
 };
 
+const DEFAULT_STATE: VoltraDeviceState = {
+  connectionState: 'disconnected',
+  isConnected: false,
+  recordingState: 'idle',
+  isRecording: false,
+  settings: DEFAULT_SETTINGS,
+  currentFrame: null,
+  error: null,
+};
+
 /**
- * Hook for managing a Voltra device connection.
+ * Hook for observing a Voltra device's state.
  *
- * @param adapter BLE adapter to use for connection
- * @param options Client options
- * @returns Client state and controls
+ * @param client VoltraClient instance (or null if not connected)
+ * @returns Device state
  */
-export function useVoltraClient(
-  adapter: BLEAdapter | null,
-  options: UseVoltraClientOptions = {}
-): UseVoltraClientResult {
-  const { autoReconnect = false } = options;
+export function useVoltraDevice(client: VoltraClient | null): VoltraDeviceState {
+  const [state, setState] = useState<VoltraDeviceState>(DEFAULT_STATE);
 
-  // Client instance (persisted across renders)
-  const clientRef = useRef<VoltraClient | null>(null);
-
-  // State
-  const [connectionState, setConnectionState] = useState<VoltraConnectionState>('disconnected');
-  const [recordingState, setRecordingState] = useState<VoltraRecordingState>('idle');
-  const [settings, setSettings] = useState<VoltraDeviceSettings>(DEFAULT_SETTINGS);
-  const [currentFrame, setCurrentFrame] = useState<TelemetryFrame | null>(null);
-  const [error, setError] = useState<Error | null>(null);
-
-  // Create client when adapter changes
   useEffect(() => {
-    if (!adapter) {
-      clientRef.current = null;
+    if (!client) {
+      setState(DEFAULT_STATE);
       return;
     }
 
-    const client = new VoltraClient({ adapter, autoReconnect });
-    clientRef.current = client;
+    // Initial state from client
+    setState({
+      connectionState: client.connectionState,
+      isConnected: client.isConnected,
+      recordingState: client.recordingState,
+      isRecording: client.isRecording,
+      settings: client.settings,
+      currentFrame: null,
+      error: client.error,
+    });
 
-    // Subscribe to events
+    // Subscribe to client events
     const unsubscribe = client.subscribe((event) => {
       switch (event.type) {
         case 'connectionStateChanged':
-          setConnectionState(event.state);
+          setState((prev) => ({
+            ...prev,
+            connectionState: event.state,
+            isConnected: event.state === 'connected',
+          }));
           break;
+
         case 'recordingStateChanged':
-          setRecordingState(event.state);
+          setState((prev) => ({
+            ...prev,
+            recordingState: event.state,
+            isRecording: event.state === 'active',
+          }));
           break;
+
         case 'frame':
-          setCurrentFrame(event.frame);
+          setState((prev) => ({ ...prev, currentFrame: event.frame }));
           break;
+
         case 'error':
-          setError(event.error);
+          setState((prev) => ({ ...prev, error: event.error }));
           break;
+
         case 'connected':
-          setSettings(client.settings);
-          setError(null);
+          setState((prev) => ({
+            ...prev,
+            settings: client.settings,
+            error: null,
+          }));
           break;
+
         case 'disconnected':
-          setCurrentFrame(null);
-          setSettings(DEFAULT_SETTINGS);
+          setState(DEFAULT_STATE);
           break;
       }
     });
 
-    return () => {
-      unsubscribe();
-      client.dispose();
-      clientRef.current = null;
-    };
-  }, [adapter, autoReconnect]);
+    return unsubscribe;
+  }, [client]);
 
-  // Connection methods
-  const connect = useCallback(async (device: DiscoveredDevice): Promise<void> => {
-    if (!clientRef.current) {
-      throw new Error('No adapter provided');
-    }
-    setError(null);
-    try {
-      await clientRef.current.connect(device);
-    } catch (e) {
-      const err = e instanceof Error ? e : new Error(String(e));
-      setError(err);
-      throw err;
-    }
-  }, []);
+  return state;
+}
+
+// =============================================================================
+// useVoltra (Combined convenience hook)
+// =============================================================================
+
+/**
+ * Combined state for simple single-device use cases.
+ */
+export interface UseVoltraState extends VoltraScannerState, VoltraDeviceState {
+  /** The connected client, if any */
+  client: VoltraClient | null;
+  /** Connect to a device */
+  connect: (device: DiscoveredDevice) => Promise<VoltraClient>;
+  /** Disconnect current device */
+  disconnect: () => Promise<void>;
+  /** Set weight (shorthand) */
+  setWeight: (lbs: number) => Promise<void>;
+  /** Set chains (shorthand) */
+  setChains: (lbs: number) => Promise<void>;
+  /** Set eccentric (shorthand) */
+  setEccentric: (percent: number) => Promise<void>;
+  /** Start recording (shorthand) */
+  startRecording: () => Promise<void>;
+  /** Stop recording (shorthand) */
+  stopRecording: () => Promise<void>;
+}
+
+/**
+ * All-in-one hook for simple single-device scenarios.
+ * Combines scanner and device state.
+ *
+ * For multi-device scenarios, use useVoltraScanner and useVoltraDevice separately.
+ *
+ * @param manager VoltraManager instance
+ * @returns Combined state and controls
+ */
+export function useVoltra(manager: VoltraManager | null): UseVoltraState {
+  const [client, setClient] = useState<VoltraClient | null>(null);
+
+  const scanner = useVoltraScanner(manager);
+  const device = useVoltraDevice(client);
+
+  // Listen for device connections/disconnections
+  useEffect(() => {
+    if (!manager) return;
+
+    const unsubConnect = manager.onDeviceConnected((connectedClient) => {
+      setClient(connectedClient);
+    });
+
+    const unsubDisconnect = manager.onDeviceDisconnected(() => {
+      setClient(null);
+    });
+
+    return () => {
+      unsubConnect();
+      unsubDisconnect();
+    };
+  }, [manager]);
+
+  const connect = useCallback(
+    async (deviceToConnect: DiscoveredDevice): Promise<VoltraClient> => {
+      if (!manager) throw new Error('No manager provided');
+      const connectedClient = await manager.connect(deviceToConnect);
+      setClient(connectedClient);
+      return connectedClient;
+    },
+    [manager]
+  );
 
   const disconnect = useCallback(async (): Promise<void> => {
-    if (!clientRef.current) return;
-    await clientRef.current.disconnect();
-  }, []);
+    if (!client) return;
+    await client.disconnect();
+    setClient(null);
+  }, [client]);
 
-  // Settings methods
-  const setWeight = useCallback(async (lbs: number): Promise<void> => {
-    if (!clientRef.current) throw new Error('Not connected');
-    await clientRef.current.setWeight(lbs);
-    setSettings(clientRef.current.settings);
-  }, []);
+  // Shorthand methods
+  const setWeight = useCallback(
+    async (lbs: number) => {
+      if (!client) throw new Error('Not connected');
+      await client.setWeight(lbs);
+    },
+    [client]
+  );
 
-  const setChains = useCallback(async (lbs: number): Promise<void> => {
-    if (!clientRef.current) throw new Error('Not connected');
-    await clientRef.current.setChains(lbs);
-    setSettings(clientRef.current.settings);
-  }, []);
+  const setChains = useCallback(
+    async (lbs: number) => {
+      if (!client) throw new Error('Not connected');
+      await client.setChains(lbs);
+    },
+    [client]
+  );
 
-  const setEccentric = useCallback(async (percent: number): Promise<void> => {
-    if (!clientRef.current) throw new Error('Not connected');
-    await clientRef.current.setEccentric(percent);
-    setSettings(clientRef.current.settings);
-  }, []);
+  const setEccentric = useCallback(
+    async (percent: number) => {
+      if (!client) throw new Error('Not connected');
+      await client.setEccentric(percent);
+    },
+    [client]
+  );
 
-  // Recording methods
-  const prepareRecording = useCallback(async (): Promise<void> => {
-    if (!clientRef.current) throw new Error('Not connected');
-    await clientRef.current.prepareRecording();
-  }, []);
+  const startRecording = useCallback(async () => {
+    if (!client) throw new Error('Not connected');
+    await client.startRecording();
+  }, [client]);
 
-  const startRecording = useCallback(async (): Promise<void> => {
-    if (!clientRef.current) throw new Error('Not connected');
-    await clientRef.current.startRecording();
-  }, []);
-
-  const stopRecording = useCallback(async (): Promise<void> => {
-    if (!clientRef.current) throw new Error('Not connected');
-    await clientRef.current.stopRecording();
-  }, []);
-
-  const endSet = useCallback(async (): Promise<void> => {
-    if (!clientRef.current) throw new Error('Not connected');
-    await clientRef.current.endSet();
-  }, []);
+  const stopRecording = useCallback(async () => {
+    if (!client) throw new Error('Not connected');
+    await client.stopRecording();
+  }, [client]);
 
   return {
-    client: clientRef.current,
-    connectionState,
-    isConnected: connectionState === 'connected',
-    recordingState,
-    isRecording: recordingState === 'active',
-    settings,
-    currentFrame,
-    error,
+    // Scanner state
+    ...scanner,
+    // Device state
+    ...device,
+    // Client reference
+    client,
+    // Actions
     connect,
     disconnect,
     setWeight,
     setChains,
     setEccentric,
-    prepareRecording,
     startRecording,
     stopRecording,
-    endSet,
   };
 }

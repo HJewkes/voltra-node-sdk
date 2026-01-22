@@ -8,10 +8,10 @@ SDK for connecting to and controlling Voltra fitness devices.
 
 ## Features
 
-- **Cross-platform**: Works on React Native, Web browsers, and Node.js
-- **High-level API**: `VoltraClient` for simplified single-device control
-- **Multi-device**: `VoltraManager` for fleet management
-- **React hooks**: `useScanner` and `useVoltraClient` for React/React Native apps
+- **Simple API**: `VoltraManager` handles discovery, returns `VoltraClient` for device control
+- **Cross-platform**: Web browsers, Node.js, and React Native
+- **Multi-device**: Connect to multiple devices simultaneously
+- **React hooks**: Clean `useVoltraScanner` and `useVoltraDevice` hooks
 - **TypeScript**: Full type definitions included
 - **Real-time telemetry**: Stream position, velocity, and force data
 
@@ -21,156 +21,108 @@ SDK for connecting to and controlling Voltra fitness devices.
 npm install @voltra/node-sdk
 ```
 
-### Platform-specific dependencies
+### Platform dependencies
 
-**React Native:**
-```bash
-npm install react-native-ble-plx
-```
-
-**Node.js:**
-```bash
-npm install webbluetooth
-```
-
-**Web browsers:** No additional dependencies needed (uses Web Bluetooth API).
+| Platform | Additional Install |
+|----------|-------------------|
+| React Native | `npm install react-native-ble-plx` |
+| Node.js | `npm install webbluetooth` |
+| Web browsers | None (uses Web Bluetooth API) |
 
 ## Quick Start
 
-### React Native
+### Web / Node.js
 
-```tsx
-import { VoltraClient, NativeBLEAdapter, BLE } from '@voltra/node-sdk';
+```typescript
+import { VoltraManager } from '@voltra/node-sdk';
 
-// Create adapter and client
-const adapter = new NativeBLEAdapter({ ble: BLE });
-const client = new VoltraClient({ adapter });
+// Create manager (auto-detects platform)
+const manager = new VoltraManager();
 
-// Scan and connect
-const devices = await client.scan();
-await client.connect(devices[0]);
+// Scan and connect to first device
+const client = await manager.connectFirst();
 
-// Configure device
-await client.setWeight(50);  // 50 lbs
+// Or connect by name
+const client = await manager.connectByName('VTR-123456');
 
-// Listen for telemetry
+// Control the device
+await client.setWeight(50);
+
 client.onFrame((frame) => {
   console.log('Position:', frame.position, 'Velocity:', frame.velocity);
 });
 
-// Start recording (workout)
 await client.startRecording();
 // ... workout ...
 await client.stopRecording();
 
 // Cleanup
-await client.disconnect();
-client.dispose();
+manager.dispose();
 ```
 
-### Web Browser
+### React Native
 
 ```typescript
-import { VoltraClient, WebBLEAdapter, BLE } from '@voltra/node-sdk';
+import { VoltraManager } from '@voltra/node-sdk';
 
-const adapter = new WebBLEAdapter({ ble: BLE });
-const client = new VoltraClient({ adapter });
-
-// Note: scan() triggers browser's Bluetooth device picker
-const devices = await client.scan();
-await client.connect(devices[0]);
-
-// Rest of the API is identical to React Native
-await client.setWeight(50);
-client.onFrame((frame) => console.log(frame));
-```
-
-### Node.js
-
-```typescript
-import { VoltraClient, NodeBLEAdapter, BLE } from '@voltra/node-sdk';
-
-const adapter = new NodeBLEAdapter({
-  ble: BLE,
-  // Optional: auto-select device by name
-  deviceChooser: (devices) => devices.find(d => d.name?.includes('VTR')),
-});
-
-const client = new VoltraClient({ adapter });
-
-const devices = await client.scan({ timeout: 10000 });
-await client.connect(devices[0]);
+// Specify native platform
+const manager = VoltraManager.forNative();
+// or: new VoltraManager({ platform: 'native' })
 
 // Rest of the API is identical
+const client = await manager.connectFirst();
 ```
 
-## React Hooks
-
-For React and React Native applications:
+### React Hooks
 
 ```tsx
-import { useScanner, useVoltraClient } from '@voltra/node-sdk/react';
-import { WebBLEAdapter, BLE } from '@voltra/node-sdk';
+import { VoltraManager } from '@voltra/node-sdk';
+import { useVoltraScanner, useVoltraDevice } from '@voltra/node-sdk/react';
 
 function WorkoutScreen() {
-  const adapter = useMemo(() => new WebBLEAdapter({ ble: BLE }), []);
-  
-  const { devices, isScanning, scan } = useScanner(adapter);
-  const {
-    connectionState,
-    currentFrame,
-    connect,
-    disconnect,
-    setWeight,
-    startRecording,
-    stopRecording,
-  } = useVoltraClient(adapter);
+  const manager = useMemo(() => VoltraManager.forNative(), []);
+  const [client, setClient] = useState<VoltraClient | null>(null);
+
+  // Scanner state
+  const { devices, isScanning, scan } = useVoltraScanner(manager);
+
+  // Device state
+  const { connectionState, currentFrame, isRecording } = useVoltraDevice(client);
+
+  const handleConnect = async (device: DiscoveredDevice) => {
+    const connected = await manager.connect(device);
+    setClient(connected);
+  };
 
   return (
     <View>
-      <Button onPress={() => scan()} disabled={isScanning}>
+      <Button onPress={() => scan()}>
         {isScanning ? 'Scanning...' : 'Scan'}
       </Button>
-      
+
       {devices.map((device) => (
-        <Button key={device.id} onPress={() => connect(device)}>
-          {device.name ?? device.id}
+        <Button key={device.id} onPress={() => handleConnect(device)}>
+          {device.name}
         </Button>
       ))}
-      
+
       {connectionState === 'connected' && (
-        <>
-          <Text>Position: {currentFrame?.position}</Text>
-          <Button onPress={startRecording}>Start</Button>
-          <Button onPress={stopRecording}>Stop</Button>
-        </>
+        <Text>Position: {currentFrame?.position}</Text>
       )}
     </View>
   );
 }
 ```
 
-## Multi-Device Management
-
-For controlling multiple Voltra devices simultaneously:
+## Multi-Device
 
 ```typescript
-import { VoltraManager, NativeBLEAdapter, BLE } from '@voltra/node-sdk';
-
-const manager = new VoltraManager({
-  adapterFactory: () => new NativeBLEAdapter({ ble: BLE }),
-});
+const manager = new VoltraManager();
 
 // Listen for device events
-manager.onDeviceConnected((client, deviceId) => {
-  console.log('Connected:', deviceId);
-  client.onFrame((frame) => {
-    console.log(`[${deviceId}]`, frame.position);
-  });
-});
-
-manager.onDeviceDisconnected((deviceId) => {
-  console.log('Disconnected:', deviceId);
+manager.onDeviceConnected((client, deviceId, deviceName) => {
+  console.log('Connected:', deviceName);
+  client.onFrame((frame) => console.log(`[${deviceName}]`, frame.position));
 });
 
 // Connect to multiple devices
@@ -182,141 +134,117 @@ await manager.connect(devices[1]);
 const client = manager.getClient(devices[0].id);
 await client?.setWeight(50);
 
-// Cleanup
-manager.dispose();
+// Or get all clients
+for (const client of manager.getAllClients()) {
+  await client.startRecording();
+}
 ```
 
 ## API Reference
 
-### VoltraClient
+### VoltraManager
 
-Main class for single-device interaction.
+Main entry point for the SDK.
 
 ```typescript
-const client = new VoltraClient(options?: VoltraClientOptions);
+const manager = new VoltraManager(options?);
+// or
+const manager = VoltraManager.forWeb();
+const manager = VoltraManager.forNode();
+const manager = VoltraManager.forNative();
 ```
-
-**Options:**
-- `adapter?: BLEAdapter` - BLE adapter to use
-- `autoReconnect?: boolean` - Auto-reconnect on disconnect (default: false)
-- `maxReconnectAttempts?: number` - Max reconnect attempts (default: 3)
-- `reconnectDelayMs?: number` - Delay between attempts (default: 1000)
 
 **Methods:**
 - `scan(options?)` - Scan for Voltra devices
-- `connect(device)` - Connect to a device
-- `disconnect()` - Disconnect from device
-- `setWeight(lbs)` - Set weight (5-200 in increments of 5)
-- `setChains(lbs)` - Set chains/reverse resistance (0-100)
-- `setEccentric(percent)` - Set eccentric adjustment (-195 to +195)
-- `prepareRecording()` - Prepare for recording
-- `startRecording()` - Start recording (workout)
-- `stopRecording()` - Stop recording
-- `endSet()` - End current set, stay in workout mode
-- `onFrame(callback)` - Subscribe to telemetry frames
-- `subscribe(listener)` - Subscribe to all events
+- `connect(device)` - Connect and return a VoltraClient
+- `connectFirst(options?)` - Connect to first available device
+- `connectByName(name, options?)` - Scan + connect by device name
+- `getClient(deviceId)` - Get connected client by ID
+- `getAllClients()` - Get all connected clients
+- `disconnect(deviceId)` - Disconnect specific device
+- `disconnectAll()` - Disconnect all devices
 - `dispose()` - Clean up resources
 
+### VoltraClient
+
+Controls a single connected device.
+
+**Methods:**
+- `setWeight(lbs)` - Set weight (5-200 in increments of 5)
+- `setChains(lbs)` - Set chains (0-100)
+- `setEccentric(percent)` - Set eccentric adjustment (-195 to +195)
+- `startRecording()` - Start recording
+- `stopRecording()` - Stop recording
+- `onFrame(callback)` - Subscribe to telemetry frames
+- `disconnect()` - Disconnect from device
+
 **Properties:**
-- `connectionState` - Current connection state
+- `connectionState` - 'disconnected' | 'connecting' | 'authenticating' | 'connected'
 - `isConnected` - Whether connected
 - `settings` - Current device settings
-- `recordingState` - Current recording state
+- `recordingState` - 'idle' | 'preparing' | 'ready' | 'active' | 'stopping'
 - `isRecording` - Whether recording
 
 ### TelemetryFrame
-
-Raw telemetry data from the device:
 
 ```typescript
 interface TelemetryFrame {
   sequence: number;   // Packet sequence number
   timestamp: number;  // Unix ms when received
   phase: number;      // Movement phase (see MovementPhase)
-  position: number;   // Position (0-600 raw range)
+  position: number;   // Position (0-600 raw)
   velocity: number;   // Velocity (raw value)
   force: number;      // Force (signed value)
 }
 ```
 
-### Movement Phases
+### React Hooks
 
 ```typescript
-import { MovementPhase, PhaseNames } from '@voltra/node-sdk';
+import { useVoltraScanner, useVoltraDevice } from '@voltra/node-sdk/react';
 
-// MovementPhase enum values
-MovementPhase.CONCENTRIC    // 0 - Lifting phase
-MovementPhase.ECCENTRIC     // 1 - Lowering phase
-MovementPhase.ISOMETRIC     // 2 - Holding
-MovementPhase.AT_BOTTOM     // 3 - At bottom position
-MovementPhase.AT_TOP        // 4 - At top position
+// Scanner state
+const { devices, isScanning, scan, error, clear } = useVoltraScanner(manager);
 
-// Get display name
-PhaseNames[MovementPhase.CONCENTRIC]  // "CONCENTRIC"
+// Device state
+const {
+  connectionState,
+  isConnected,
+  recordingState,
+  isRecording,
+  currentFrame,
+  settings,
+  error,
+} = useVoltraDevice(client);
 ```
 
-### Error Handling
-
-The SDK provides typed errors for better error handling:
+## Error Handling
 
 ```typescript
 import {
   VoltraSDKError,
   ConnectionError,
   AuthenticationError,
-  TimeoutError,
   NotConnectedError,
-  InvalidSettingError,
-  BluetoothUnavailableError,
-  CommandError,
-  ErrorCode,
 } from '@voltra/node-sdk';
 
 try {
-  await client.connect(device);
+  await manager.connectByName('VTR-123');
 } catch (error) {
   if (error instanceof ConnectionError) {
     console.log('Connection failed:', error.code);
-  } else if (error instanceof AuthenticationError) {
-    console.log('Auth failed - device may need reset');
-  } else if (error instanceof VoltraSDKError) {
-    console.log('SDK error:', error.message, error.code);
   }
 }
 ```
 
-## Platform Notes
-
-### React Native
-
-- Requires `react-native-ble-plx` for BLE support
-- Handles iOS/Android permission requests automatically
-- Background mode requires additional app configuration
-
-### Web Browser
-
-- Uses Web Bluetooth API (Chrome, Edge, Opera)
-- `scan()` triggers browser's device picker (user must select device)
-- HTTPS required (or localhost for development)
-
-### Node.js
-
-- Requires `webbluetooth` package
-- Uses system's Bluetooth adapter
-- `deviceChooser` option for programmatic device selection
-
 ## Examples
 
-See the [examples](./examples) directory for complete working examples:
+See the [examples](./examples) directory:
 
-- [Node.js](./examples/node) - Basic connection and workout
-- [Web Browser](./examples/web) - Browser-based interface
-- [React Native](./examples/react-native) - Expo example app
-
-## Contributing
-
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup and guidelines.
+- [Node.js](./examples/node) - CLI examples
+- [Web Browser](./examples/web) - Interactive demo
+- [React Native](./examples/react-native) - Expo app
 
 ## License
 
-MIT - see [LICENSE](./LICENSE) for details.
+MIT - see [LICENSE](./LICENSE)

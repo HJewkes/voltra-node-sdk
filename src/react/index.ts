@@ -1,19 +1,19 @@
 /**
  * React Hooks for Voltra SDK
  *
- * Import from '@voltra/node-sdk/react' to use these hooks.
+ * Import from '@voltra/node-sdk/react'
  *
  * @example
  * ```tsx
- * import { useScanner, useVoltraClient } from '@voltra/node-sdk/react';
+ * import { useVoltraScanner, useVoltraDevice, useVoltra } from '@voltra/node-sdk/react';
  * ```
  */
 
 export {
-  useScanner,
-  useVoltraClient,
-  type UseScannerOptions,
-  type UseScannerResult,
-  type UseVoltraClientOptions,
-  type UseVoltraClientResult,
+  useVoltraScanner,
+  useVoltraDevice,
+  useVoltra,
+  type VoltraScannerState,
+  type VoltraDeviceState,
+  type UseVoltraState,
 } from './hooks';

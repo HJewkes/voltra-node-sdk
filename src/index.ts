@@ -3,29 +3,34 @@
  *
  * SDK for connecting to and controlling Voltra fitness devices.
  *
- * This SDK provides:
- * - High-level VoltraClient for simplified device interaction
- * - BLE adapters for React Native, Web, and Node.js
- * - Voltra protocol implementation (authentication, commands, telemetry)
- * - Device discovery and connection management
- * - Real-time telemetry decoding
+ * Use VoltraManager as the main entry point. It handles device discovery
+ * and returns VoltraClient instances for controlling individual devices.
  *
  * @example
  * ```typescript
- * import { VoltraClient, WebBLEAdapter, BLE } from '@voltra/node-sdk';
+ * import { VoltraManager } from '@voltra/node-sdk';
  *
- * const adapter = new WebBLEAdapter({ ble: BLE });
- * const client = new VoltraClient({ adapter });
+ * // Create manager (auto-detects platform for web/node)
+ * const manager = new VoltraManager();
  *
- * const devices = await client.scan();
- * await client.connect(devices[0]);
+ * // Scan and connect
+ * const devices = await manager.scan();
+ * const client = await manager.connect(devices[0]);
+ *
+ * // Or connect by name in one step
+ * const client = await manager.connectByName('VTR-123456');
+ *
+ * // Control the device
  * await client.setWeight(50);
- *
- * client.onFrame((frame) => {
- *   console.log('Position:', frame.position);
- * });
- *
+ * client.onFrame((frame) => console.log('Position:', frame.position));
  * await client.startRecording();
+ * ```
+ *
+ * For React Native, specify the platform:
+ * ```typescript
+ * const manager = VoltraManager.forNative();
+ * // or
+ * const manager = new VoltraManager({ platform: 'native' });
  * ```
  */
 
@@ -36,6 +41,7 @@
 export {
   VoltraClient,
   VoltraManager,
+  type Platform,
   type VoltraClientOptions,
   type VoltraClientState,
   type VoltraClientEvent,
@@ -43,8 +49,7 @@ export {
   type VoltraManagerOptions,
   type VoltraManagerEvent,
   type VoltraManagerEventListener,
-  type DeviceConnectedCallback,
-  type DeviceDisconnectedCallback,
+  type ConnectByNameOptions,
   type AdapterFactory,
   type FrameListener,
   type ScanOptions,

@@ -1,10 +1,10 @@
 /**
  * Web Browser Example
  *
- * Demonstrates using the Voltra SDK in a web browser with the Web Bluetooth API.
+ * Demonstrates the simplified SDK API in a web browser.
  */
 
-import { VoltraClient, WebBLEAdapter, BLE, type TelemetryFrame } from '@voltra/node-sdk';
+import { VoltraManager, type TelemetryFrame, type VoltraClient } from '@voltra/node-sdk';
 
 // DOM elements
 const statusDot = document.getElementById('status-dot')!;
@@ -23,8 +23,8 @@ const forceValue = document.getElementById('force-value')!;
 const logEl = document.getElementById('log')!;
 
 // State
+const manager = new VoltraManager();  // Auto-detects web platform
 let client: VoltraClient | null = null;
-let adapter: WebBLEAdapter | null = null;
 
 // Logging
 function log(message: string, type: 'info' | 'error' | 'success' = 'info') {
@@ -35,13 +35,12 @@ function log(message: string, type: 'info' | 'error' | 'success' = 'info') {
   logEl.scrollTop = logEl.scrollHeight;
 }
 
-// Update UI based on connection state
+// Update UI
 function updateUI(state: string, isRecording = false) {
   statusDot.className = 'status-dot';
   
   switch (state) {
     case 'disconnected':
-      statusDot.classList.add('');
       statusText.textContent = 'Disconnected';
       scanBtn.disabled = false;
       disconnectBtn.disabled = true;
@@ -79,9 +78,10 @@ async function scanAndConnect() {
   try {
     log('Scanning for devices...');
     
-    // Create adapter and client
-    adapter = new WebBLEAdapter({ ble: BLE });
-    client = new VoltraClient({ adapter });
+    // Scan and connect to first device - simple!
+    client = await manager.connectFirst();
+    
+    log(`Connected to ${client.connectedDeviceName ?? client.connectedDeviceId}!`, 'success');
 
     // Subscribe to events
     client.subscribe((event) => {
@@ -101,17 +101,7 @@ async function scanAndConnect() {
       }
     });
 
-    // Scan - this triggers the browser's Bluetooth device picker
-    const devices = await client.scan();
-    
-    if (devices.length === 0) {
-      log('No device selected', 'error');
-      return;
-    }
-
-    log(`Connecting to ${devices[0].name ?? devices[0].id}...`);
-    await client.connect(devices[0]);
-    log('Connected!', 'success');
+    updateUI('connected');
 
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -125,14 +115,12 @@ async function disconnect() {
   if (!client) return;
   
   try {
-    await client.disconnect();
+    await manager.disconnectAll();
     log('Disconnected', 'info');
   } catch (error) {
     log(`Disconnect error: ${error}`, 'error');
   } finally {
-    client.dispose();
     client = null;
-    adapter = null;
     updateUI('disconnected');
   }
 }
@@ -150,10 +138,9 @@ async function applySettings() {
   }
 }
 
-// Start recording
+// Recording
 async function startRecording() {
   if (!client?.isConnected) return;
-  
   try {
     await client.startRecording();
     log('Recording started', 'success');
@@ -162,10 +149,8 @@ async function startRecording() {
   }
 }
 
-// Stop recording
 async function stopRecording() {
   if (!client?.isConnected) return;
-  
   try {
     await client.stopRecording();
     log('Recording stopped', 'success');

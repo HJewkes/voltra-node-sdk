@@ -1,37 +1,27 @@
 /**
  * VoltraManager
  *
- * Manages multiple Voltra device connections for fleet/multi-device scenarios.
- * Use this when you need to connect to and control multiple Voltra devices simultaneously.
+ * Main entry point for the Voltra SDK. Handles device discovery and connection.
+ * Returns VoltraClient instances for controlling individual devices.
  *
  * @example
  * ```typescript
- * import { VoltraManager, NativeBLEAdapter, BLE } from '@voltra/node-sdk';
+ * import { VoltraManager } from '@voltra/node-sdk';
  *
- * const manager = new VoltraManager({
- *   adapterFactory: () => new NativeBLEAdapter({ ble: BLE }),
- * });
+ * const manager = new VoltraManager();
  *
- * // Listen for device events
- * manager.onDeviceConnected((client, deviceId) => {
- *   console.log('Device connected:', deviceId);
- *   client.onFrame((frame) => {
- *     console.log(`[${deviceId}] Position:`, frame.position);
- *   });
- * });
- *
- * manager.onDeviceDisconnected((deviceId) => {
- *   console.log('Device disconnected:', deviceId);
- * });
- *
- * // Scan and connect
+ * // Scan for devices
  * const devices = await manager.scan();
- * await manager.connect(devices[0]);
- * await manager.connect(devices[1]);
  *
- * // Access specific device
- * const client = manager.getClient('device-id');
- * await client?.setWeight(50);
+ * // Connect to a device (returns a VoltraClient)
+ * const client = await manager.connect(devices[0]);
+ *
+ * // Or connect by name (scans + connects in one step)
+ * const client = await manager.connectByName('VTR-123456');
+ *
+ * // Use the client
+ * await client.setWeight(50);
+ * client.onFrame((frame) => console.log(frame.position));
  *
  * // Cleanup
  * manager.dispose();
@@ -41,16 +31,17 @@
 import type { BLEAdapter } from '../bluetooth/adapters/types';
 import type { DiscoveredDevice } from '../bluetooth/models/device';
 import { filterVoltraDevices } from '../voltra/models/device-filter';
+import { BLE } from '../voltra/protocol/constants';
 import { VoltraClient } from './voltra-client';
-import type {
-  VoltraClientOptions,
-  VoltraClientEvent,
-  ScanOptions,
-} from './types';
+import type { VoltraClientOptions, VoltraClientEvent, ScanOptions } from './types';
+
+/**
+ * Supported platforms for BLE.
+ */
+export type Platform = 'web' | 'node' | 'native';
 
 /**
  * Factory function to create a BLE adapter.
- * Called once per device connection.
  */
 export type AdapterFactory = () => BLEAdapter;
 
@@ -59,23 +50,41 @@ export type AdapterFactory = () => BLEAdapter;
  */
 export interface VoltraManagerOptions {
   /**
-   * Factory function to create BLE adapters.
-   * Each device connection needs its own adapter instance.
+   * Platform to use. If not specified, auto-detects (web/node).
+   * For React Native, use 'native' or import from '@voltra/node-sdk/native'.
    */
-  adapterFactory: AdapterFactory;
+  platform?: Platform;
+
+  /**
+   * Custom adapter factory. Overrides platform detection.
+   * Use this for advanced scenarios or custom adapters.
+   */
+  adapterFactory?: AdapterFactory;
 
   /**
    * Options to pass to each VoltraClient.
-   * The adapter option is ignored (uses adapterFactory instead).
    */
   clientOptions?: Omit<VoltraClientOptions, 'adapter'>;
+}
+
+/**
+ * Options for connectByName.
+ */
+export interface ConnectByNameOptions extends ScanOptions {
+  /**
+   * Match mode for device name.
+   * - 'exact': Name must match exactly
+   * - 'contains': Name must contain the string (default)
+   * - 'startsWith': Name must start with the string
+   */
+  matchMode?: 'exact' | 'contains' | 'startsWith';
 }
 
 /**
  * Manager event types.
  */
 export type VoltraManagerEvent =
-  | { type: 'deviceConnected'; deviceId: string; client: VoltraClient }
+  | { type: 'deviceConnected'; deviceId: string; deviceName: string | null; client: VoltraClient }
   | { type: 'deviceDisconnected'; deviceId: string }
   | { type: 'deviceError'; deviceId: string; error: Error }
   | { type: 'scanStarted' }
@@ -87,21 +96,12 @@ export type VoltraManagerEvent =
 export type VoltraManagerEventListener = (event: VoltraManagerEvent) => void;
 
 /**
- * Callback for device connected event.
- */
-export type DeviceConnectedCallback = (client: VoltraClient, deviceId: string) => void;
-
-/**
- * Callback for device disconnected event.
- */
-export type DeviceDisconnectedCallback = (deviceId: string) => void;
-
-/**
- * Manager for multiple Voltra device connections.
+ * Main entry point for the Voltra SDK.
  */
 export class VoltraManager {
-  private readonly adapterFactory: AdapterFactory;
+  private adapterFactory: AdapterFactory;
   private readonly clientOptions: Omit<VoltraClientOptions, 'adapter'>;
+  private readonly platform: Platform;
 
   // Connected devices
   private clients: Map<string, VoltraClient> = new Map();
@@ -111,7 +111,7 @@ export class VoltraManager {
   private discoveredDevices: DiscoveredDevice[] = [];
 
   // Scanning state
-  private isScanning = false;
+  private _isScanning = false;
   private scanAdapter: BLEAdapter | null = null;
 
   // Event listeners
@@ -120,9 +120,48 @@ export class VoltraManager {
   // Disposed flag
   private disposed = false;
 
-  constructor(options: VoltraManagerOptions) {
-    this.adapterFactory = options.adapterFactory;
+  constructor(options: VoltraManagerOptions = {}) {
     this.clientOptions = options.clientOptions ?? {};
+
+    if (options.adapterFactory) {
+      // Use provided factory
+      this.adapterFactory = options.adapterFactory;
+      this.platform = options.platform ?? 'web';
+    } else if (options.platform) {
+      // Use specified platform
+      this.platform = options.platform;
+      this.adapterFactory = this.createAdapterFactory(options.platform);
+    } else {
+      // Auto-detect platform
+      this.platform = this.detectPlatform();
+      this.adapterFactory = this.createAdapterFactory(this.platform);
+    }
+  }
+
+  // ===========================================================================
+  // Static Factory Methods
+  // ===========================================================================
+
+  /**
+   * Create a manager for web browsers.
+   */
+  static forWeb(options?: Omit<VoltraManagerOptions, 'platform'>): VoltraManager {
+    return new VoltraManager({ ...options, platform: 'web' });
+  }
+
+  /**
+   * Create a manager for Node.js.
+   */
+  static forNode(options?: Omit<VoltraManagerOptions, 'platform'>): VoltraManager {
+    return new VoltraManager({ ...options, platform: 'node' });
+  }
+
+  /**
+   * Create a manager for React Native.
+   * Note: Prefer importing from '@voltra/node-sdk/native' instead.
+   */
+  static forNative(options?: Omit<VoltraManagerOptions, 'platform'>): VoltraManager {
+    return new VoltraManager({ ...options, platform: 'native' });
   }
 
   // ===========================================================================
@@ -146,8 +185,8 @@ export class VoltraManager {
   /**
    * Check if scanning is in progress.
    */
-  get scanning(): boolean {
-    return this.isScanning;
+  get isScanning(): boolean {
+    return this._isScanning;
   }
 
   /**
@@ -163,9 +202,6 @@ export class VoltraManager {
 
   /**
    * Get a connected device client by ID.
-   *
-   * @param deviceId Device ID
-   * @returns VoltraClient or undefined if not connected
    */
   getClient(deviceId: string): VoltraClient | undefined {
     return this.clients.get(deviceId);
@@ -180,8 +216,6 @@ export class VoltraManager {
 
   /**
    * Check if a device is connected.
-   *
-   * @param deviceId Device ID
    */
   isConnected(deviceId: string): boolean {
     return this.clients.has(deviceId);
@@ -194,9 +228,6 @@ export class VoltraManager {
   /**
    * Scan for Voltra devices.
    *
-   * Note: In browser environments, this triggers the Web Bluetooth device picker.
-   * For multi-device support in browsers, call scan() multiple times.
-   *
    * @param options Scan options
    * @returns Array of discovered Voltra devices
    */
@@ -205,11 +236,11 @@ export class VoltraManager {
 
     const { timeout = 10000, filterVoltra = true } = options;
 
-    this.isScanning = true;
+    this._isScanning = true;
     this.emit({ type: 'scanStarted' });
 
     try {
-      // Create a temporary adapter for scanning
+      // Create adapter for scanning if needed
       if (!this.scanAdapter) {
         this.scanAdapter = this.adapterFactory();
       }
@@ -220,7 +251,7 @@ export class VoltraManager {
       this.emit({ type: 'scanStopped', devices: this.discoveredDevices });
       return this.discoveredDevices;
     } finally {
-      this.isScanning = false;
+      this._isScanning = false;
     }
   }
 
@@ -242,7 +273,7 @@ export class VoltraManager {
       return this.clients.get(device.id)!;
     }
 
-    // Create new adapter and client for this device
+    // Create new adapter and client
     const adapter = this.adapterFactory();
     const client = new VoltraClient({
       ...this.clientOptions,
@@ -250,7 +281,6 @@ export class VoltraManager {
     });
 
     try {
-      // Connect
       await client.connect(device);
 
       // Store client
@@ -263,33 +293,103 @@ export class VoltraManager {
       this.clientUnsubscribes.set(device.id, unsubscribe);
 
       // Emit connected event
-      this.emit({ type: 'deviceConnected', deviceId: device.id, client });
+      this.emit({
+        type: 'deviceConnected',
+        deviceId: device.id,
+        deviceName: device.name ?? null,
+        client,
+      });
 
       return client;
     } catch (error) {
-      // Clean up on failure
       client.dispose();
       throw error;
     }
   }
 
   /**
-   * Disconnect a specific device.
+   * Scan for a device by name and connect to it.
+   * This is a convenience method that combines scan() and connect().
    *
-   * @param deviceId Device ID to disconnect
+   * @param namePattern Name or partial name to search for
+   * @param options Connection options
+   * @returns VoltraClient for the connected device
+   * @throws Error if no matching device is found
+   *
+   * @example
+   * ```typescript
+   * // Connect to device containing "VTR-123" in its name
+   * const client = await manager.connectByName('VTR-123');
+   *
+   * // Connect to exact name match
+   * const client = await manager.connectByName('VTR-123456', { matchMode: 'exact' });
+   * ```
+   */
+  async connectByName(
+    namePattern: string,
+    options: ConnectByNameOptions = {}
+  ): Promise<VoltraClient> {
+    this.ensureNotDisposed();
+
+    const { matchMode = 'contains', timeout = 10000, filterVoltra = true } = options;
+
+    // Scan for devices
+    const devices = await this.scan({ timeout, filterVoltra });
+
+    // Find matching device
+    const device = devices.find((d) => {
+      if (!d.name) return false;
+
+      switch (matchMode) {
+        case 'exact':
+          return d.name === namePattern;
+        case 'startsWith':
+          return d.name.startsWith(namePattern);
+        case 'contains':
+        default:
+          return d.name.includes(namePattern);
+      }
+    });
+
+    if (!device) {
+      throw new Error(
+        `No Voltra device found matching "${namePattern}". ` +
+          `Found ${devices.length} device(s): ${devices.map((d) => d.name ?? d.id).join(', ') || 'none'}`
+      );
+    }
+
+    return this.connect(device);
+  }
+
+  /**
+   * Connect to the first available Voltra device.
+   * Convenience method for single-device scenarios.
+   *
+   * @param options Scan options
+   * @returns VoltraClient for the connected device
+   * @throws Error if no devices are found
+   */
+  async connectFirst(options: ScanOptions = {}): Promise<VoltraClient> {
+    const devices = await this.scan(options);
+
+    if (devices.length === 0) {
+      throw new Error('No Voltra devices found. Make sure your device is powered on.');
+    }
+
+    return this.connect(devices[0]);
+  }
+
+  /**
+   * Disconnect a specific device.
    */
   async disconnect(deviceId: string): Promise<void> {
     const client = this.clients.get(deviceId);
-    if (!client) {
-      return;
-    }
+    if (!client) return;
 
-    // Unsubscribe from client events
     const unsubscribe = this.clientUnsubscribes.get(deviceId);
     unsubscribe?.();
     this.clientUnsubscribes.delete(deviceId);
 
-    // Disconnect and dispose
     await client.disconnect();
     client.dispose();
     this.clients.delete(deviceId);
@@ -311,9 +411,6 @@ export class VoltraManager {
 
   /**
    * Subscribe to manager events.
-   *
-   * @param listener Event listener
-   * @returns Unsubscribe function
    */
   subscribe(listener: VoltraManagerEventListener): () => void {
     this.listeners.add(listener);
@@ -322,14 +419,13 @@ export class VoltraManager {
 
   /**
    * Subscribe to device connected events.
-   *
-   * @param callback Callback when a device connects
-   * @returns Unsubscribe function
    */
-  onDeviceConnected(callback: DeviceConnectedCallback): () => void {
+  onDeviceConnected(
+    callback: (client: VoltraClient, deviceId: string, deviceName: string | null) => void
+  ): () => void {
     const listener: VoltraManagerEventListener = (event) => {
       if (event.type === 'deviceConnected') {
-        callback(event.client, event.deviceId);
+        callback(event.client, event.deviceId, event.deviceName);
       }
     };
     this.listeners.add(listener);
@@ -338,11 +434,8 @@ export class VoltraManager {
 
   /**
    * Subscribe to device disconnected events.
-   *
-   * @param callback Callback when a device disconnects
-   * @returns Unsubscribe function
    */
-  onDeviceDisconnected(callback: DeviceDisconnectedCallback): () => void {
+  onDeviceDisconnected(callback: (deviceId: string) => void): () => void {
     const listener: VoltraManagerEventListener = (event) => {
       if (event.type === 'deviceDisconnected') {
         callback(event.deviceId);
@@ -360,20 +453,12 @@ export class VoltraManager {
    * Dispose of the manager and all connected devices.
    */
   dispose(): void {
-    if (this.disposed) {
-      return;
-    }
+    if (this.disposed) return;
 
     this.disposed = true;
-
-    // Disconnect all devices
     this.disconnectAll().catch(() => {});
-
-    // Clear listeners
     this.listeners.clear();
     this.clientUnsubscribes.clear();
-
-    // Clean up scan adapter
     this.scanAdapter = null;
   }
 
@@ -381,10 +466,58 @@ export class VoltraManager {
   // Private Methods
   // ===========================================================================
 
+  private detectPlatform(): Platform {
+    // Check for browser environment
+    if (
+      typeof window !== 'undefined' &&
+      typeof navigator !== 'undefined' &&
+      'bluetooth' in navigator
+    ) {
+      return 'web';
+    }
+
+    // Check for Node.js environment
+    if (typeof process !== 'undefined' && process.versions?.node) {
+      return 'node';
+    }
+
+    // Default to native (React Native)
+    // Note: This fallback may not work well - users should specify platform
+    return 'native';
+  }
+
+  private createAdapterFactory(platform: Platform): AdapterFactory {
+    switch (platform) {
+      case 'web':
+        return () => {
+          // Dynamic import to avoid bundling issues
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          const { WebBLEAdapter } = require('../bluetooth/adapters/web');
+          return new WebBLEAdapter({ ble: BLE });
+        };
+
+      case 'node':
+        return () => {
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          const { NodeBLEAdapter } = require('../bluetooth/adapters/node');
+          return new NodeBLEAdapter({ ble: BLE });
+        };
+
+      case 'native':
+        return () => {
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          const { NativeBLEAdapter } = require('../bluetooth/adapters/native');
+          return new NativeBLEAdapter({ ble: BLE });
+        };
+
+      default:
+        throw new Error(`Unknown platform: ${platform}`);
+    }
+  }
+
   private handleClientEvent(deviceId: string, event: VoltraClientEvent): void {
     switch (event.type) {
       case 'disconnected':
-        // Device disconnected (might be unexpected)
         if (this.clients.has(deviceId)) {
           const unsubscribe = this.clientUnsubscribes.get(deviceId);
           unsubscribe?.();
