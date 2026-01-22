@@ -106,15 +106,23 @@ export type { VoltraConnectionState } from './voltra/models/connection';
 // =============================================================================
 
 export type { TelemetryFrame } from './voltra/models/telemetry';
+export { createFrame } from './voltra/models/telemetry';
 
 export {
   decodeTelemetryFrame,
   decodeNotification,
+  encodeTelemetryFrame,
+  identifyMessageType,
   type DecodeResult,
   type MessageType,
 } from './voltra/protocol/telemetry-decoder';
 
-export { MovementPhase, PhaseNames } from './voltra/protocol/constants';
+export {
+  MovementPhase,
+  PhaseNames,
+  MessageTypes,
+  TelemetryOffsets,
+} from './voltra/protocol/constants';
 
 // =============================================================================
 // Commands

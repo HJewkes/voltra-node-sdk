@@ -1,21 +1,49 @@
 # Post-v1 Roadmap
 
-Features planned for future releases after v1.0.0.
+Features and improvements planned for future releases after v1.0.0.
 
-## ReplayBLEAdapter
+## Current SDK Structure (v1)
 
-**Status**: Planned for post-v1
+For reference, the v1 SDK provides:
+
+### High-Level API
+- **VoltraManager** - Main entry point for scanning and connection management
+  - `scan()`, `connect()`, `connectByName()`, `connectFirst()`
+  - Auto-detects platform (web/node), explicit for native
+  - Multi-device support via `getAllClients()`
+- **VoltraClient** - Per-device control
+  - Settings: `setWeight()`, `setChains()`, `setEccentric()`
+  - Recording: `startRecording()`, `stopRecording()`
+  - Telemetry: `onFrame()` callback
+
+### React Hooks
+- `useVoltraScanner(manager)` - Scanning state and controls
+- `useVoltraDevice(client)` - Device state (connectionState, currentFrame, settings)
+
+### Telemetry
+- **TelemetryFrame** - Raw decoded telemetry (sequence, phase, position, force, velocity)
+- `decodeTelemetryFrame()` / `encodeTelemetryFrame()` - For parsing and replay
+- `identifyMessageType()` - Message type detection
+- Protocol constants: `MessageTypes`, `TelemetryOffsets`, `MovementPhase`
+
+---
+
+## Planned Features
+
+### ReplayBLEAdapter
+
+**Status**: Planned for v1.1+
 
 An adapter that enables replay-based development and testing without physical hardware.
 
-### Use Cases
+#### Use Cases
 
 - Testing applications without a physical Voltra device
 - Demo modes for showcasing functionality
 - Unit/integration testing of telemetry pipelines
 - Debugging recorded workout sessions
 
-### Planned API
+#### Planned API
 
 ```typescript
 import { ReplayBLEAdapter } from '@voltra/node-sdk/testing';
@@ -26,7 +54,12 @@ const adapter = new ReplayBLEAdapter({
   playbackSpeed: 1.0,      // 1.0 = realtime, 2.0 = 2x speed
 });
 
-// Use like any other adapter
+// Use with VoltraManager
+const manager = new VoltraManager({
+  adapterFactory: () => adapter,
+});
+
+// Or directly with VoltraClient
 const client = new VoltraClient({ adapter });
 await client.connect({ id: 'replay', name: 'Replay Device' });
 
@@ -37,37 +70,73 @@ adapter.seek(frameIndex);
 adapter.setSpeed(2.0);
 ```
 
-### Requirements
+#### Prerequisites (Now Complete)
 
-1. **encodeTelemetryFrame** - Function to convert TelemetryFrame back to BLE notification bytes
+- ✅ `encodeTelemetryFrame()` - Converts TelemetryFrame to BLE notification bytes
+- ✅ Roundtrip encoding/decoding validated via unit tests (53 tests passing)
+
+#### Remaining Work
+
+1. **ReplayBLEAdapter implementation** - Mock adapter that emits frames on a timer
 2. **Frame timing reconstruction** - Preserve original timing from recorded sessions
 3. **Connect/disconnect simulation** - Simulate connection lifecycle events
 
-### Blockers
+#### Export Path
 
-- Replay implementation in the mobile app needs fixes before this can be properly tested
-- Need to validate roundtrip encoding/decoding preserves all frame data
+Will be exported from `@voltra/node-sdk/testing` to indicate it's for development/testing, not production.
 
-### Export Path
+---
 
-Will be exported from `@voltra/node-sdk/testing` to clearly indicate it's for development/testing purposes, not production use.
-
-## Additional Adapters
+### Additional Adapters
 
 Future platform-specific adapters as needed:
 
-- **WebSocketBLEAdapter** - For proxying BLE over WebSocket connections
-- **MockBLEAdapter** - Simplified mock for unit tests
+- **WebSocketBLEAdapter** - For proxying BLE over WebSocket connections (server-to-device relay)
+- **MockBLEAdapter** - Simplified mock for unit tests (no timing, just returns predefined responses)
 
-## Telemetry Normalization Utilities
+---
+
+### Telemetry Normalization Utilities
 
 Optional helpers for converting raw TelemetryFrame values to normalized formats:
 
 ```typescript
 import { normalizePosition, normalizeVelocity } from '@voltra/node-sdk/utils';
 
-const normalizedPosition = normalizePosition(frame.position);  // 0-1
+const normalizedPosition = normalizePosition(frame.position);  // 0-1 range
 const velocityMs = normalizeVelocity(frame.velocity);          // m/s
 ```
 
-These would be convenience utilities only - the SDK's design intentionally exposes raw values to let consumers decide how to normalize for their specific use cases.
+These would be convenience utilities only. The SDK intentionally exposes raw values so consumers can normalize for their specific use cases.
+
+---
+
+### Enhanced Multi-Device Features
+
+- **Device grouping** - Group multiple devices for synchronized control
+- **Broadcast commands** - Send settings to all connected devices at once
+- **Fleet telemetry aggregation** - Combine telemetry streams from multiple devices
+
+---
+
+## Documentation Improvements
+
+Planned for near-term:
+
+- [ ] TypeDoc-generated API reference
+- [ ] Platform-specific integration guides (detailed)
+- [ ] CONTRIBUTING.md for open-source contributors
+- [ ] Migration guide from mobile app's internal domain code
+
+---
+
+## App Migration
+
+The consuming mobile application will:
+
+1. Create a `domain/device/` adapter layer wrapping the SDK
+2. Implement `toWorkoutSample()` conversion from TelemetryFrame
+3. Provide app-specific React hooks (`useDeviceConnection`, etc.)
+4. Remove extracted `domain/bluetooth/` and `domain/voltra/` code
+
+This migration is tracked separately in the mobile app's repository.
