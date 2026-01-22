@@ -245,6 +245,28 @@ See the [examples](./examples) directory:
 - [Web Browser](./examples/web) - Interactive demo
 - [React Native](./examples/react-native) - Expo app
 
+## Documentation
+
+### Getting Started
+
+Step-by-step setup guides for each platform:
+
+- [Node.js](./docs/getting-started/node.md) - Prerequisites, setup, running examples
+- [Web Browser](./docs/getting-started/web.md) - Browser requirements, HTTPS, Vite setup
+- [React Native](./docs/getting-started/react-native.md) - Expo, permissions, development builds
+
+### Concepts
+
+Technical deep-dives:
+
+- [Bluetooth Protocol](./docs/concepts/bluetooth-protocol.md) - Voltra BLE protocol, commands, telemetry format
+- [Platform Adapters](./docs/concepts/platform-adapters.md) - Native vs Web vs Node.js differences
+
+### Other
+
+- [Troubleshooting](./docs/troubleshooting.md) - Common issues and solutions
+- [Roadmap](./docs/roadmap/) - Planned features (ReplayBLEAdapter, etc.)
+
 ## License
 
 MIT - see [LICENSE](./LICENSE)
