@@ -35,10 +35,17 @@
 
 export {
   VoltraClient,
+  VoltraManager,
   type VoltraClientOptions,
   type VoltraClientState,
   type VoltraClientEvent,
   type VoltraClientEventListener,
+  type VoltraManagerOptions,
+  type VoltraManagerEvent,
+  type VoltraManagerEventListener,
+  type DeviceConnectedCallback,
+  type DeviceDisconnectedCallback,
+  type AdapterFactory,
   type FrameListener,
   type ScanOptions,
 } from './sdk';
