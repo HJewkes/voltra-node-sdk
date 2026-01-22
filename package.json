@@ -1,0 +1,106 @@
+{
+  "name": "@voltra/node-sdk",
+  "version": "0.1.0",
+  "description": "SDK for connecting to and controlling Voltra fitness devices",
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js",
+      "types": "./dist/types/index.d.ts"
+    },
+    "./react": {
+      "import": "./dist/esm/sdk/hooks.js",
+      "require": "./dist/cjs/sdk/hooks.js",
+      "types": "./dist/types/sdk/hooks.d.ts"
+    },
+    "./node": {
+      "import": "./dist/esm/bluetooth/adapters/node.js",
+      "require": "./dist/cjs/bluetooth/adapters/node.js",
+      "types": "./dist/types/bluetooth/adapters/node.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "src/voltra/protocol/data/*.json"
+  ],
+  "scripts": {
+    "build": "npm run build:esm && npm run build:cjs",
+    "build:esm": "tsc -p tsconfig.build.json",
+    "build:cjs": "tsc -p tsconfig.build.json --module commonjs --outDir dist/cjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\"",
+    "typecheck": "tsc --noEmit",
+    "docs:api": "typedoc --out docs/api src/index.ts",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build && npm run test",
+    "prepare": "husky"
+  },
+  "peerDependencies": {
+    "react": ">=17.0.0",
+    "react-native-ble-plx": ">=3.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "react-native-ble-plx": {
+      "optional": true
+    }
+  },
+  "optionalDependencies": {
+    "webbluetooth": "^3.4.0"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.6.0",
+    "@commitlint/config-conventional": "^19.6.0",
+    "@types/node": "^20.0.0",
+    "@types/react": "^19.0.0",
+    "@types/web-bluetooth": "^0.0.21",
+    "@vitest/coverage-v8": "^4.0.0",
+    "eslint": "^9.18.0",
+    "husky": "^9.1.0",
+    "lint-staged": "^15.3.0",
+    "prettier": "^3.4.0",
+    "typedoc": "^0.27.0",
+    "typescript": "~5.9.2",
+    "typescript-eslint": "^8.21.0",
+    "vitest": "^4.0.17"
+  },
+  "lint-staged": {
+    "*.ts": [
+      "eslint --fix",
+      "prettier --write"
+    ]
+  },
+  "keywords": [
+    "voltra",
+    "bluetooth",
+    "ble",
+    "fitness",
+    "sdk",
+    "react-native",
+    "node",
+    "web-bluetooth"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/voltra/node-sdk.git"
+  },
+  "bugs": {
+    "url": "https://github.com/voltra/node-sdk/issues"
+  },
+  "homepage": "https://github.com/voltra/node-sdk#readme",
+  "author": "Voltra",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
