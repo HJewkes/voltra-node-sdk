@@ -1,0 +1,4 @@
+# Default code owners for the Voltra SDK
+# These users will be requested for review on all PRs
+
+* @voltra/sdk-maintainers
