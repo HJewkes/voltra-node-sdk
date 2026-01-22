@@ -1,0 +1,19 @@
+{
+  "name": "@voltra/sdk-example-node",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Node.js example for @voltra/node-sdk",
+  "type": "module",
+  "scripts": {
+    "start": "npx tsx basic-connection.ts",
+    "multi": "npx tsx multi-device.ts"
+  },
+  "dependencies": {
+    "@voltra/node-sdk": "file:../..",
+    "webbluetooth": "^3.4.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.0.0",
+    "@types/node": "^20.0.0"
+  }
+}
