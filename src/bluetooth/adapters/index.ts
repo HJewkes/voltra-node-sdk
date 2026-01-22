@@ -81,6 +81,6 @@ export function createBLEAdapter(config: CreateBLEAdapterConfig): BLEAdapter {
   }
 
   throw new Error(
-    'Unknown environment. For React Native, import NativeBLEAdapter directly from @voltra/node-sdk/react-native'
+    'Unknown environment. For React Native, import NativeBLEAdapter directly from @voltras/node-sdk/react-native'
   );
 }

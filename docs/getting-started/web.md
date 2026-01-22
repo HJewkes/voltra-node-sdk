@@ -69,7 +69,7 @@ npm install
 This installs:
 - `vite` - Development server with hot reload
 - `typescript` - TypeScript support
-- `@voltra/node-sdk` - Links to the parent SDK
+- `@voltras/node-sdk` - Links to the parent SDK
 
 ---
 

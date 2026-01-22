@@ -6,7 +6,7 @@
  *
  * @example
  * ```typescript
- * import { VoltraManager } from '@voltra/node-sdk';
+ * import { VoltraManager } from '@voltras/node-sdk';
  *
  * const manager = new VoltraManager();
  *
@@ -51,7 +51,7 @@ export type AdapterFactory = () => BLEAdapter;
 export interface VoltraManagerOptions {
   /**
    * Platform to use. If not specified, auto-detects (web/node).
-   * For React Native, use 'native' or import from '@voltra/node-sdk/native'.
+   * For React Native, use 'native' or import from '@voltras/node-sdk/native'.
    */
   platform?: Platform;
 
@@ -158,7 +158,7 @@ export class VoltraManager {
 
   /**
    * Create a manager for React Native.
-   * Note: Prefer importing from '@voltra/node-sdk/native' instead.
+   * Note: Prefer importing from '@voltras/node-sdk/native' instead.
    */
   static forNative(options?: Omit<VoltraManagerOptions, 'platform'>): VoltraManager {
     return new VoltraManager({ ...options, platform: 'native' });

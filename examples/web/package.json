@@ -1,8 +1,8 @@
 {
-  "name": "@voltra/sdk-example-web",
+  "name": "@voltras/sdk-example-web",
   "version": "1.0.0",
   "private": true,
-  "description": "Web browser example for @voltra/node-sdk",
+  "description": "Web browser example for @voltras/node-sdk",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,7 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@voltra/node-sdk": "file:../.."
+    "@voltras/node-sdk": "file:../.."
   },
   "devDependencies": {
     "vite": "^5.0.0",

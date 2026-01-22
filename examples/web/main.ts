@@ -4,7 +4,7 @@
  * Demonstrates the simplified SDK API in a web browser.
  */
 
-import { VoltraManager, type TelemetryFrame, type VoltraClient } from '@voltra/node-sdk';
+import { VoltraManager, type TelemetryFrame, type VoltraClient } from '@voltras/node-sdk';
 
 // DOM elements
 const statusDot = document.getElementById('status-dot')!;

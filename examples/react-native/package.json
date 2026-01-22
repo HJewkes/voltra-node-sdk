@@ -1,5 +1,5 @@
 {
-  "name": "@voltra/sdk-example-react-native",
+  "name": "@voltras/sdk-example-react-native",
   "version": "1.0.0",
   "private": true,
   "main": "expo-router/entry",
@@ -9,7 +9,7 @@
     "ios": "expo start --ios"
   },
   "dependencies": {
-    "@voltra/node-sdk": "file:../..",
+    "@voltras/node-sdk": "file:../..",
     "expo": "~50.0.0",
     "expo-router": "~3.4.0",
     "react": "18.2.0",

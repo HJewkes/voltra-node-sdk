@@ -6,7 +6,7 @@
  * Usage: npm run multi
  */
 
-import { VoltraManager } from '@voltra/node-sdk';
+import { VoltraManager } from '@voltras/node-sdk';
 
 async function main() {
   console.log('Voltra SDK - Multi-Device Example\n');

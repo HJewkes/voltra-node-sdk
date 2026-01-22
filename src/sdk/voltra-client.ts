@@ -6,7 +6,7 @@
  *
  * @example
  * ```typescript
- * import { VoltraClient, WebBLEAdapter, BLE } from '@voltra/node-sdk';
+ * import { VoltraClient, WebBLEAdapter, BLE } from '@voltras/node-sdk';
  *
  * const adapter = new WebBLEAdapter({ ble: BLE });
  * const client = new VoltraClient({ adapter });

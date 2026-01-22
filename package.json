@@ -1,5 +1,5 @@
 {
-  "name": "@voltra/node-sdk",
+  "name": "@voltras/node-sdk",
   "version": "0.1.0",
   "description": "SDK for connecting to and controlling Voltra fitness devices",
   "main": "./dist/cjs/index.js",
@@ -97,12 +97,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/voltra/node-sdk.git"
+    "url": "https://github.com/HJewkes/voltra-node-sdk.git"
   },
   "bugs": {
-    "url": "https://github.com/voltra/node-sdk/issues"
+    "url": "https://github.com/HJewkes/voltra-node-sdk/issues"
   },
-  "homepage": "https://github.com/voltra/node-sdk#readme",
+  "homepage": "https://github.com/HJewkes/voltra-node-sdk#readme",
   "author": "Voltra",
   "license": "MIT",
   "engines": {

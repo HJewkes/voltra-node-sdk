@@ -14,8 +14,8 @@ import {
   SafeAreaView,
   Alert,
 } from 'react-native';
-import { VoltraManager, type DiscoveredDevice, type VoltraClient } from '@voltra/node-sdk';
-import { useVoltraScanner, useVoltraDevice } from '@voltra/node-sdk/react';
+import { VoltraManager, type DiscoveredDevice, type VoltraClient } from '@voltras/node-sdk';
+import { useVoltraScanner, useVoltraDevice } from '@voltras/node-sdk/react';
 
 export default function WorkoutScreen() {
   // Create manager for React Native

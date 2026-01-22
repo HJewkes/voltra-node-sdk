@@ -1,8 +1,8 @@
-# @voltra/node-sdk
+# @voltras/node-sdk
 
 SDK for connecting to and controlling Voltra fitness devices.
 
-[![npm version](https://img.shields.io/npm/v/@voltra/node-sdk.svg)](https://www.npmjs.com/package/@voltra/node-sdk)
+[![npm version](https://img.shields.io/npm/v/@voltras/node-sdk.svg)](https://www.npmjs.com/package/@voltras/node-sdk)
 [![CI](https://github.com/voltra/node-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/voltra/node-sdk/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -18,7 +18,7 @@ SDK for connecting to and controlling Voltra fitness devices.
 ## Installation
 
 ```bash
-npm install @voltra/node-sdk
+npm install @voltras/node-sdk
 ```
 
 ### Platform dependencies
@@ -34,7 +34,7 @@ npm install @voltra/node-sdk
 ### Web / Node.js
 
 ```typescript
-import { VoltraManager } from '@voltra/node-sdk';
+import { VoltraManager } from '@voltras/node-sdk';
 
 // Create manager (auto-detects platform)
 const manager = new VoltraManager();
@@ -63,7 +63,7 @@ manager.dispose();
 ### React Native
 
 ```typescript
-import { VoltraManager } from '@voltra/node-sdk';
+import { VoltraManager } from '@voltras/node-sdk';
 
 // Specify native platform
 const manager = VoltraManager.forNative();
@@ -76,8 +76,8 @@ const client = await manager.connectFirst();
 ### React Hooks
 
 ```tsx
-import { VoltraManager } from '@voltra/node-sdk';
-import { useVoltraScanner, useVoltraDevice } from '@voltra/node-sdk/react';
+import { VoltraManager } from '@voltras/node-sdk';
+import { useVoltraScanner, useVoltraDevice } from '@voltras/node-sdk/react';
 
 function WorkoutScreen() {
   const manager = useMemo(() => VoltraManager.forNative(), []);
@@ -201,7 +201,7 @@ interface TelemetryFrame {
 ### React Hooks
 
 ```typescript
-import { useVoltraScanner, useVoltraDevice } from '@voltra/node-sdk/react';
+import { useVoltraScanner, useVoltraDevice } from '@voltras/node-sdk/react';
 
 // Scanner state
 const { devices, isScanning, scan, error, clear } = useVoltraScanner(manager);
@@ -226,7 +226,7 @@ import {
   ConnectionError,
   AuthenticationError,
   NotConnectedError,
-} from '@voltra/node-sdk';
+} from '@voltras/node-sdk';
 
 try {
   await manager.connectByName('VTR-123');

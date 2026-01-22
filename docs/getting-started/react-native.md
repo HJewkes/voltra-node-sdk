@@ -79,7 +79,7 @@ This installs:
 - `expo` - React Native framework
 - `expo-router` - File-based routing
 - `react-native-ble-plx` - Bluetooth library
-- `@voltra/node-sdk` - Links to the parent SDK
+- `@voltras/node-sdk` - Links to the parent SDK
 
 ---
 
@@ -189,8 +189,8 @@ This builds and installs the app directly on your connected device.
 The example uses the SDK's React hooks:
 
 ```typescript
-import { VoltraManager } from '@voltra/node-sdk';
-import { useVoltraScanner, useVoltraDevice } from '@voltra/node-sdk/react';
+import { VoltraManager } from '@voltras/node-sdk';
+import { useVoltraScanner, useVoltraDevice } from '@voltras/node-sdk/react';
 
 function App() {
   // Create manager for native platform

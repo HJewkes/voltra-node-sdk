@@ -1,5 +1,5 @@
 /**
- * @voltra/node-sdk
+ * @voltras/node-sdk
  *
  * SDK for connecting to and controlling Voltra fitness devices.
  *
@@ -8,7 +8,7 @@
  *
  * @example
  * ```typescript
- * import { VoltraManager } from '@voltra/node-sdk';
+ * import { VoltraManager } from '@voltras/node-sdk';
  *
  * // Create manager (auto-detects platform for web/node)
  * const manager = new VoltraManager();

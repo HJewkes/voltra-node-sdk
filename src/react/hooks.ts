@@ -5,8 +5,8 @@
  *
  * @example
  * ```tsx
- * import { VoltraManager } from '@voltra/node-sdk';
- * import { useVoltraScanner, useVoltraDevice } from '@voltra/node-sdk/react';
+ * import { VoltraManager } from '@voltras/node-sdk';
+ * import { useVoltraScanner, useVoltraDevice } from '@voltras/node-sdk/react';
  *
  * function WorkoutScreen() {
  *   const manager = useMemo(() => new VoltraManager(), []);

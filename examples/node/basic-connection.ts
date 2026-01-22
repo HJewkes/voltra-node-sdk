@@ -6,7 +6,7 @@
  * Usage: npm start
  */
 
-import { VoltraManager, type TelemetryFrame } from '@voltra/node-sdk';
+import { VoltraManager, type TelemetryFrame } from '@voltras/node-sdk';
 
 async function main() {
   console.log('Voltra SDK - Node.js Example\n');

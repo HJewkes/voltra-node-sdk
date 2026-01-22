@@ -14,7 +14,7 @@ An adapter that enables replay-based development and testing without physical ha
 ## Planned API
 
 ```typescript
-import { ReplayBLEAdapter } from '@voltra/node-sdk/testing';
+import { ReplayBLEAdapter } from '@voltras/node-sdk/testing';
 
 // Create adapter with recorded telemetry data
 const adapter = new ReplayBLEAdapter({
@@ -60,11 +60,11 @@ The SDK already provides the building blocks for replay:
 
 ## Export Path
 
-Will be exported from `@voltra/node-sdk/testing` to indicate it's for development/testing, not production use.
+Will be exported from `@voltras/node-sdk/testing` to indicate it's for development/testing, not production use.
 
 ```typescript
 // Testing utilities (post-v1)
-import { ReplayBLEAdapter, MockBLEAdapter } from '@voltra/node-sdk/testing';
+import { ReplayBLEAdapter, MockBLEAdapter } from '@voltras/node-sdk/testing';
 ```
 
 ## Related Future Features

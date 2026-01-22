@@ -209,7 +209,7 @@ The SDK throws typed errors for common failure modes:
 Example handling:
 
 ```typescript
-import { ConnectionError, TimeoutError } from '@voltra/node-sdk';
+import { ConnectionError, TimeoutError } from '@voltras/node-sdk';
 
 try {
   await manager.connectByName('VTR-123456');

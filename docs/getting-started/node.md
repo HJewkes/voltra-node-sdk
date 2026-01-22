@@ -69,7 +69,7 @@ npm install
 
 This installs:
 - `tsx` - TypeScript execution without compilation
-- `@voltra/node-sdk` - Links to the parent SDK
+- `@voltras/node-sdk` - Links to the parent SDK
 
 ---
 
@@ -161,7 +161,7 @@ Or run with sudo (not recommended for production):
 sudo npm start
 ```
 
-### "Cannot find module '@voltra/node-sdk'"
+### "Cannot find module '@voltras/node-sdk'"
 
 Ensure you:
 1. Built the SDK: `npm run build` in the root directory
