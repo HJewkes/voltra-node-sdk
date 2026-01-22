@@ -7,14 +7,24 @@
  * - Node.js: webbluetooth npm package
  */
 
-export * from './types';
-export { BaseBLEAdapter } from './base';
-export { WebBluetoothBase, type WebBluetoothConfig } from './web-bluetooth-base';
+// Public types
+export type {
+  BLEAdapter,
+  Device,
+  ConnectionState,
+  NotificationCallback,
+  ConnectionStateCallback,
+  ConnectOptions,
+  BLEServiceConfig,
+} from './types';
+
+// Platform adapters
 export { WebBLEAdapter } from './web';
 export { NodeBLEAdapter, type NodeBLEConfig, type DeviceChooser } from './node';
 export { NativeBLEAdapter, type NativeAdapterConfig } from './native';
 
-// Note: ReplayBLEAdapter is planned for post-v1 release
+// Internal exports (for subclassing if needed, but not part of main API)
+// BaseBLEAdapter and WebBluetoothBase are intentionally not exported from main index
 
 import type { BLEAdapter, BLEServiceConfig } from './types';
 import { WebBLEAdapter } from './web';

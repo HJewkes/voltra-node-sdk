@@ -6,20 +6,33 @@
  * for any BLE device.
  */
 
-// Models
-export * from './models/connection';
-export * from './models/device';
-export * from './models/environment';
+// Models - Device
+export type { DiscoveredDevice } from './models/device';
+export { getDeviceDisplayName, sortBySignalStrength } from './models/device';
 
-// Controllers
-export { ScannerController } from './controllers/scanner-controller';
-export type {
-  ScannerState,
-  ScannerEvent,
-  ScannerEventListener,
-  ScannerConfig,
-  DeviceFilter,
-} from './controllers/scanner-controller';
+// Models - Connection (internal types, expose only what's needed)
+export type { BLEConnectionState } from './models/connection';
+
+// Models - Environment
+export type { BLEEnvironment, BLEEnvironmentInfo } from './models/environment';
+export { detectBLEEnvironment, isBLEAvailable, createNativeEnvironmentInfo } from './models/environment';
 
 // Adapters
-export * from './adapters';
+export {
+  // Types
+  type BLEAdapter,
+  type BLEServiceConfig,
+  type ConnectionState,
+  type ConnectOptions,
+  type NotificationCallback,
+  type ConnectionStateCallback,
+  // Adapters
+  WebBLEAdapter,
+  NodeBLEAdapter,
+  NativeBLEAdapter,
+  // Factory
+  createBLEAdapter,
+  type CreateBLEAdapterConfig,
+} from './adapters';
+
+// Note: ScannerController is internal - use VoltraClient/VoltraManager for scanning

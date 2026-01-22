@@ -11,73 +11,41 @@
  */
 
 // =============================================================================
-// Bluetooth Layer
+// Platform Adapters
 // =============================================================================
 
-// Adapters
-export {
-  // Base classes
-  BaseBLEAdapter,
-  WebBluetoothBase,
-  // Platform adapters
-  WebBLEAdapter,
-  NodeBLEAdapter,
-  NativeBLEAdapter,
-  // Factory
-  createBLEAdapter,
-  // Types
-  type BLEAdapter,
-  type Device,
-  type ConnectionState,
-  type NotificationCallback,
-  type ConnectionStateCallback,
-  type ConnectOptions,
-  type BLEServiceConfig,
-  type WebBluetoothConfig,
-  type NodeBLEConfig,
-  type DeviceChooser,
-  type NativeAdapterConfig,
-  type CreateBLEAdapterConfig,
-} from './bluetooth/adapters';
+export { WebBLEAdapter } from './bluetooth/adapters/web';
+export { NodeBLEAdapter, type DeviceChooser } from './bluetooth/adapters/node';
+export { NativeBLEAdapter } from './bluetooth/adapters/native';
+export { createBLEAdapter } from './bluetooth/adapters';
 
-// Models - Device
-export {
-  type DiscoveredDevice,
-  getDeviceDisplayName,
-  sortBySignalStrength,
-} from './bluetooth/models/device';
-
-// Models - Connection
-export {
-  type BLEConnectionState,
-  isValidBLETransition,
-  BLEConnectionStateModel,
-} from './bluetooth/models/connection';
-
-// Models - Environment
-export {
-  type BLEEnvironment,
-  type BLEEnvironmentInfo,
-  detectBLEEnvironment,
-  isBLEAvailable,
-  createNativeEnvironmentInfo,
-} from './bluetooth/models/environment';
-
-// Controllers
-export {
-  ScannerController,
-  type ScannerState,
-  type ScannerEvent,
-  type ScannerEventListener,
-  type ScannerConfig,
-  type DeviceFilter,
-} from './bluetooth/controllers/scanner-controller';
+// Adapter types (what consumers need to implement or use)
+export type {
+  BLEAdapter,
+  BLEServiceConfig,
+  ConnectOptions,
+  ConnectionState,
+  NotificationCallback,
+  ConnectionStateCallback,
+} from './bluetooth/adapters/types';
 
 // =============================================================================
-// Voltra Layer
+// Device Discovery
 // =============================================================================
 
-// Device
+export type { DiscoveredDevice } from './bluetooth/models/device';
+export { getDeviceDisplayName, sortBySignalStrength } from './bluetooth/models/device';
+
+export {
+  VOLTRA_DEVICE_PREFIX,
+  isVoltraDevice,
+  filterVoltraDevices,
+} from './voltra/models/device-filter';
+
+// =============================================================================
+// Voltra Device
+// =============================================================================
+
 export {
   VoltraDevice,
   DEFAULT_SETTINGS,
@@ -86,30 +54,27 @@ export {
   type VoltraDeviceState,
 } from './voltra/models/device';
 
-// Connection
-export {
-  type VoltraConnectionState,
-  isValidVoltraTransition,
-  VoltraConnectionStateModel,
-} from './voltra/models/connection';
+export type { VoltraConnectionState } from './voltra/models/connection';
 
-// Device filter
-export {
-  VOLTRA_DEVICE_PREFIX,
-  isVoltraDevice,
-  filterVoltraDevices,
-} from './voltra/models/device-filter';
-
+// =============================================================================
 // Telemetry
-export {
-  type TelemetryFrame,
-  createFrame,
-  isActivePhase,
-  isConcentricPhase,
-  isEccentricPhase,
-} from './voltra/models/telemetry';
+// =============================================================================
 
-// Protocol - Commands
+export type { TelemetryFrame } from './voltra/models/telemetry';
+
+export {
+  decodeTelemetryFrame,
+  decodeNotification,
+  type DecodeResult,
+  type MessageType,
+} from './voltra/protocol/telemetry-decoder';
+
+export { MovementPhase, PhaseNames } from './voltra/protocol/constants';
+
+// =============================================================================
+// Commands
+// =============================================================================
+
 export {
   WeightCommands,
   ChainsCommands,
@@ -117,31 +82,20 @@ export {
   type DualCommand,
 } from './voltra/protocol/commands';
 
-// Protocol - Constants
+// =============================================================================
+// Protocol Constants
+// =============================================================================
+
 export {
-  MessageTypes,
-  TelemetryOffsets,
+  BLE,
   Timing,
   Auth,
   Init,
   Workout,
-  BLE,
-  MovementPhase,
-  PhaseNames,
 } from './voltra/protocol/constants';
-
-// Protocol - Decoder
-export {
-  decodeNotification,
-  decodeTelemetryFrame,
-  encodeTelemetryFrame,
-  identifyMessageType,
-  type DecodeResult,
-  type MessageType,
-} from './voltra/protocol/telemetry-decoder';
 
 // =============================================================================
 // Utilities
 // =============================================================================
 
-export { delay, hexToBytes, bytesToHex, bytesEqual } from './shared/utils';
+export { delay } from './shared/utils';

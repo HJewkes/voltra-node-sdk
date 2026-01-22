@@ -1,0 +1,109 @@
+---
+description: TypeScript conventions for the Voltra Node SDK
+globs: ["**/*.ts"]
+---
+
+# TypeScript Conventions
+
+## Avoid `any`
+
+- Use proper types or `unknown` with type guards
+- Define types for all function parameters and returns
+
+## File Naming Rules
+
+- **NO logic in `index.ts` files** - barrel exports only
+- Name files explicitly: `telemetry-decoder.ts` not `telemetry/index.ts`
+- Use kebab-case for file names: `scanner-controller.ts`
+
+```typescript
+// index.ts - GOOD: barrel exports only
+export { WeightCommands, ChainsCommands } from './commands';
+export type { DualCommand } from './commands';
+
+// index.ts - BAD: contains logic
+export function decode() { ... }  // NEVER do this
+```
+
+## Export Patterns
+
+### Public API Exports
+
+Only export what SDK consumers need. Internal implementation details stay private.
+
+```typescript
+// GOOD: Focused public API
+export {
+  // Platform adapters
+  NativeBLEAdapter,
+  WebBLEAdapter,
+  NodeBLEAdapter,
+  createBLEAdapter,
+  // Types consumers need
+  type BLEAdapter,
+  type TelemetryFrame,
+  type DiscoveredDevice,
+} from './bluetooth';
+
+// BAD: Exporting everything
+export * from './bluetooth';  // Exposes internal base classes
+```
+
+### Internal Modules
+
+Use named exports for internal utilities. Don't re-export from public index.
+
+```typescript
+// shared/utils.ts - internal
+export function hexToBytes(hex: string): Uint8Array { ... }
+
+// index.ts - DON'T export hexToBytes, it's internal
+```
+
+## Import Patterns
+
+### Relative Imports Within SDK
+
+Use relative imports within the SDK (no path alias needed for libraries).
+
+```typescript
+// GOOD: Relative imports within SDK
+import { hexToBytes } from '../../shared/utils';
+import type { TelemetryFrame } from '../models/telemetry/frame';
+
+// GOOD: Import from barrel when available
+import { BLE, Timing } from '../protocol';
+```
+
+### Import from Barrels
+
+Prefer importing from barrel exports, not individual files.
+
+```typescript
+// GOOD: Import from barrel
+import { WeightCommands, EccentricCommands } from './protocol';
+import type { TelemetryFrame, VoltraConnectionState } from './models';
+
+// ACCEPTABLE: Direct import for specific needs
+import { WeightCommands } from './protocol/commands';
+```
+
+## Interfaces vs Types
+
+- Use `interface` for object shapes that may be extended
+- Use `type` for unions, intersections, and primitives
+
+```typescript
+// Interface for extensible shapes
+export interface TelemetryFrame {
+  sequence: number;
+  phase: MovementPhase;
+  position: number;
+  force: number;
+  velocity: number;
+  timestamp: number;
+}
+
+// Type for unions
+export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'disconnecting';
+```

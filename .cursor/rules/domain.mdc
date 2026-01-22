@@ -1,0 +1,176 @@
+---
+description: Domain architecture patterns for the Voltra SDK
+globs: ["**/bluetooth/**/*.ts", "**/voltra/**/*.ts", "**/shared/**/*.ts"]
+---
+
+# Domain Architecture
+
+## SDK Structure
+
+```
+src/
+├── bluetooth/                 # GENERIC BLE infrastructure (device-agnostic)
+│   ├── adapters/              # BLE adapter implementations
+│   │   ├── types.ts           # BLEAdapter interface, config types
+│   │   ├── base.ts            # BaseBLEAdapter abstract class (internal)
+│   │   ├── native.ts          # Native react-native-ble-plx adapter
+│   │   ├── web-bluetooth-base.ts  # W3C Web Bluetooth base (internal)
+│   │   ├── web.ts             # Browser Web Bluetooth adapter
+│   │   ├── node.ts            # Node.js webbluetooth adapter
+│   │   └── index.ts           # Exports (hide base classes)
+│   ├── models/
+│   │   ├── connection.ts      # Generic BLE connection state
+│   │   ├── device.ts          # Generic discovered device model
+│   │   └── environment.ts     # BLE environment detection
+│   ├── controllers/           # Internal controllers (not exported)
+│   │   └── scanner-controller.ts
+│   └── index.ts
+├── voltra/                    # VOLTRA-SPECIFIC (device-specific logic)
+│   ├── models/
+│   │   ├── device.ts          # Voltra device model
+│   │   ├── connection.ts      # Voltra connection state (includes 'authenticating')
+│   │   ├── device-filter.ts   # VOLTRA_DEVICE_PREFIX, filterVoltraDevices
+│   │   └── telemetry/
+│   │       ├── frame.ts       # TelemetryFrame interface
+│   │       └── index.ts
+│   ├── protocol/
+│   │   ├── constants.ts       # BLE UUIDs, timing, auth, commands
+│   │   ├── commands.ts        # Weight, chains, eccentric command builders
+│   │   ├── telemetry-decoder.ts
+│   │   └── data/*.json        # Protocol data files
+│   └── index.ts
+├── shared/                    # Internal utilities (not exported)
+│   └── utils.ts
+└── index.ts                   # PUBLIC API ONLY
+```
+
+## Domain Separation: Bluetooth vs Voltra
+
+### bluetooth/ (Generic BLE)
+
+Reusable BLE infrastructure that could work with any BLE device:
+
+- **Adapters** accept configuration (serviceUUID, charUUIDs, device prefix)
+- **Models** are generic (DiscoveredDevice, BLEConnectionState)
+- **NO** Voltra-specific imports or constants
+
+```typescript
+// Bluetooth adapters are configured, not hardcoded
+const adapter = new NativeBLEAdapter({
+  ble: {
+    serviceUUID: BLE.SERVICE_UUID,      // Passed in by consumer
+    notifyCharUUID: BLE.NOTIFY_CHAR_UUID,
+    writeCharUUID: BLE.WRITE_CHAR_UUID,
+    deviceNamePrefix: BLE.DEVICE_NAME_PREFIX,
+  },
+});
+```
+
+### voltra/ (Voltra-Specific)
+
+Hardware-specific BLE protocol, telemetry decoding, and device models:
+
+- Voltra connection state (includes 'authenticating' step)
+- Device filtering (`filterVoltraDevices`, `VOLTRA_DEVICE_PREFIX`)
+- Protocol constants (BLE UUIDs, commands, timing)
+- Telemetry decoding (TelemetryFrame)
+
+## Model Patterns
+
+### Pattern 1: Interface + Functions (Value Objects)
+
+Use for **immutable data** and **DTOs**.
+
+```typescript
+// voltra/models/telemetry/frame.ts
+export interface TelemetryFrame {
+  sequence: number;
+  phase: MovementPhase;
+  position: number;
+  force: number;
+  velocity: number;
+  timestamp: number;
+}
+
+// Factory function
+export function createFrame(sequence: number, phase: MovementPhase, ...): TelemetryFrame {
+  return { sequence, phase, position, force, velocity, timestamp: Date.now() };
+}
+
+// Pure functions operating on the data
+export function isActivePhase(frame: TelemetryFrame): boolean {
+  return frame.phase === MovementPhase.CONCENTRIC || 
+         frame.phase === MovementPhase.ECCENTRIC;
+}
+```
+
+**When to use Interface + Functions:**
+- Value objects (TelemetryFrame, DiscoveredDevice)
+- Data from BLE notifications
+- Computed/derived results
+
+### Pattern 2: Class (Entities with Identity)
+
+Use for **entities with identity** and **complex state transitions**.
+
+```typescript
+// voltra/models/device.ts
+export class VoltraDevice {
+  private _settings: VoltraDeviceSettings;
+  private _connectionState: VoltraConnectionState;
+  
+  constructor(deviceId: string, deviceName?: string) { ... }
+  
+  // Getters expose state (return copies for immutability)
+  get settings(): VoltraDeviceSettings { return {...this._settings}; }
+  get isConnected(): boolean { return this._connectionState === 'connected'; }
+  
+  // Methods for state transitions
+  updateSettings(settings: Partial<VoltraDeviceSettings>): void { ... }
+}
+```
+
+**When to use Classes:**
+- Entities with identity (VoltraDevice)
+- Complex state machines with validation
+- When encapsulation is needed
+
+## Protocol Data Rule
+
+All protocol byte sequences and offsets live in `protocol.json`.
+
+```typescript
+// constants.ts loads from JSON and exports typed objects
+import protocolData from './data/protocol.json';
+
+export const MessageTypes = {
+  TELEMETRY_STREAM: hexToBytes(protocolData.telemetry.message_types.stream),
+  // ...
+};
+```
+
+- App-level timing constants stay in `constants.ts` (not protocol data)
+- TypeScript enums reference JSON values but are defined in code
+
+## Testing
+
+```typescript
+import { describe, it, expect, vi } from 'vitest';
+
+describe('WeightCommands', () => {
+  it('should generate valid command for 50 lbs', () => {
+    const cmd = WeightCommands.get(50);
+    expect(cmd).not.toBeNull();
+    expect(cmd!.length).toBe(21);
+  });
+  
+  it('should return null for invalid weight', () => {
+    const cmd = WeightCommands.get(7); // Not a multiple of 5
+    expect(cmd).toBeNull();
+  });
+});
+```
+
+- Test domain logic with Vitest
+- Mock BLE adapters with `vi.fn()`
+- Use `vi.useFakeTimers()` for time-based logic
