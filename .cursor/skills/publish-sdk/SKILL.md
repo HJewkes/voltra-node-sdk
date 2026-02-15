@@ -60,24 +60,18 @@ If there are critical issues, stop and ask the user to resolve them before conti
 
 The SDK is public. The protocol is proprietary. Scan for accidental leaks.
 
-**Automated checks** — run from the repo root:
+**Automated checks** — single command:
 
 ```bash
-# Ensure no private/ directory exists (should be in voltra-private only)
-ls -la private/ 2>/dev/null && echo "FAIL: private/ directory exists in SDK" || echo "OK: no private/ directory"
-
-# Search for raw protocol hex patterns (55130403aa10 is the command prefix)
-rg -i "55130403" --type ts --glob '!**/protocol-data.generated.ts' src/
-
-# Search for CRC init constant
-rg "0x3692|3692" --type ts --glob '!**/protocol-data.generated.ts' src/
-
-# Search for private repo references that shouldn't be public
-rg -i "voltra-private|private.*protocol|private.*data" --type ts src/
-
-# Check for stray JSON data files
-find src/ -name "*.json" -not -name "package.json" -not -name "tsconfig*.json"
+npm run audit:privacy
 ```
+
+This runs `scripts/audit-privacy.sh` which checks for:
+1. No `private/` directory in the repo
+2. No raw protocol hex prefix (`55130403`) outside generated files
+3. No CRC init constant (`0x3692`) outside generated files
+4. No references to `voltra-private` or private data paths in source
+5. No stray JSON data files in `src/`
 
 **Manual checks** on the diff:
 - No raw hex command strings outside `protocol-data.generated.ts`
@@ -94,12 +88,10 @@ If any leak is found, stop and report to the user.
 Run the full CI suite before pushing:
 
 ```bash
-npm run lint
-npm run format:check
-npm run typecheck
-npm run test
-npm run build
+npm run ci:local
 ```
+
+This runs lint, format:check, typecheck, test, and build in sequence (fail-fast).
 
 All must pass. If any fail, report the errors and fix them (or ask the user).
 
@@ -170,7 +162,7 @@ Release vX.Y.Z — <brief description>
 
 ## Test Plan
 - All CI checks pass (lint, typecheck, test, build, gitleaks, security audit)
-- Verified locally: `npm run lint && npm run typecheck && npm run test && npm run build`
+- Verified locally: `npm run ci:local` and `npm run audit:privacy`
 
 ## Breaking Changes
 <any breaking changes, or "None">
@@ -200,10 +192,18 @@ If any check fails, investigate, fix locally, amend or add a commit, and push ag
 
 ### Step 6: Merge PR
 
-Once all checks pass, merge the PR:
+Once all checks pass, merge the PR.
+
+**Repo admins** can merge immediately, bypassing branch protection:
 
 ```bash
-gh pr merge <PR-number> --squash --delete-branch
+gh pr merge <PR-number> --squash --delete-branch --admin
+```
+
+**Non-admin contributors** should queue an auto-merge that completes once branch protection requirements are met:
+
+```bash
+gh pr merge <PR-number> --squash --delete-branch --auto
 ```
 
 Use `--squash` to keep main history clean. The squash message should be the release commit message.
