@@ -1,6 +1,6 @@
 {
   "name": "@voltras/node-sdk",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "SDK for connecting to and controlling Voltra fitness devices",
   "main": "./dist/cjs/index.js",
   "module": "./dist/esm/index.js",
@@ -44,6 +44,7 @@
     "format:check": "prettier --check \"src/**/*.ts\"",
     "typecheck": "tsc --noEmit",
     "docs:api": "typedoc --out docs/api src/index.ts",
+    "generate:protocol": "npx tsx ../voltra-private/generators/encode-protocol.ts",
     "clean": "rm -rf dist",
     "prepublishOnly": "npm run clean && npm run build && npm run test",
     "prepare": "husky"

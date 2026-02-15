@@ -17,6 +17,7 @@
  *
  * // Configure settings
  * await client.setWeight(50);
+ * await client.setMode(TrainingMode.WeightTraining);
  *
  * // Listen for telemetry
  * client.onFrame((frame) => {
@@ -33,16 +34,30 @@
  * ```
  */
 
-import type { BLEAdapter, NotificationCallback } from '../bluetooth/adapters/types';
+import type { BLEAdapter } from '../bluetooth/adapters/types';
 import type { DiscoveredDevice } from '../bluetooth/models/device';
 import type { VoltraConnectionState } from '../voltra/models/connection';
+import { DEFAULT_SETTINGS } from '../voltra/models/device';
 import type { VoltraDeviceSettings, VoltraRecordingState } from '../voltra/models/device';
 import { isValidVoltraTransition } from '../voltra/models/connection';
 import { filterVoltraDevices } from '../voltra/models/device-filter';
 import { Auth, Init, Timing, Workout } from '../voltra/protocol/constants';
-import { WeightCommands, ChainsCommands, EccentricCommands } from '../voltra/protocol/commands';
-import { decodeNotification } from '../voltra/protocol/telemetry-decoder';
+import {
+  getWeightCommand,
+  getChainsCommand,
+  getEccentricCommand,
+  getInverseChainsCommand,
+  getModeCommand,
+  getAvailableWeights as getAvailableWeightValues,
+  getAvailableChains as getAvailableChainValues,
+  getAvailableEccentric as getAvailableEccentricValues,
+  getAvailableInverseChains as getAvailableInverseChainsValues,
+  getAvailableModes,
+} from '../voltra/protocol/commands';
+import { TrainingMode } from '../voltra/protocol/constants';
 import { delay } from '../shared/utils';
+import { createNotificationHandler } from './notification-dispatcher';
+import { setupDisconnectMonitor, attemptReconnect } from './reconnect-handler';
 import {
   ConnectionError,
   AuthenticationError,
@@ -58,8 +73,14 @@ import type {
   VoltraClientEvent,
   VoltraClientEventListener,
   FrameListener,
+  RepBoundaryListener,
+  SetBoundaryListener,
+  ModeConfirmedListener,
+  SettingsUpdateListener,
+  BatteryUpdateListener,
   ScanOptions,
 } from './types';
+import type { DeviceSettings } from '../voltra/protocol/types';
 
 /**
  * Default client options.
@@ -68,15 +89,6 @@ const DEFAULT_OPTIONS: Required<Omit<VoltraClientOptions, 'adapter'>> = {
   autoReconnect: false,
   maxReconnectAttempts: 3,
   reconnectDelayMs: 1000,
-};
-
-/**
- * Default device settings.
- */
-const DEFAULT_SETTINGS: VoltraDeviceSettings = {
-  weight: 0,
-  chains: 0,
-  eccentric: 0,
 };
 
 /**
@@ -106,6 +118,11 @@ export class VoltraClient {
   // Event listeners
   private listeners: Set<VoltraClientEventListener> = new Set();
   private frameListeners: Set<FrameListener> = new Set();
+  private repBoundaryListeners: Set<RepBoundaryListener> = new Set();
+  private setBoundaryListeners: Set<SetBoundaryListener> = new Set();
+  private modeConfirmedListeners: Set<ModeConfirmedListener> = new Set();
+  private settingsUpdateListeners: Set<SettingsUpdateListener> = new Set();
+  private batteryUpdateListeners: Set<BatteryUpdateListener> = new Set();
 
   // Disposed flag
   private disposed = false;
@@ -335,14 +352,14 @@ export class VoltraClient {
   /**
    * Set weight in pounds.
    *
-   * @param lbs Weight (5-200 in increments of 5)
+   * @param lbs Weight (5-200, any integer value)
    */
   async setWeight(lbs: number): Promise<void> {
     this.ensureConnected();
 
-    const cmd = WeightCommands.get(lbs);
+    const cmd = getWeightCommand(lbs);
     if (!cmd) {
-      throw new InvalidSettingError('weight', lbs, WeightCommands.getAvailable());
+      throw new InvalidSettingError('weight', lbs, getAvailableWeightValues());
     }
 
     try {
@@ -361,18 +378,43 @@ export class VoltraClient {
   async setChains(lbs: number): Promise<void> {
     this.ensureConnected();
 
-    const cmds = ChainsCommands.get(lbs);
-    if (!cmds) {
-      throw new InvalidSettingError('chains', lbs, ChainsCommands.getAvailable());
+    const cmd = getChainsCommand(lbs);
+    if (!cmd) {
+      throw new InvalidSettingError('chains', lbs, getAvailableChainValues());
     }
 
     try {
-      await this.adapter!.write(cmds.step1);
-      await delay(Timing.DUAL_COMMAND_DELAY_MS);
-      await this.adapter!.write(cmds.step2);
+      await this.adapter!.write(cmd);
       this._settings.chains = lbs;
     } catch (e) {
       throw new CommandError(`Failed to set chains: ${this.getErrorMessage(e)}`, 'setChains');
+    }
+  }
+
+  /**
+   * Set inverse chains weight.
+   *
+   * Inverse chains reduce resistance during the concentric (lifting) phase
+   * and add resistance during the eccentric (lowering) phase - opposite of regular chains.
+   *
+   * @param lbs Inverse chains weight in pounds (0-100)
+   */
+  async setInverseChains(lbs: number): Promise<void> {
+    this.ensureConnected();
+
+    const cmd = getInverseChainsCommand(lbs);
+    if (!cmd) {
+      throw new InvalidSettingError('inverseChains', lbs, getAvailableInverseChainsValues());
+    }
+
+    try {
+      await this.adapter!.write(cmd);
+      this._settings.inverseChains = lbs;
+    } catch (e) {
+      throw new CommandError(
+        `Failed to set inverse chains: ${this.getErrorMessage(e)}`,
+        'setInverseChains'
+      );
     }
   }
 
@@ -384,15 +426,13 @@ export class VoltraClient {
   async setEccentric(percent: number): Promise<void> {
     this.ensureConnected();
 
-    const cmds = EccentricCommands.get(percent);
-    if (!cmds) {
-      throw new InvalidSettingError('eccentric', percent, EccentricCommands.getAvailable());
+    const cmd = getEccentricCommand(percent);
+    if (!cmd) {
+      throw new InvalidSettingError('eccentric', percent, getAvailableEccentricValues());
     }
 
     try {
-      await this.adapter!.write(cmds.step1);
-      await delay(Timing.DUAL_COMMAND_DELAY_MS);
-      await this.adapter!.write(cmds.step2);
+      await this.adapter!.write(cmd);
       this._settings.eccentric = percent;
     } catch (e) {
       throw new CommandError(`Failed to set eccentric: ${this.getErrorMessage(e)}`, 'setEccentric');
@@ -403,21 +443,55 @@ export class VoltraClient {
    * Get available weight values.
    */
   getAvailableWeights(): number[] {
-    return WeightCommands.getAvailable();
+    return getAvailableWeightValues();
   }
 
   /**
    * Get available chains values.
    */
   getAvailableChains(): number[] {
-    return ChainsCommands.getAvailable();
+    return getAvailableChainValues();
   }
 
   /**
    * Get available eccentric values.
    */
   getAvailableEccentric(): number[] {
-    return EccentricCommands.getAvailable();
+    return getAvailableEccentricValues();
+  }
+
+  /**
+   * Get available inverse chains values.
+   */
+  getAvailableInverseChains(): number[] {
+    return getAvailableInverseChainsValues();
+  }
+
+  /**
+   * Set training mode.
+   *
+   * @param mode Training mode to set
+   */
+  async setMode(mode: TrainingMode): Promise<void> {
+    this.ensureConnected();
+
+    const cmd = getModeCommand(mode);
+    if (!cmd) {
+      throw new InvalidSettingError('mode', mode, getAvailableModes());
+    }
+
+    try {
+      await this.adapter!.write(cmd);
+    } catch (e) {
+      throw new CommandError(`Failed to set mode: ${this.getErrorMessage(e)}`, 'setMode');
+    }
+  }
+
+  /**
+   * Get available training modes.
+   */
+  getAvailableModes(): TrainingMode[] {
+    return getAvailableModes();
   }
 
   // ===========================================================================
@@ -547,6 +621,66 @@ export class VoltraClient {
     return () => this.listeners.delete(wrappedListener);
   }
 
+  /**
+   * Subscribe to rep boundary events.
+   * Called when the device signals a rep completion (end of concentric or eccentric phase).
+   *
+   * @param listener Rep boundary listener
+   * @returns Unsubscribe function
+   */
+  onRepBoundary(listener: RepBoundaryListener): () => void {
+    this.repBoundaryListeners.add(listener);
+    return () => this.repBoundaryListeners.delete(listener);
+  }
+
+  /**
+   * Subscribe to set boundary events.
+   * Called when the device signals set completion.
+   *
+   * @param listener Set boundary listener
+   * @returns Unsubscribe function
+   */
+  onSetBoundary(listener: SetBoundaryListener): () => void {
+    this.setBoundaryListeners.add(listener);
+    return () => this.setBoundaryListeners.delete(listener);
+  }
+
+  /**
+   * Subscribe to mode confirmation events.
+   * Called when the device confirms a training mode change.
+   *
+   * @param listener Mode confirmed listener
+   * @returns Unsubscribe function
+   */
+  onModeConfirmed(listener: ModeConfirmedListener): () => void {
+    this.modeConfirmedListeners.add(listener);
+    return () => this.modeConfirmedListeners.delete(listener);
+  }
+
+  /**
+   * Subscribe to settings update events.
+   * Called when the device reports its current settings.
+   *
+   * @param listener Settings update listener
+   * @returns Unsubscribe function
+   */
+  onSettingsUpdate(listener: SettingsUpdateListener): () => void {
+    this.settingsUpdateListeners.add(listener);
+    return () => this.settingsUpdateListeners.delete(listener);
+  }
+
+  /**
+   * Subscribe to battery update events.
+   * Called when the device reports its battery level.
+   *
+   * @param listener Battery update listener
+   * @returns Unsubscribe function
+   */
+  onBatteryUpdate(listener: BatteryUpdateListener): () => void {
+    this.batteryUpdateListeners.add(listener);
+    return () => this.batteryUpdateListeners.delete(listener);
+  }
+
   // ===========================================================================
   // Lifecycle
   // ===========================================================================
@@ -567,9 +701,14 @@ export class VoltraClient {
       this.disconnect().catch(() => {});
     }
 
-    // Clear listeners
+    // Clear all listeners
     this.listeners.clear();
     this.frameListeners.clear();
+    this.repBoundaryListeners.clear();
+    this.setBoundaryListeners.clear();
+    this.modeConfirmedListeners.clear();
+    this.settingsUpdateListeners.clear();
+    this.batteryUpdateListeners.clear();
 
     // Cleanup
     this.cleanup();
@@ -602,35 +741,53 @@ export class VoltraClient {
   private setupNotificationHandler(): void {
     if (!this.adapter) return;
 
-    const handler: NotificationCallback = (data) => {
-      const result = decodeNotification(data);
-      if (!result) return;
-
-      if (result.type === 'frame') {
-        this.emit({ type: 'frame', frame: result.frame });
-        this.frameListeners.forEach((listener) => listener(result.frame));
-      }
-    };
+    const handler = createNotificationHandler({
+      onFrame: (frame) => {
+        this.emit({ type: 'frame', frame });
+        this.frameListeners.forEach((listener) => listener(frame));
+      },
+      onRepBoundary: () => {
+        this.emit({ type: 'repBoundary' });
+        this.repBoundaryListeners.forEach((listener) => listener());
+      },
+      onSetBoundary: () => {
+        this.emit({ type: 'setBoundary' });
+        this.setBoundaryListeners.forEach((listener) => listener());
+      },
+      onModeConfirmed: (mode) => {
+        this.emit({ type: 'modeConfirmed', mode });
+        this.modeConfirmedListeners.forEach((listener) => listener(mode));
+      },
+      onSettingsUpdate: (settings) => {
+        this.emit({ type: 'settingsUpdate', settings });
+        this.settingsUpdateListeners.forEach((listener) => listener(settings));
+        this.syncSettingsFromDevice(settings);
+      },
+      onBatteryUpdate: (battery) => {
+        this.emit({ type: 'batteryUpdate', battery });
+        this.batteryUpdateListeners.forEach((listener) => listener(battery));
+      },
+    });
 
     this.notificationUnsubscribe = this.adapter.onNotification(handler);
   }
 
   private setupDisconnectHandler(): void {
-    if (!this.adapter || !this.options.autoReconnect) return;
+    if (!this.adapter) return;
 
-    // Monitor connection state
-    const checkConnection = this.adapter.onConnectionStateChange?.((state) => {
-      if (state === 'disconnected' && this._connectionState === 'connected') {
-        this.handleUnexpectedDisconnect();
-      }
-    });
+    const disconnectUnsub = setupDisconnectMonitor(
+      this.adapter,
+      this.options,
+      () => this._connectionState === 'connected',
+      () => this.handleUnexpectedDisconnect()
+    );
 
-    // Store for cleanup if the adapter supports it
-    if (checkConnection) {
+    // Chain with existing notification unsubscribe for cleanup
+    if (disconnectUnsub) {
       const originalUnsubscribe = this.notificationUnsubscribe;
       this.notificationUnsubscribe = () => {
         originalUnsubscribe?.();
-        checkConnection();
+        disconnectUnsub();
       };
     }
   }
@@ -646,29 +803,21 @@ export class VoltraClient {
     this._isReconnecting = true;
     this._reconnectAttempt = 0;
 
-    while (this._reconnectAttempt < this.options.maxReconnectAttempts) {
-      this._reconnectAttempt++;
-      this.emit({
-        type: 'reconnecting',
-        attempt: this._reconnectAttempt,
-        maxAttempts: this.options.maxReconnectAttempts,
-      });
+    const lastDevice = this._lastConnectedDevice;
+    const result = await attemptReconnect(this.options, {
+      onReconnecting: (attempt, maxAttempts) => {
+        this._reconnectAttempt = attempt;
+        this.emit({ type: 'reconnecting', attempt, maxAttempts });
+      },
+      reconnect: () => this.connect(lastDevice),
+      onReconnectFailed: () => {
+        this.cleanup();
+        this.setConnectionState('disconnected');
+        this.emit({ type: 'disconnected', deviceId: this._connectedDeviceId ?? 'unknown' });
+      },
+    });
 
-      try {
-        await delay(this.options.reconnectDelayMs);
-        await this.connect(this._lastConnectedDevice);
-        this._isReconnecting = false;
-        return;
-      } catch {
-        // Continue to next attempt
-      }
-    }
-
-    // Reconnect failed
-    this._isReconnecting = false;
-    this.cleanup();
-    this.setConnectionState('disconnected');
-    this.emit({ type: 'disconnected', deviceId: this._connectedDeviceId ?? 'unknown' });
+    this._isReconnecting = result.isReconnecting;
   }
 
   private cleanup(): void {
@@ -739,5 +888,27 @@ export class VoltraClient {
 
   private getErrorMessage(e: unknown): string {
     return e instanceof Error ? e.message : String(e);
+  }
+
+  /**
+   * Sync internal settings state from device-reported settings.
+   * Called when the device sends a settings_update notification.
+   */
+  private syncSettingsFromDevice(deviceSettings: DeviceSettings): void {
+    if (deviceSettings.baseWeight !== undefined) {
+      this._settings.weight = deviceSettings.baseWeight;
+    }
+    if (deviceSettings.chains !== undefined) {
+      this._settings.chains = deviceSettings.chains;
+    }
+    if (deviceSettings.inverseChains !== undefined) {
+      this._settings.inverseChains = deviceSettings.inverseChains;
+    }
+    if (deviceSettings.eccentric !== undefined) {
+      this._settings.eccentric = deviceSettings.eccentric;
+    }
+    if (deviceSettings.trainingMode !== undefined) {
+      this._settings.mode = deviceSettings.trainingMode;
+    }
   }
 }

@@ -4,7 +4,7 @@
  * Demonstrates the complete SDK workflow:
  * - Scanning for devices
  * - Connecting to a selected device
- * - Configuring all resistance settings (weight, chains, eccentric)
+ * - Configuring all resistance settings (weight, chains, inverse chains, eccentric)
  * - Recording a workout with telemetry collection
  * - Processing telemetry data
  *
@@ -60,13 +60,17 @@ async function main() {
     // =========================================================================
     console.log('\nStep 3: Configuring resistance settings...');
 
-    // Set primary weight (5-200 lbs in increments of 5)
+    // Set primary weight (5-200 lbs, any integer)
     console.log('  Setting weight to 50 lbs...');
     await client.setWeight(50);
 
     // Set chains (0-100 lbs) - reduces load as you extend
     console.log('  Setting chains to 10 lbs...');
     await client.setChains(10);
+
+    // Set inverse chains (0-100 lbs) - increases load as you extend
+    console.log('  Setting inverse chains to 0 lbs...');
+    await client.setInverseChains(0);
 
     // Set eccentric adjustment (-195% to +195%) - adjusts lowering phase
     console.log('  Setting eccentric to 0% (balanced)...');
@@ -77,6 +81,7 @@ async function main() {
     // You can query available values for each setting:
     // console.log('Available weights:', client.getAvailableWeights());
     // console.log('Available chains:', client.getAvailableChains());
+    // console.log('Available inverse chains:', client.getAvailableInverseChains());
     // console.log('Available eccentric:', client.getAvailableEccentric());
 
     // =========================================================================

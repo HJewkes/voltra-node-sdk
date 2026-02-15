@@ -12,6 +12,9 @@
 
 import { WebBluetoothBase, type WebBluetoothConfig } from './web-bluetooth-base';
 import type { Device, ConnectOptions } from './types';
+import { createLogger } from '../../shared/logger';
+
+const log = createLogger('NodeBLE');
 
 // Dynamic import for webbluetooth to avoid bundling issues in non-Node environments
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -105,7 +108,7 @@ export class NodeBLEAdapter extends WebBluetoothBase {
     return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
         // Timeout - return discovered devices
-        console.log(`[NodeBLE] Scan timeout. Found ${this.discoveredDevices.length} device(s)`);
+        log.debug(`Scan timeout. Found ${this.discoveredDevices.length} device(s)`);
         resolve(this.discoveredDevices);
       }, timeout * 1000);
 
@@ -131,7 +134,7 @@ export class NodeBLEAdapter extends WebBluetoothBase {
           // Add to discovered list
           if (!this.discoveredDevices.find((d) => d.id === device.id)) {
             this.discoveredDevices.push(discoveredDevice);
-            console.log(`[NodeBLE] Found device: ${device.name}`);
+            log.debug(`Found device: ${device.name}`);
           }
 
           // Check if we should select this device
@@ -147,7 +150,7 @@ export class NodeBLEAdapter extends WebBluetoothBase {
           }
 
           if (shouldSelect) {
-            console.log(`[NodeBLE] Selected device: ${device.name}`);
+            log.debug(`Selected device: ${device.name}`);
             this.selectedDevice = device;
             clearTimeout(timeoutId);
             selectFn();
@@ -174,7 +177,7 @@ export class NodeBLEAdapter extends WebBluetoothBase {
           clearTimeout(timeoutId);
           if (error.name === 'NotFoundError') {
             // No device selected
-            console.log('[NodeBLE] No device selected');
+            log.debug('No device selected');
             resolve(this.discoveredDevices);
           } else {
             reject(error);
@@ -196,9 +199,7 @@ export class NodeBLEAdapter extends WebBluetoothBase {
     }
 
     if (this.selectedDevice.id !== deviceId) {
-      console.warn(
-        `[NodeBLE] Device ID mismatch: expected ${this.selectedDevice.id}, got ${deviceId}`
-      );
+      log.warn(`Device ID mismatch: expected ${this.selectedDevice.id}, got ${deviceId}`);
     }
 
     // Connect to GATT server
@@ -206,9 +207,9 @@ export class NodeBLEAdapter extends WebBluetoothBase {
 
     // Handle immediate write if provided (for authentication)
     if (options?.immediateWrite) {
-      console.log('[NodeBLE] Sending immediate auth write...');
+      log.debug('Sending immediate auth write...');
       await this.write(options.immediateWrite);
-      console.log('[NodeBLE] Immediate auth write sent');
+      log.debug('Immediate auth write sent');
     }
   }
 

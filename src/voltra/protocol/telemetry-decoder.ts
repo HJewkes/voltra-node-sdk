@@ -3,11 +3,21 @@
  *
  * Low-level protocol decoder for Voltra BLE telemetry notifications.
  * Only handles parsing bytes into typed data - no business logic.
+ * Uses offset-based lookups from protocol.json - no hardcoded byte positions.
  */
 
-import { MessageTypes, TelemetryOffsets, MovementPhase } from './constants';
+import {
+  MessageTypes,
+  TelemetryOffsets,
+  MovementPhase,
+  NotificationConfigs,
+  ParamIdHex,
+  TrainingMode,
+  VALID_TRAINING_MODES,
+} from './constants';
 import { createFrame, type TelemetryFrame } from '../models/telemetry/frame';
-import { bytesEqual } from '../../shared/utils';
+import { bytesEqual, bytesToHex } from '../../shared/utils';
+import type { DeviceSettings } from './types';
 
 // =============================================================================
 // Byte Parsing Helpers
@@ -58,16 +68,22 @@ export type MessageType =
   | 'rep_summary'
   | 'set_summary'
   | 'status_update'
+  | 'mode_confirmation'
+  | 'multi_param'
+  | 'settings_update'
+  | 'device_init'
   | 'unknown';
 
 /**
  * Identify the message type from raw bytes.
+ * Uses header matching from protocol.json configurations.
  */
 export function identifyMessageType(data: Uint8Array): MessageType {
   if (data.length < 4) return 'unknown';
 
   const msgType = data.slice(0, 4);
 
+  // Check 4-byte message types first (telemetry stream types)
   if (bytesEqual(msgType, MessageTypes.TELEMETRY_STREAM)) {
     return 'telemetry_stream';
   } else if (bytesEqual(msgType, MessageTypes.REP_SUMMARY)) {
@@ -76,6 +92,21 @@ export function identifyMessageType(data: Uint8Array): MessageType {
     return 'set_summary';
   } else if (bytesEqual(msgType, MessageTypes.STATUS_UPDATE)) {
     return 'status_update';
+  }
+
+  // Check 2-byte headers for other notification types
+  const header2 = bytesToHex(data.slice(0, 2));
+
+  if (header2 === NotificationConfigs.modeConfirmation.header) {
+    return 'mode_confirmation';
+  } else if (header2 === NotificationConfigs.multiParam.header) {
+    return 'multi_param';
+  } else if (header2 === NotificationConfigs.settingsUpdate.header) {
+    return 'settings_update';
+  } else if (header2 === NotificationConfigs.deviceInit.header) {
+    return 'device_init';
+  } else if (header2 === NotificationConfigs.statusBattery.header) {
+    return 'status_update'; // Also a status type
   }
 
   return 'unknown';
@@ -92,7 +123,10 @@ export type DecodeResult =
   | { type: 'frame'; frame: TelemetryFrame }
   | { type: 'rep_boundary' } // Device signals rep completion
   | { type: 'set_boundary' } // Device signals set completion
-  | { type: 'status'; data: Uint8Array }
+  | { type: 'mode_confirmation'; mode: TrainingMode } // Mode change confirmed
+  | { type: 'settings_update'; settings: DeviceSettings } // Device settings
+  | { type: 'device_status'; battery: number } // Battery/status update
+  | { type: 'unknown'; data: Uint8Array } // Unknown notification with raw data
   | null;
 
 // =============================================================================
@@ -128,6 +162,105 @@ export function decodeTelemetryFrame(data: Uint8Array): TelemetryFrame | null {
 }
 
 /**
+ * Decode a mode confirmation notification.
+ * Returns the training mode value.
+ */
+function decodeModeConfirmation(data: Uint8Array): DecodeResult {
+  const config = NotificationConfigs.modeConfirmation;
+  if (config.length && data.length < config.length) return null;
+  if (config.valueOffset === undefined) return null;
+
+  const rawMode = data[config.valueOffset];
+  const mode = VALID_TRAINING_MODES.includes(rawMode as TrainingMode)
+    ? (rawMode as TrainingMode)
+    : TrainingMode.Idle;
+  return { type: 'mode_confirmation', mode };
+}
+
+/**
+ * Decode a settings update notification.
+ * Extracts parameter + value pairs.
+ */
+function decodeSettingsUpdate(data: Uint8Array): DecodeResult {
+  const config = NotificationConfigs.settingsUpdate;
+  if (
+    config.paramCountOffset === undefined ||
+    config.firstParamOffset === undefined ||
+    config.paramSize === undefined
+  ) {
+    return null;
+  }
+
+  const settings: DeviceSettings = {};
+  const paramCount = data[config.paramCountOffset];
+
+  // Parse each param+value pair
+  for (let i = 0; i < paramCount && i < 9; i++) {
+    const offset = config.firstParamOffset + i * config.paramSize;
+    if (offset + 4 > data.length) break;
+
+    // Param ID is 2 bytes little-endian
+    const paramIdHex = bytesToHex(data.slice(offset, offset + 2));
+    // Value is 2 bytes little-endian
+    const value = readUint16LE(data, offset + 2);
+
+    // Map param IDs to settings
+    if (paramIdHex === ParamIdHex.BASE_WEIGHT) {
+      settings.baseWeight = value;
+    } else if (paramIdHex === ParamIdHex.CHAINS) {
+      settings.chains = value;
+    } else if (paramIdHex === ParamIdHex.ECCENTRIC) {
+      settings.eccentric = value;
+    } else if (paramIdHex === ParamIdHex.TRAINING_MODE) {
+      settings.trainingMode = VALID_TRAINING_MODES.includes(value as TrainingMode)
+        ? (value as TrainingMode)
+        : undefined;
+    } else if (paramIdHex === ParamIdHex.INVERSE_CHAINS) {
+      settings.inverseChains = value;
+    }
+  }
+
+  return { type: 'settings_update', settings };
+}
+
+/**
+ * Decode a device status notification.
+ * Extracts battery level.
+ */
+function decodeDeviceStatus(data: Uint8Array): DecodeResult {
+  // Try device init format first
+  const initConfig = NotificationConfigs.deviceInit;
+  if (
+    initConfig.length &&
+    data.length >= initConfig.length &&
+    initConfig.batteryOffset !== undefined
+  ) {
+    const header = bytesToHex(data.slice(0, 2));
+    if (header === initConfig.header) {
+      const battery = data[initConfig.batteryOffset];
+      return { type: 'device_status', battery };
+    }
+  }
+
+  // Try status/battery format
+  const statusConfig = NotificationConfigs.statusBattery;
+  if (
+    statusConfig.length &&
+    data.length >= statusConfig.length &&
+    statusConfig.batteryOffset !== undefined
+  ) {
+    const header = bytesToHex(data.slice(0, 2));
+    if (header === statusConfig.header) {
+      const battery = data[statusConfig.batteryOffset];
+      return { type: 'device_status', battery };
+    }
+  }
+
+  // Fallback: return unknown with raw data
+  return { type: 'unknown', data };
+}
+
+/**
  * Decode a BLE notification.
  * Returns structured data based on message type.
  */
@@ -148,11 +281,19 @@ export function decodeNotification(data: Uint8Array): DecodeResult {
       // Device is signaling set completion
       return { type: 'set_boundary' };
 
+    case 'mode_confirmation':
+      return decodeModeConfirmation(data);
+
+    case 'settings_update':
+    case 'multi_param':
+      return decodeSettingsUpdate(data);
+
+    case 'device_init':
     case 'status_update':
-      return { type: 'status', data };
+      return decodeDeviceStatus(data);
 
     default:
-      return null;
+      return { type: 'unknown', data };
   }
 }
 
@@ -169,10 +310,11 @@ export function encodeTelemetryFrame(frame: TelemetryFrame): Uint8Array {
   const data = new Uint8Array(30);
 
   // Message type header (telemetry stream)
-  data[0] = 0x55;
-  data[1] = 0x3a;
-  data[2] = 0x04;
-  data[3] = 0x70;
+  const header = MessageTypes.TELEMETRY_STREAM;
+  data[0] = header[0];
+  data[1] = header[1];
+  data[2] = header[2];
+  data[3] = header[3];
 
   // Sequence (bytes 6-7)
   writeUint16LE(data, TelemetryOffsets.SEQUENCE, frame.sequence);

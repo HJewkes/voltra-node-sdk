@@ -1,333 +1,156 @@
 /**
- * Voltra Protocol Command Builders
+ * Voltra Protocol Commands
  *
- * Builds commands for setting weight, chains, and eccentric resistance.
+ * Simple key-value mapping from operations to commands.
+ * Commands are loaded from the consolidated protocol.json.
+ * All commands are pre-computed lookup values.
  */
 
 import { hexToBytes } from '../../shared/utils';
-import weightsData from './data/weights.json';
-import chainsData from './data/chains.json';
-import eccentricData from './data/eccentric.json';
+import { TrainingMode, VALID_TRAINING_MODES } from './constants';
+import protocolData from './data/protocol-data.generated';
+import type { ProtocolData } from './types';
 
-// Type definitions for JSON data
-interface WeightValue {
-  seq: string;
-  checksum: string;
-  _full?: string;
-}
-
-interface WeightsData {
-  format: { prefix: string; mode: string; register: string; padding: string };
-  values: Record<string, WeightValue>;
-}
-
-interface ChainsValue {
-  step1_seq: string;
-  step1_checksum: string;
-  step2_seq: string;
-  step2_checksum: string;
-}
-
-interface ChainsData {
-  format: {
-    step1: { prefix: string; mode: string; register: string; padding: string };
-    step2: { prefix: string; mode: string; register: string; padding: string };
-  };
-  values: Record<string, ChainsValue>;
-}
-
-interface EccentricData {
-  format: {
-    step1: { prefix: string; mode: string; register: string; padding: string };
-    step2: { prefix: string; mode: string; register: string; padding: string };
-  };
-  step1: { sequences: Record<string, string>; checksums: Record<string, string> };
-  step2: { sequences: Record<string, string>; checksums: Record<string, string> };
-}
-
-// Type the JSON imports
-const weights = weightsData as WeightsData;
-const chains = chainsData as ChainsData;
-const eccentric = eccentricData as EccentricData;
+// Type the imported data
+const protocol = protocolData as ProtocolData;
 
 // =============================================================================
-// Weight Commands (863e register)
+// Command Maps (initialized from protocol.json)
+// =============================================================================
+
+/** Weight commands map (5-200 lbs) */
+const weightCommands: Record<number, Uint8Array> = {};
+
+/** Chains commands map (0-100 lbs) */
+const chainsCommands: Record<number, Uint8Array> = {};
+
+/** Eccentric commands map (-195 to +195) */
+const eccentricCommands: Record<number, Uint8Array> = {};
+
+/** Inverse chains commands map (0-100 lbs) */
+const inverseChainsCommands: Record<number, Uint8Array> = {};
+
+// Initialize from consolidated protocol.json
+for (const [lbs, hex] of Object.entries(protocol.commands.weights)) {
+  weightCommands[Number(lbs)] = hexToBytes(hex);
+}
+
+for (const [lbs, hex] of Object.entries(protocol.commands.chains)) {
+  chainsCommands[Number(lbs)] = hexToBytes(hex);
+}
+
+for (const [value, hex] of Object.entries(protocol.commands.eccentric)) {
+  eccentricCommands[Number(value)] = hexToBytes(hex);
+}
+
+for (const [lbs, hex] of Object.entries(protocol.commands.inverseChains)) {
+  inverseChainsCommands[Number(lbs)] = hexToBytes(hex);
+}
+
+// =============================================================================
+// Lookup Functions
 // =============================================================================
 
 /**
- * Weight command builder for 5-200 lbs in 5 lb increments.
+ * Get weight command for specified pounds.
+ * @param lbs Weight in pounds (5-200)
+ * @returns Command bytes, or null if not available
  */
-export const WeightCommands = {
-  MIN: 5,
-  MAX: 200,
-  INCREMENT: 5,
-
-  /** Get available weight values */
-  getAvailable(): number[] {
-    return Object.keys(weights.values)
-      .map(Number)
-      .sort((a, b) => a - b);
-  },
-
-  /** Check if a weight value is valid */
-  isValid(pounds: number): boolean {
-    return pounds >= this.MIN && pounds <= this.MAX && pounds % this.INCREMENT === 0;
-  },
-
-  /**
-   * Get the command to set a specific weight.
-   * @param pounds Weight in pounds (5-200 in increments of 5)
-   * @returns 21-byte command, or null if weight not available
-   */
-  get(pounds: number): Uint8Array | null {
-    const key = String(pounds);
-    const values = weights.values;
-    const format = weights.format;
-
-    if (!(key in values)) {
-      return null;
-    }
-
-    const data = values[key];
-    return this._build(pounds, data.seq, data.checksum, format);
-  },
-
-  _build(
-    pounds: number,
-    seq: string,
-    checksum: string,
-    format: { prefix: string; mode: string; register: string; padding: string }
-  ): Uint8Array {
-    const cmd = new Uint8Array(21);
-    let offset = 0;
-
-    // Prefix
-    const prefix = hexToBytes(format.prefix);
-    cmd.set(prefix, offset);
-    offset += prefix.length;
-
-    // Sequence
-    const seqBytes = hexToBytes(seq);
-    cmd.set(seqBytes, offset);
-    offset += seqBytes.length;
-
-    // Mode
-    const mode = hexToBytes(format.mode);
-    cmd.set(mode, offset);
-    offset += mode.length;
-
-    // Register
-    const register = hexToBytes(format.register);
-    cmd.set(register, offset);
-    offset += register.length;
-
-    // Value (little-endian uint16)
-    cmd[offset] = pounds & 0xff;
-    cmd[offset + 1] = (pounds >> 8) & 0xff;
-    offset += 2;
-
-    // Checksum
-    const checksumBytes = hexToBytes(checksum);
-    cmd.set(checksumBytes, offset);
-    offset += checksumBytes.length;
-
-    // Padding
-    const padding = hexToBytes(format.padding);
-    cmd.set(padding, offset);
-
-    return cmd;
-  },
-};
-
-// =============================================================================
-// Chains Commands (873e register)
-// =============================================================================
-
-/**
- * Dual command result for chains and eccentric.
- */
-export interface DualCommand {
-  step1: Uint8Array;
-  step2: Uint8Array;
+export function getWeightCommand(lbs: number): Uint8Array | null {
+  return weightCommands[lbs] || null;
 }
 
 /**
- * Chains (reverse resistance) command builder for 0-100 lbs.
- * Requires dual commands: send step1, wait 500ms, send step2.
+ * Get chains command for specified pounds.
+ * @param lbs Chains weight in pounds (0-100)
+ * @returns Command bytes, or null if not available
  */
-export const ChainsCommands = {
-  MIN: 0,
-  MAX: 100,
-
-  /** Get available chains values */
-  getAvailable(): number[] {
-    return Object.keys(chains.values)
-      .map(Number)
-      .sort((a, b) => a - b);
-  },
-
-  /** Check if a chains value is valid */
-  isValid(pounds: number): boolean {
-    return pounds >= this.MIN && pounds <= this.MAX;
-  },
-
-  /**
-   * Get dual commands to set chains weight.
-   * @param pounds Chains weight (0-100)
-   * @returns Tuple of (step1, step2) commands, or null if not available
-   */
-  get(pounds: number): DualCommand | null {
-    const key = String(pounds);
-    const values = chains.values;
-    const format = chains.format;
-
-    if (!(key in values)) {
-      return null;
-    }
-
-    const data = values[key];
-
-    return {
-      step1: this._build(pounds, 1, data.step1_seq, data.step1_checksum, format),
-      step2: this._build(pounds, 2, data.step2_seq, data.step2_checksum, format),
-    };
-  },
-
-  _build(
-    pounds: number,
-    step: 1 | 2,
-    seq: string,
-    checksum: string,
-    format: ChainsData['format']
-  ): Uint8Array {
-    const fmt = format[`step${step}`];
-    const cmd = new Uint8Array(21);
-    let offset = 0;
-
-    // Prefix
-    const prefix = hexToBytes(fmt.prefix);
-    cmd.set(prefix, offset);
-    offset += prefix.length;
-
-    // Sequence
-    const seqBytes = hexToBytes(seq);
-    cmd.set(seqBytes, offset);
-    offset += seqBytes.length;
-
-    // Mode
-    const mode = hexToBytes(fmt.mode);
-    cmd.set(mode, offset);
-    offset += mode.length;
-
-    // Register
-    const register = hexToBytes(fmt.register);
-    cmd.set(register, offset);
-    offset += register.length;
-
-    // Value (little-endian uint16)
-    cmd[offset] = pounds & 0xff;
-    cmd[offset + 1] = (pounds >> 8) & 0xff;
-    offset += 2;
-
-    // Checksum
-    const checksumBytes = hexToBytes(checksum);
-    cmd.set(checksumBytes, offset);
-    offset += checksumBytes.length;
-
-    // Padding
-    const padding = hexToBytes(fmt.padding);
-    cmd.set(padding, offset);
-
-    return cmd;
-  },
-};
-
-// =============================================================================
-// Eccentric Commands (883e register)
-// =============================================================================
+export function getChainsCommand(lbs: number): Uint8Array | null {
+  return chainsCommands[lbs] || null;
+}
 
 /**
- * Eccentric load adjustment command builder for -195 to +195.
- * Requires dual commands: send step1, wait 500ms, send step2.
+ * Get eccentric command for specified value.
+ * @param value Eccentric adjustment (-195 to +195)
+ * @returns Command bytes, or null if not available
  */
-export const EccentricCommands = {
-  MIN: -195,
-  MAX: 195,
+export function getEccentricCommand(value: number): Uint8Array | null {
+  return eccentricCommands[value] || null;
+}
 
-  /** Get available eccentric values */
-  getAvailable(): number[] {
-    return Object.keys(eccentric.step1.checksums)
-      .map(Number)
-      .sort((a, b) => a - b);
-  },
+/**
+ * Get available weight values.
+ */
+export function getAvailableWeights(): number[] {
+  return Object.keys(weightCommands)
+    .map(Number)
+    .sort((a, b) => a - b);
+}
 
-  /** Check if an eccentric value is valid */
-  isValid(value: number): boolean {
-    return value >= this.MIN && value <= this.MAX;
-  },
+/**
+ * Get available chains values.
+ */
+export function getAvailableChains(): number[] {
+  return Object.keys(chainsCommands)
+    .map(Number)
+    .sort((a, b) => a - b);
+}
 
-  /**
-   * Get dual commands to set eccentric load.
-   * @param value Eccentric adjustment (-195 to +195)
-   * @returns Tuple of (step1, step2) commands, or null if not available
-   */
-  get(value: number): DualCommand | null {
-    const key = String(value);
+/**
+ * Get available eccentric values.
+ */
+export function getAvailableEccentric(): number[] {
+  return Object.keys(eccentricCommands)
+    .map(Number)
+    .sort((a, b) => a - b);
+}
 
-    if (!(key in eccentric.step1.checksums)) {
-      return null;
-    }
+/**
+ * Get inverse chains command for specified pounds.
+ * @param lbs Inverse chains weight in pounds (0-100)
+ * @returns Command bytes, or null if not available
+ */
+export function getInverseChainsCommand(lbs: number): Uint8Array | null {
+  return inverseChainsCommands[lbs] || null;
+}
 
-    return {
-      step1: this._build(value, 1),
-      step2: this._build(value, 2),
-    };
-  },
+/**
+ * Get available inverse chains values.
+ */
+export function getAvailableInverseChains(): number[] {
+  return Object.keys(inverseChainsCommands)
+    .map(Number)
+    .sort((a, b) => a - b);
+}
 
-  _build(value: number, step: 1 | 2): Uint8Array {
-    const stepKey = `step${step}` as 'step1' | 'step2';
-    const fmt = eccentric.format[stepKey];
-    const seq = eccentric[stepKey].sequences[String(value)];
-    const checksum = eccentric[stepKey].checksums[String(value)];
+// =============================================================================
+// Mode Setting Commands
+// =============================================================================
 
-    const cmd = new Uint8Array(21);
-    let offset = 0;
+/** Mode commands map (TrainingMode -> Uint8Array) */
+const modeCommands: Map<TrainingMode, Uint8Array> = new Map([
+  [TrainingMode.Idle, hexToBytes(protocol.commands.modes.idle)],
+  [TrainingMode.WeightTraining, hexToBytes(protocol.commands.modes.weightTraining)],
+  [TrainingMode.ResistanceBand, hexToBytes(protocol.commands.modes.resistanceBand)],
+  [TrainingMode.Rowing, hexToBytes(protocol.commands.modes.rowing)],
+  [TrainingMode.Damper, hexToBytes(protocol.commands.modes.damper)],
+  [TrainingMode.CustomCurves, hexToBytes(protocol.commands.modes.customCurves)],
+  [TrainingMode.Isokinetic, hexToBytes(protocol.commands.modes.isokinetic)],
+  [TrainingMode.Isometric, hexToBytes(protocol.commands.modes.isometric)],
+]);
 
-    // Prefix
-    const prefix = hexToBytes(fmt.prefix);
-    cmd.set(prefix, offset);
-    offset += prefix.length;
+/**
+ * Get mode command for specified training mode.
+ * @param mode Training mode to set
+ * @returns Command bytes, or null if invalid mode
+ */
+export function getModeCommand(mode: TrainingMode): Uint8Array | null {
+  return modeCommands.get(mode) || null;
+}
 
-    // Sequence
-    const seqBytes = hexToBytes(seq);
-    cmd.set(seqBytes, offset);
-    offset += seqBytes.length;
-
-    // Mode
-    const mode = hexToBytes(fmt.mode);
-    cmd.set(mode, offset);
-    offset += mode.length;
-
-    // Register
-    const register = hexToBytes(fmt.register);
-    cmd.set(register, offset);
-    offset += register.length;
-
-    // Value (little-endian int16, signed)
-    const signedValue = value < 0 ? 0x10000 + value : value;
-    cmd[offset] = signedValue & 0xff;
-    cmd[offset + 1] = (signedValue >> 8) & 0xff;
-    offset += 2;
-
-    // Checksum
-    const checksumBytes = hexToBytes(checksum);
-    cmd.set(checksumBytes, offset);
-    offset += checksumBytes.length;
-
-    // Padding
-    const padding = hexToBytes(fmt.padding);
-    cmd.set(padding, offset);
-
-    return cmd;
-  },
-};
+/**
+ * Get available training modes.
+ */
+export function getAvailableModes(): TrainingMode[] {
+  return [...VALID_TRAINING_MODES];
+}

@@ -7,8 +7,9 @@ SDK for connecting to and controlling Voltra fitness devices.
 
 ## Features
 
-- **Device Control**: Configure weight (5-200 lbs), chains (0-100 lbs), and eccentric load (-195% to +195%)
+- **Device Control**: Configure weight (5-200 lbs, any integer), chains (0-100 lbs), inverse chains (0-100 lbs), and eccentric load (-195% to +195%)
 - **Real-time Telemetry**: Stream position, velocity, and force data during workouts
+- **Device Notifications**: Rep/set boundaries, mode confirmations, settings updates, battery level
 - **Recording Lifecycle**: Prepare, start, and stop recording with motor engagement control
 - **Cross-platform**: Web browsers, Node.js, and React Native
 - **Multi-device**: Connect to and control multiple devices simultaneously
@@ -48,9 +49,10 @@ const selectedDevice = devices[0]; // In a real app, user would choose
 const client = await manager.connect(selectedDevice);
 
 // 4. Configure resistance settings
-await client.setWeight(50);      // 5-200 lbs (increments of 5)
-await client.setChains(25);      // 0-100 lbs (reverse resistance)
-await client.setEccentric(10);   // -195 to +195 (eccentric load %)
+await client.setWeight(50);         // 5-200 lbs (any integer)
+await client.setChains(25);         // 0-100 lbs (reverse resistance)
+await client.setInverseChains(15);  // 0-100 lbs (progressive resistance)
+await client.setEccentric(10);      // -195 to +195 (eccentric load %)
 
 // 5. Subscribe to real-time telemetry
 client.onFrame((frame: TelemetryFrame) => {
@@ -90,24 +92,27 @@ Control the device's resistance in three ways:
 
 | Setting | Range | Description |
 |---------|-------|-------------|
-| **Weight** | 5-200 lbs | Primary resistance (increments of 5) |
+| **Weight** | 5-200 lbs | Primary resistance (any integer value) |
 | **Chains** | 0-100 lbs | Reverse resistance - reduces load as you extend |
+| **Inverse Chains** | 0-100 lbs | Progressive resistance - increases load as you extend |
 | **Eccentric** | -195% to +195% | Adjusts eccentric (lowering) phase relative to concentric |
 
 ```typescript
 // Set all resistance parameters
-await client.setWeight(75);       // 75 lbs primary resistance
-await client.setChains(20);       // 20 lbs chain reduction
-await client.setEccentric(-25);   // 25% less resistance on eccentric
+await client.setWeight(75);          // 75 lbs primary resistance
+await client.setChains(20);          // 20 lbs chain reduction
+await client.setInverseChains(10);   // 10 lbs progressive resistance
+await client.setEccentric(-25);      // 25% less resistance on eccentric
 
 // Query current settings
 console.log(client.settings);
-// { weight: 75, chains: 20, eccentric: -25 }
+// { weight: 75, chains: 20, inverseChains: 10, eccentric: -25, mode: 1, battery: 85 }
 
 // Get available values for each setting
-const weights = client.getAvailableWeights();     // [5, 10, 15, ..., 200]
-const chains = client.getAvailableChains();       // [0, 1, 2, ..., 100]
-const eccentric = client.getAvailableEccentric(); // [-195, -190, ..., 195]
+const weights = client.getAvailableWeights();            // [5, 6, 7, ..., 200]
+const chains = client.getAvailableChains();              // [0, 1, 2, ..., 100]
+const inverseChains = client.getAvailableInverseChains(); // [0, 1, 2, ..., 100]
+const eccentric = client.getAvailableEccentric();         // [-195, -190, ..., 195]
 ```
 
 ### Recording Lifecycle
@@ -134,7 +139,7 @@ console.log(client.isRecording);     // true when state === 'active'
 
 ### Real-time Telemetry
 
-Receive movement data at ~100Hz when recording:
+Receive movement data at ~11 Hz when recording:
 
 ```typescript
 // Subscribe to telemetry frames
@@ -142,7 +147,7 @@ const unsubscribe = client.onFrame((frame) => {
   console.log({
     sequence: frame.sequence,   // Packet sequence number
     timestamp: frame.timestamp, // Unix ms when received
-    phase: frame.phase,         // Movement phase (0-4)
+    phase: frame.phase,         // MovementPhase enum
     position: frame.position,   // Position in movement (0-600)
     velocity: frame.velocity,   // Current velocity
     force: frame.force,         // Force being applied
@@ -153,34 +158,108 @@ const unsubscribe = client.onFrame((frame) => {
 unsubscribe();
 ```
 
-### Connection States
+### Events and Notifications
 
-Monitor the connection lifecycle:
+The SDK provides a comprehensive event system for real-time device notifications:
 
 ```typescript
-// Subscribe to all events
+// Subscribe to all events with full type safety
 client.subscribe((event) => {
   switch (event.type) {
+    // Connection events
     case 'connectionStateChanged':
       console.log('State:', event.state);
       // 'disconnected' | 'connecting' | 'authenticating' | 'connected'
       break;
+    case 'connected':
+      console.log(`Connected to ${event.deviceName}`);
+      break;
+    case 'disconnected':
+      console.log(`Disconnected from ${event.deviceId}`);
+      break;
+
+    // Recording events
     case 'recordingStateChanged':
       console.log('Recording:', event.state);
       break;
+
+    // Telemetry events
     case 'frame':
       console.log('Telemetry:', event.frame);
       break;
+
+    // Workout boundary events (device-detected)
+    case 'repBoundary':
+      console.log('Rep completed!');
+      break;
+    case 'setBoundary':
+      console.log('Set completed!');
+      break;
+
+    // Device notification events
+    case 'modeConfirmed':
+      console.log('Mode confirmed:', event.mode);
+      break;
+    case 'settingsUpdate':
+      console.log('Device settings:', event.settings);
+      break;
+    case 'batteryUpdate':
+      console.log('Battery:', event.battery, '%');
+      break;
+
     case 'error':
       console.error('Error:', event.error);
       break;
   }
 });
+```
 
-// Or subscribe to specific events
-client.onConnectionStateChange((state) => {
-  console.log('Connection state:', state);
+#### Convenience Subscription Methods
+
+Subscribe to specific event types with dedicated methods:
+
+```typescript
+// Telemetry frames (~11 Hz during recording)
+const unsubFrame = client.onFrame((frame) => {
+  updateUI(frame.position, frame.velocity, frame.force);
 });
+
+// Rep boundaries (device detects rep completion)
+const unsubRep = client.onRepBoundary(() => {
+  repCount++;
+  playRepSound();
+});
+
+// Set boundaries (device detects set completion)
+const unsubSet = client.onSetBoundary(() => {
+  logSetComplete();
+});
+
+// Mode confirmations (after setMode())
+const unsubMode = client.onModeConfirmed((mode) => {
+  console.log('Mode now active:', mode);
+});
+
+// Settings updates (device reports current state)
+const unsubSettings = client.onSettingsUpdate((settings) => {
+  // settings: { baseWeight?, chains?, eccentric?, trainingMode? }
+  syncUIWithDevice(settings);
+});
+
+// Battery level updates
+const unsubBattery = client.onBatteryUpdate((battery) => {
+  showBatteryIndicator(battery);
+});
+
+// Connection state changes
+const unsubConnection = client.onConnectionStateChange((state) => {
+  updateConnectionUI(state);
+});
+
+// Unsubscribe when done
+unsubFrame();
+unsubRep();
+// ... etc
 ```
 
 ## Platform-Specific Setup
@@ -323,7 +402,7 @@ try {
 } catch (error) {
   if (error instanceof InvalidSettingError) {
     console.log(`Invalid ${error.setting}: ${error.value}`);
-    console.log('Available values:', error.availableValues);
+    console.log('Available values:', error.validValues);
   }
 }
 ```
@@ -372,15 +451,23 @@ Controls a single connected device.
 
 | Method | Description |
 |--------|-------------|
-| `setWeight(lbs)` | Set weight (5-200 in increments of 5) |
+| `setWeight(lbs)` | Set weight (5-200, any integer) |
 | `setChains(lbs)` | Set chains (0-100) |
+| `setInverseChains(lbs)` | Set inverse chains (0-100) |
 | `setEccentric(percent)` | Set eccentric (-195 to +195) |
+| `setMode(mode)` | Set training mode |
 | `prepareRecording()` | Pre-engage motor for low-latency start |
 | `startRecording()` | Start recording (engages motor) |
 | `stopRecording()` | Stop recording (disengages motor) |
 | `endSet()` | End set but stay prepared |
-| `onFrame(callback)` | Subscribe to telemetry frames |
 | `subscribe(callback)` | Subscribe to all events |
+| `onFrame(callback)` | Subscribe to telemetry frames |
+| `onRepBoundary(callback)` | Subscribe to rep completion events |
+| `onSetBoundary(callback)` | Subscribe to set completion events |
+| `onModeConfirmed(callback)` | Subscribe to mode confirmation events |
+| `onSettingsUpdate(callback)` | Subscribe to device settings updates |
+| `onBatteryUpdate(callback)` | Subscribe to battery level updates |
+| `onConnectionStateChange(callback)` | Subscribe to connection state changes |
 | `disconnect()` | Disconnect from device |
 | `dispose()` | Clean up resources |
 
@@ -390,21 +477,26 @@ Controls a single connected device.
 | `isConnected` | boolean | Whether connected |
 | `recordingState` | string | 'idle' \| 'preparing' \| 'ready' \| 'active' \| 'stopping' |
 | `isRecording` | boolean | Whether recording is active |
-| `settings` | object | Current { weight, chains, eccentric } |
+| `settings` | object | Current { weight, chains, inverseChains, eccentric, mode, battery } |
 | `connectedDeviceId` | string | Connected device ID |
 | `connectedDeviceName` | string | Connected device name |
 
 ### TelemetryFrame
 
 ```typescript
+import { MovementPhase } from '@voltras/node-sdk';
+
 interface TelemetryFrame {
-  sequence: number;   // Packet sequence number
-  timestamp: number;  // Unix ms when received
-  phase: number;      // Movement phase (0-4)
-  position: number;   // Position in movement (0-600)
-  velocity: number;   // Current velocity
-  force: number;      // Force being applied (signed)
+  sequence: number;         // Packet sequence number
+  timestamp: number;        // Unix ms when received
+  phase: MovementPhase;     // Movement phase (see MovementPhase enum)
+  position: number;         // Position in movement (0-600)
+  velocity: number;         // Current velocity
+  force: number;            // Force being applied (signed)
 }
+
+// MovementPhase enum values:
+// IDLE = 0, CONCENTRIC = 1, HOLD = 2, ECCENTRIC = 3, UNKNOWN = -1
 ```
 
 ## Documentation
@@ -419,7 +511,6 @@ Step-by-step tutorials for using the SDK in your app:
 
 ### Technical Deep-Dives
 
-- [Bluetooth Protocol](./docs/concepts/bluetooth-protocol.md) - BLE protocol, commands, telemetry format
 - [Platform Adapters](./docs/concepts/platform-adapters.md) - How adapters work across platforms
 
 ### Other

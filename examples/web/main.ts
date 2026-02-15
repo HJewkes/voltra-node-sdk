@@ -4,7 +4,7 @@
  * Demonstrates the complete SDK workflow in a browser:
  * - Scanning for devices (opens browser device picker)
  * - Connecting to user-selected device
- * - Configuring resistance settings (weight, chains, eccentric)
+ * - Configuring resistance settings (weight, chains, inverse chains, eccentric)
  * - Recording workouts with real-time telemetry
  * - Displaying live metrics
  *

@@ -8,13 +8,11 @@
 // Models
 // =============================================================================
 
-// Device model
-export {
-  VoltraDevice,
-  DEFAULT_SETTINGS,
-  type VoltraDeviceSettings,
-  type VoltraRecordingState,
-  type VoltraDeviceState,
+// Device model types
+export type {
+  VoltraDeviceSettings,
+  VoltraRecordingState,
+  VoltraDeviceState,
 } from './models/device';
 
 // Connection model
@@ -40,12 +38,16 @@ export {
 // Protocol
 // =============================================================================
 
-// Command builders
+// Command lookup functions
 export {
-  WeightCommands,
-  ChainsCommands,
-  EccentricCommands,
-  type DualCommand,
+  getWeightCommand,
+  getChainsCommand,
+  getEccentricCommand,
+  getModeCommand,
+  getAvailableWeights,
+  getAvailableChains,
+  getAvailableEccentric,
+  getAvailableModes,
 } from './protocol/commands';
 
 // Protocol constants
@@ -59,6 +61,11 @@ export {
   BLE,
   MovementPhase,
   PhaseNames,
+  ParameterId,
+  ParameterNames,
+  TrainingMode,
+  TrainingModeNames,
+  VALID_TRAINING_MODES,
 } from './protocol/constants';
 
 // Telemetry decoder (low-level)

@@ -46,6 +46,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type { DiscoveredDevice } from '../bluetooth/models/device';
 import type { TelemetryFrame } from '../voltra/models/telemetry';
 import type { VoltraConnectionState } from '../voltra/models/connection';
+import { DEFAULT_SETTINGS } from '../voltra/models/device';
 import type { VoltraDeviceSettings, VoltraRecordingState } from '../voltra/models/device';
 import type { VoltraManager } from '../sdk/voltra-manager';
 import type { VoltraClient } from '../sdk/voltra-client';
@@ -156,12 +157,6 @@ export interface VoltraDeviceState {
   /** Last error, if any */
   error: Error | null;
 }
-
-const DEFAULT_SETTINGS: VoltraDeviceSettings = {
-  weight: 0,
-  chains: 0,
-  eccentric: 0,
-};
 
 const DEFAULT_STATE: VoltraDeviceState = {
   connectionState: 'disconnected',
