@@ -29,9 +29,7 @@ export interface NotificationCallbacks {
  * @param callbacks Typed callbacks for each notification type
  * @returns NotificationCallback to pass to adapter.onNotification()
  */
-export function createNotificationHandler(
-  callbacks: NotificationCallbacks
-): NotificationCallback {
+export function createNotificationHandler(callbacks: NotificationCallbacks): NotificationCallback {
   return (data: Uint8Array) => {
     const result = decodeNotification(data);
     if (!result) return;

@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  VOLTRA_DEVICE_PREFIX,
-  isVoltraDevice,
-  filterVoltraDevices,
-} from '../device-filter';
+import { VOLTRA_DEVICE_PREFIX, isVoltraDevice, filterVoltraDevices } from '../device-filter';
 import type { DiscoveredDevice } from '../../../bluetooth/models/device';
 
 function makeDevice(name: string | null, id = 'test-id'): DiscoveredDevice {
@@ -72,18 +68,12 @@ describe('device-filter', () => {
     });
 
     it('returns empty array when no Voltra devices found', () => {
-      const devices = [
-        makeDevice('Device-A', '1'),
-        makeDevice('Device-B', '2'),
-      ];
+      const devices = [makeDevice('Device-A', '1'), makeDevice('Device-B', '2')];
       expect(filterVoltraDevices(devices)).toEqual([]);
     });
 
     it('returns all devices when all are Voltra', () => {
-      const devices = [
-        makeDevice('VTR-001', '1'),
-        makeDevice('VTR-002', '2'),
-      ];
+      const devices = [makeDevice('VTR-001', '1'), makeDevice('VTR-002', '2')];
       expect(filterVoltraDevices(devices)).toHaveLength(2);
     });
   });

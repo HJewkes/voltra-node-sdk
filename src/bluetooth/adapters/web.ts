@@ -12,6 +12,9 @@
 
 import { WebBluetoothBase, type WebBluetoothConfig } from './web-bluetooth-base';
 import type { Device, ConnectOptions } from './types';
+import { createLogger } from '../../shared/logger';
+
+const log = createLogger('WebBLE');
 
 /**
  * BLE adapter using the browser's native Web Bluetooth API.
@@ -54,7 +57,7 @@ export class WebBLEAdapter extends WebBluetoothBase {
       // Store for connect()
       this.selectedDevice = device;
 
-      console.log(`[WebBLE] Device selected: ${device.name}`);
+      log.debug(`Device selected: ${device.name}`);
 
       return [
         {
@@ -66,7 +69,7 @@ export class WebBLEAdapter extends WebBluetoothBase {
     } catch (error) {
       // User cancelled or error occurred
       if ((error as Error).name === 'NotFoundError') {
-        console.log('[WebBLE] User cancelled device selection');
+        log.debug('User cancelled device selection');
         return [];
       }
       throw error;
@@ -89,9 +92,7 @@ export class WebBLEAdapter extends WebBluetoothBase {
     }
 
     if (this.selectedDevice.id !== deviceId) {
-      console.warn(
-        `[WebBLE] Device ID mismatch: expected ${this.selectedDevice.id}, got ${deviceId}`
-      );
+      log.warn(`Device ID mismatch: expected ${this.selectedDevice.id}, got ${deviceId}`);
     }
 
     // Connect to GATT server
@@ -99,9 +100,9 @@ export class WebBLEAdapter extends WebBluetoothBase {
 
     // Handle immediate write if provided (for authentication)
     if (options?.immediateWrite) {
-      console.log('[WebBLE] Sending immediate auth write...');
+      log.debug('Sending immediate auth write...');
       await this.write(options.immediateWrite);
-      console.log('[WebBLE] Immediate auth write sent');
+      log.debug('Immediate auth write sent');
     }
   }
 

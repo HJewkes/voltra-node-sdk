@@ -411,7 +411,10 @@ export class VoltraClient {
       await this.adapter!.write(cmd);
       this._settings.inverseChains = lbs;
     } catch (e) {
-      throw new CommandError(`Failed to set inverse chains: ${this.getErrorMessage(e)}`, 'setInverseChains');
+      throw new CommandError(
+        `Failed to set inverse chains: ${this.getErrorMessage(e)}`,
+        'setInverseChains'
+      );
     }
   }
 

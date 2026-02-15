@@ -754,9 +754,7 @@ describe('decodeNotification – mode_confirmation', () => {
 
 describe('decodeNotification – settings_update', () => {
   it('returns settings_update with parsed baseWeight', () => {
-    const buffer = createSettingsUpdateBuffer([
-      { paramIdHex: ParamIdHex.BASE_WEIGHT, value: 75 },
-    ]);
+    const buffer = createSettingsUpdateBuffer([{ paramIdHex: ParamIdHex.BASE_WEIGHT, value: 75 }]);
 
     const result = decodeNotification(buffer);
 

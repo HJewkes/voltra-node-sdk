@@ -11,14 +11,15 @@
  * Install it in your React Native project: npm install react-native-ble-plx
  */
 
-/* eslint-disable no-console -- BLE adapter uses console.log for device-level debug output */
-
 import { BleManager, type Device as BleDevice, State } from 'react-native-ble-plx';
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore - React Native imports may not be available in all environments
 import { AppState, type AppStateStatus, Platform, PermissionsAndroid } from 'react-native';
 import { BaseBLEAdapter } from './base';
 import type { Device, ConnectOptions, BLEServiceConfig } from './types';
+import { createLogger } from '../../shared/logger';
+
+const log = createLogger('NativeBLE');
 
 // Re-export BLEServiceConfig for backward compatibility
 export type { BLEServiceConfig } from './types';
@@ -34,7 +35,7 @@ async function requestAndroidBLEPermissions(): Promise<boolean> {
   }
 
   const apiLevel = Platform.Version;
-  console.log('[NativeBLE] Android API level:', apiLevel);
+  log.debug('Android API level:', apiLevel);
 
   try {
     if (typeof apiLevel === 'number' && apiLevel >= 31) {
@@ -50,7 +51,7 @@ async function requestAndroidBLEPermissions(): Promise<boolean> {
       );
 
       if (!allGranted) {
-        console.warn('[NativeBLE] Not all permissions granted:', results);
+        log.warn('Not all permissions granted:', results);
       }
 
       return allGranted;
@@ -68,7 +69,7 @@ async function requestAndroidBLEPermissions(): Promise<boolean> {
       return granted === PermissionsAndroid.RESULTS.GRANTED;
     }
   } catch (error) {
-    console.error('[NativeBLE] Permission request error:', error);
+    log.error('Permission request error:', error);
     return false;
   }
 }
@@ -172,7 +173,7 @@ export class NativeBLEAdapter extends BaseBLEAdapter {
   private async handleAppStateChange(nextAppState: AppStateStatus): Promise<void> {
     if (nextAppState === 'active') {
       // App came to foreground
-      console.log('[NativeBLE] App became active');
+      log.debug('App became active');
 
       // Check if we were connected and got disconnected
       if (
@@ -180,15 +181,13 @@ export class NativeBLEAdapter extends BaseBLEAdapter {
         this.connectionState === 'disconnected' &&
         !this.isReconnecting
       ) {
-        console.log('[NativeBLE] Was connected before, attempting auto-reconnect...');
+        log.debug('Was connected before, attempting auto-reconnect...');
         await this.attemptReconnect();
       } else if (this.device) {
         // Check if device is still connected
         const isConnected = await this.device.isConnected();
         if (!isConnected) {
-          console.log(
-            '[NativeBLE] Device disconnected while in background, attempting reconnect...'
-          );
+          log.debug('Device disconnected while in background, attempting reconnect...');
           this.setConnectionState('disconnected');
           await this.attemptReconnect();
         }
@@ -210,19 +209,17 @@ export class NativeBLEAdapter extends BaseBLEAdapter {
 
     while (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++;
-      console.log(
-        `[NativeBLE] Reconnect attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}`
-      );
+      log.debug(`Reconnect attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
 
       try {
         await this.connect(this.lastConnectedDeviceId);
-        console.log('[NativeBLE] Reconnect successful');
+        log.debug('Reconnect successful');
         this.isReconnecting = false;
         this.reconnectAttempts = 0;
         this.onReconnectSuccess?.();
         return;
       } catch (error) {
-        console.warn(`[NativeBLE] Reconnect attempt ${this.reconnectAttempts} failed:`, error);
+        log.warn(`Reconnect attempt ${this.reconnectAttempts} failed:`, error);
 
         if (this.reconnectAttempts < this.maxReconnectAttempts) {
           await new Promise((resolve) => setTimeout(resolve, this.reconnectDelayMs));
@@ -231,7 +228,7 @@ export class NativeBLEAdapter extends BaseBLEAdapter {
     }
 
     // All attempts failed
-    console.error('[NativeBLE] Auto-reconnect failed after all attempts');
+    log.error('Auto-reconnect failed after all attempts');
     this.isReconnecting = false;
     this.onReconnectFailed?.(new Error('Auto-reconnect failed'));
   }
@@ -239,7 +236,7 @@ export class NativeBLEAdapter extends BaseBLEAdapter {
   private async waitForPoweredOn(): Promise<void> {
     return new Promise((resolve, reject) => {
       const subscription = this.manager.onStateChange((state) => {
-        console.log('[NativeBLE] Bluetooth state:', state);
+        log.debug('Bluetooth state:', state);
         if (state === State.PoweredOn) {
           subscription.remove();
           resolve();
@@ -251,7 +248,7 @@ export class NativeBLEAdapter extends BaseBLEAdapter {
           reject(new Error('Bluetooth is not supported on this device.'));
         } else if (state === State.PoweredOff) {
           // Don't reject yet - user might turn it on
-          console.log('[NativeBLE] Bluetooth is off - waiting for user to enable');
+          log.debug('Bluetooth is off - waiting for user to enable');
         }
       }, true);
 
@@ -264,10 +261,10 @@ export class NativeBLEAdapter extends BaseBLEAdapter {
   }
 
   async scan(timeout: number): Promise<Device[]> {
-    console.log('[NativeBLE] Starting scan...');
-    console.log('[NativeBLE] Looking for service:', this.bleConfig.serviceUUID);
+    log.debug('Starting scan...');
+    log.debug('Looking for service:', this.bleConfig.serviceUUID);
     if (this.bleConfig.deviceNamePrefix) {
-      console.log('[NativeBLE] Device name prefix:', this.bleConfig.deviceNamePrefix);
+      log.debug('Device name prefix:', this.bleConfig.deviceNamePrefix);
     }
 
     // Request Android permissions first
@@ -275,10 +272,10 @@ export class NativeBLEAdapter extends BaseBLEAdapter {
     if (!hasPermissions) {
       throw new Error('Bluetooth permissions not granted. Please enable in Settings.');
     }
-    console.log('[NativeBLE] Permissions granted');
+    log.debug('Permissions granted');
 
     await this.waitForPoweredOn();
-    console.log('[NativeBLE] Bluetooth is powered on');
+    log.debug('Bluetooth is powered on');
 
     const devices: Device[] = [];
     const seen = new Set<string>();
@@ -291,14 +288,14 @@ export class NativeBLEAdapter extends BaseBLEAdapter {
         { allowDuplicates: false },
         (error, device) => {
           if (error) {
-            console.error('[NativeBLE] Scan error:', error);
+            log.error('Scan error:', error);
             return;
           }
 
           if (device) {
             // Log all devices with names for debugging
             if (device.name) {
-              console.log(`[NativeBLE] Found device: ${device.name} (${device.id})`);
+              log.debug(`Found device: ${device.name} (${device.id})`);
             }
 
             // Check if device matches filter (if prefix is configured)
@@ -306,9 +303,7 @@ export class NativeBLEAdapter extends BaseBLEAdapter {
               !prefix || device.name?.startsWith(prefix) || device.localName?.startsWith(prefix);
 
             if (matchesFilter && !seen.has(device.id) && (device.name || device.localName)) {
-              console.log(
-                `[NativeBLE] ✓ Found matching device: ${device.name || device.localName}`
-              );
+              log.debug(`Found matching device: ${device.name || device.localName}`);
               seen.add(device.id);
               devices.push({
                 id: device.id,
@@ -323,7 +318,7 @@ export class NativeBLEAdapter extends BaseBLEAdapter {
       // Stop scan after timeout
       setTimeout(() => {
         this.manager.stopDeviceScan();
-        console.log(`[NativeBLE] Scan complete. Found ${devices.length} device(s)`);
+        log.debug(`Scan complete. Found ${devices.length} device(s)`);
         resolve(devices);
       }, timeout * 1000);
     });
@@ -356,27 +351,27 @@ export class NativeBLEAdapter extends BaseBLEAdapter {
       // If immediate write is provided, send it NOW before anything else
       // This is critical for devices that require fast authentication
       if (options?.immediateWrite) {
-        console.log('[NativeBLE] Sending immediate auth write...');
+        log.debug('Sending immediate auth write...');
         const base64 = bytesToBase64(options.immediateWrite);
         await device.writeCharacteristicWithResponseForService(
           this.bleConfig.serviceUUID,
           this.bleConfig.writeCharUUID,
           base64
         );
-        console.log('[NativeBLE] Immediate auth write sent');
+        log.debug('Immediate auth write sent');
       }
 
       // Now request MTU (optional, may fail on some devices)
       try {
         await device.requestMTU(512);
       } catch (mtuError) {
-        console.log('[NativeBLE] MTU request failed (non-fatal):', mtuError);
+        log.debug('MTU request failed (non-fatal):', mtuError);
       }
 
       // Set up disconnect listener BEFORE setting up characteristic monitors
       // This ensures we can clean up subscriptions before the error propagates
       this.disconnectSubscription = device.onDisconnected((error, _disconnectedDevice) => {
-        console.log('[NativeBLE] Device disconnected', error ? `(error: ${error.message})` : '');
+        log.debug('Device disconnected', error ? `(error: ${error.message})` : '');
 
         // Mark as disconnecting to prevent monitor errors from crashing
         this.isDisconnecting = true;
@@ -400,13 +395,10 @@ export class NativeBLEAdapter extends BaseBLEAdapter {
           if (error) {
             // Ignore errors if we're disconnecting - this prevents the Android crash
             if (this.isDisconnecting || !this.device) {
-              console.log(
-                '[NativeBLE] Notification error during disconnect (ignored):',
-                error.message
-              );
+              log.debug('Notification error during disconnect (ignored):', error.message);
               return;
             }
-            console.error('[NativeBLE] Notification error:', error);
+            log.error('Notification error:', error);
             return;
           }
           if (characteristic?.value) {
@@ -425,13 +417,10 @@ export class NativeBLEAdapter extends BaseBLEAdapter {
           if (error) {
             // Ignore errors if we're disconnecting - this prevents the Android crash
             if (this.isDisconnecting || !this.device) {
-              console.log(
-                '[NativeBLE] Write char error during disconnect (ignored):',
-                error.message
-              );
+              log.debug('Write char error during disconnect (ignored):', error.message);
               return;
             }
-            console.error('[NativeBLE] Write char notification error:', error);
+            log.error('Write char notification error:', error);
             return;
           }
           if (characteristic?.value) {
@@ -443,7 +432,7 @@ export class NativeBLEAdapter extends BaseBLEAdapter {
 
       this.setConnectionState('connected');
     } catch (error) {
-      console.error('[NativeBLE] Connect error:', error);
+      log.error('Connect error:', error);
       this.setConnectionState('disconnected');
       throw error;
     }
@@ -456,7 +445,7 @@ export class NativeBLEAdapter extends BaseBLEAdapter {
       try {
         this.notifySubscription.remove();
       } catch (e) {
-        console.log('[NativeBLE] Error removing notify subscription:', e);
+        log.debug('Error removing notify subscription:', e);
       }
       this.notifySubscription = null;
     }
@@ -464,7 +453,7 @@ export class NativeBLEAdapter extends BaseBLEAdapter {
       try {
         this.writeSubscription.remove();
       } catch (e) {
-        console.log('[NativeBLE] Error removing write subscription:', e);
+        log.debug('Error removing write subscription:', e);
       }
       this.writeSubscription = null;
     }
@@ -476,7 +465,7 @@ export class NativeBLEAdapter extends BaseBLEAdapter {
       try {
         this.disconnectSubscription.remove();
       } catch (e) {
-        console.log('[NativeBLE] Error removing disconnect subscription:', e);
+        log.debug('Error removing disconnect subscription:', e);
       }
       this.disconnectSubscription = null;
     }
@@ -496,7 +485,7 @@ export class NativeBLEAdapter extends BaseBLEAdapter {
       try {
         await this.device.cancelConnection();
       } catch (error) {
-        console.error('[NativeBLE] Disconnect error:', error);
+        log.error('Disconnect error:', error);
       }
       this.device = null;
     }

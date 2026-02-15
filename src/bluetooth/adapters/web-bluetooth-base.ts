@@ -11,6 +11,9 @@
 
 import { BaseBLEAdapter } from './base';
 import type { Device, ConnectOptions, BLEServiceConfig } from './types';
+import { createLogger } from '../../shared/logger';
+
+const log = createLogger('WebBluetooth');
 
 /**
  * Configuration for Web Bluetooth adapters.
@@ -91,7 +94,7 @@ export abstract class WebBluetoothBase extends BaseBLEAdapter {
 
     // Set up disconnect listener
     device.addEventListener('gattserverdisconnected', () => {
-      console.log('[WebBluetooth] Device disconnected');
+      log.debug('Device disconnected');
       this.handleDisconnect();
     });
 
@@ -107,7 +110,7 @@ export abstract class WebBluetoothBase extends BaseBLEAdapter {
       await this.setupCharacteristics();
       this.setConnectionState('connected');
     } catch (error) {
-      console.error('[WebBluetooth] Connect error:', error);
+      log.error('Connect error:', error);
       this.setConnectionState('disconnected');
       throw error;
     }
@@ -142,7 +145,7 @@ export abstract class WebBluetoothBase extends BaseBLEAdapter {
       await this.writeChar.startNotifications();
     }
 
-    console.log('[WebBluetooth] Characteristics set up');
+    log.debug('Characteristics set up');
   }
 
   /**

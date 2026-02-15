@@ -173,3 +173,4 @@ export {
 // =============================================================================
 
 export { delay } from './shared/utils';
+export { setDebugEnabled } from './shared/logger';

@@ -41,7 +41,12 @@ describe('reconnect-handler', () => {
         reconnectDelayMs: 1000,
       };
 
-      const result = setupDisconnectMonitor(adapter, options, () => true, () => {});
+      const result = setupDisconnectMonitor(
+        adapter,
+        options,
+        () => true,
+        () => {}
+      );
 
       expect(result).toBeNull();
       expect(adapter.onConnectionStateChange).not.toHaveBeenCalled();
@@ -55,7 +60,12 @@ describe('reconnect-handler', () => {
         reconnectDelayMs: 1000,
       };
 
-      const unsub = setupDisconnectMonitor(adapter, options, () => true, () => {});
+      const unsub = setupDisconnectMonitor(
+        adapter,
+        options,
+        () => true,
+        () => {}
+      );
 
       expect(unsub).toBeTypeOf('function');
       expect(adapter.onConnectionStateChange).toHaveBeenCalledOnce();
@@ -159,7 +169,8 @@ describe('reconnect-handler', () => {
     it('succeeds on second attempt after first failure', async () => {
       const callbacks: ReconnectCallbacks = {
         onReconnecting: vi.fn(),
-        reconnect: vi.fn()
+        reconnect: vi
+          .fn()
           .mockRejectedValueOnce(new Error('fail'))
           .mockResolvedValueOnce(undefined),
         onReconnectFailed: vi.fn(),
