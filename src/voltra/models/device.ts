@@ -5,17 +5,24 @@
  */
 
 import { type VoltraConnectionState } from './connection';
+import { TrainingMode } from '../protocol/constants';
 
 /**
  * Voltra device settings.
  */
 export interface VoltraDeviceSettings {
-  /** Weight in pounds (5-200 in increments of 5) */
+  /** Weight in pounds (5-200, any integer value) */
   weight: number;
   /** Chains (reverse resistance) in pounds (0-100) */
   chains: number;
+  /** Inverse chains (progressive resistance) in pounds (0-100) */
+  inverseChains: number;
   /** Eccentric load adjustment (-195 to +195) */
   eccentric: number;
+  /** Current training mode */
+  mode: TrainingMode;
+  /** Battery level (0-100) or null if unknown */
+  battery: number | null;
 }
 
 /**
@@ -56,7 +63,10 @@ export interface VoltraDeviceState {
 export const DEFAULT_SETTINGS: VoltraDeviceSettings = {
   weight: 0,
   chains: 0,
+  inverseChains: 0,
   eccentric: 0,
+  mode: TrainingMode.Idle,
+  battery: null,
 };
 
 /**
@@ -112,6 +122,18 @@ export class VoltraDevice {
 
   get eccentric(): number {
     return this._settings.eccentric;
+  }
+
+  get inverseChains(): number {
+    return this._settings.inverseChains;
+  }
+
+  get mode(): TrainingMode {
+    return this._settings.mode;
+  }
+
+  get battery(): number | null {
+    return this._settings.battery;
   }
 
   get connectionState(): VoltraConnectionState {

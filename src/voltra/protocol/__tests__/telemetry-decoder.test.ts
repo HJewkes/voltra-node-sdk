@@ -18,7 +18,15 @@ import {
   encodeTelemetryFrame,
   type MessageType,
 } from '../telemetry-decoder';
-import { MessageTypes, TelemetryOffsets, MovementPhase } from '../constants';
+import {
+  MessageTypes,
+  TelemetryOffsets,
+  MovementPhase,
+  NotificationConfigs,
+  ParamIdHex,
+  TrainingMode,
+} from '../constants';
+import { hexToBytes } from '../../../shared/utils';
 import type { TelemetryFrame } from '../../models/telemetry/frame';
 
 // =============================================================================
@@ -347,28 +355,28 @@ describe('decodeNotification', () => {
     expect(result!.type).toBe('set_boundary');
   });
 
-  it('decodes status update to status result with data', () => {
-    const buffer = createMessageBuffer(MessageTypes.STATUS_UPDATE);
-    // Add some status data
-    buffer[10] = 0x42;
-    buffer[15] = 0x99;
+  it('decodes status update to device_status result', () => {
+    // Create a buffer that meets the statusBattery length requirement (52 bytes)
+    const buffer = createMessageBuffer(MessageTypes.STATUS_UPDATE, 52);
+    // Set battery level
+    buffer[12] = 85;
 
     const result = decodeNotification(buffer);
 
     expect(result).not.toBeNull();
-    expect(result!.type).toBe('status');
-    if (result?.type === 'status') {
-      expect(result.data).toBe(buffer);
-      expect(result.data[10]).toBe(0x42);
+    expect(result!.type).toBe('device_status');
+    if (result?.type === 'device_status') {
+      expect(result.battery).toBe(85);
     }
   });
 
-  it('returns null for unknown message type', () => {
+  it('returns unknown for unrecognized message type', () => {
     const buffer = new Uint8Array([0xff, 0xff, 0xff, 0xff, ...new Array(26).fill(0)]);
 
     const result = decodeNotification(buffer);
 
-    expect(result).toBeNull();
+    expect(result).not.toBeNull();
+    expect(result!.type).toBe('unknown');
   });
 
   it('returns null for malformed telemetry (too short)', () => {
@@ -381,12 +389,13 @@ describe('decodeNotification', () => {
     expect(result).toBeNull();
   });
 
-  it('returns null for very short buffer', () => {
+  it('returns unknown for very short buffer', () => {
     const buffer = new Uint8Array([0x55]);
 
     const result = decodeNotification(buffer);
 
-    expect(result).toBeNull();
+    expect(result).not.toBeNull();
+    expect(result!.type).toBe('unknown');
   });
 });
 
@@ -607,6 +616,240 @@ describe('practical scenarios', () => {
     // Verify sequence continuity
     for (let i = 0; i < frames.length; i++) {
       expect(frames[i].sequence).toBe(i);
+    }
+  });
+});
+
+// =============================================================================
+// Notification Type Decoding Tests (mode, settings, device status)
+// =============================================================================
+
+/**
+ * Create a mode_confirmation notification buffer.
+ * Header: 0x55 0x12, length: 18, valueOffset: 15
+ */
+function createModeConfirmationBuffer(modeValue: number): Uint8Array {
+  const config = NotificationConfigs.modeConfirmation;
+  const buffer = new Uint8Array(config.length);
+  const headerBytes = hexToBytes(config.header);
+  buffer[0] = headerBytes[0];
+  buffer[1] = headerBytes[1];
+  if (config.valueOffset !== undefined) {
+    buffer[config.valueOffset] = modeValue;
+  }
+  return buffer;
+}
+
+/**
+ * Create a settings_update notification buffer.
+ * Header: 0x55 0x2e, length: 46, params at offsets from protocol config.
+ */
+function createSettingsUpdateBuffer(
+  params: Array<{ paramIdHex: string; value: number }>
+): Uint8Array {
+  const config = NotificationConfigs.settingsUpdate;
+  const buffer = new Uint8Array(config.length!);
+  const headerBytes = hexToBytes(config.header);
+  buffer[0] = headerBytes[0];
+  buffer[1] = headerBytes[1];
+
+  // Set param count
+  buffer[config.paramCountOffset!] = params.length;
+
+  // Write each param (2-byte LE paramId + 2-byte LE value)
+  for (let i = 0; i < params.length; i++) {
+    const offset = config.firstParamOffset! + i * config.paramSize!;
+    const paramBytes = hexToBytes(params[i].paramIdHex);
+    buffer[offset] = paramBytes[0];
+    buffer[offset + 1] = paramBytes[1];
+    buffer[offset + 2] = params[i].value & 0xff;
+    buffer[offset + 3] = (params[i].value >> 8) & 0xff;
+  }
+
+  return buffer;
+}
+
+/**
+ * Create a device_init notification buffer.
+ * Header: 0x55 0x23, length: 35, batteryOffset: 11
+ */
+function createDeviceInitBuffer(battery: number): Uint8Array {
+  const config = NotificationConfigs.deviceInit;
+  const buffer = new Uint8Array(config.length!);
+  const headerBytes = hexToBytes(config.header);
+  buffer[0] = headerBytes[0];
+  buffer[1] = headerBytes[1];
+  if (config.batteryOffset !== undefined) {
+    buffer[config.batteryOffset] = battery;
+  }
+  return buffer;
+}
+
+/**
+ * Create a status_battery notification buffer.
+ * Header: 0x55 0x34, length: 52, batteryOffset: 12
+ */
+function createStatusBatteryBuffer(battery: number): Uint8Array {
+  const config = NotificationConfigs.statusBattery;
+  const buffer = new Uint8Array(config.length!);
+  const headerBytes = hexToBytes(config.header);
+  buffer[0] = headerBytes[0];
+  buffer[1] = headerBytes[1];
+  if (config.batteryOffset !== undefined) {
+    buffer[config.batteryOffset] = battery;
+  }
+  return buffer;
+}
+
+describe('decodeNotification – mode_confirmation', () => {
+  it('returns mode_confirmation with valid TrainingMode for WeightTraining', () => {
+    const buffer = createModeConfirmationBuffer(TrainingMode.WeightTraining);
+
+    const result = decodeNotification(buffer);
+
+    expect(result).not.toBeNull();
+    expect(result!.type).toBe('mode_confirmation');
+    if (result?.type === 'mode_confirmation') {
+      expect(result.mode).toBe(TrainingMode.WeightTraining);
+    }
+  });
+
+  it('returns mode_confirmation with valid TrainingMode for Rowing', () => {
+    const buffer = createModeConfirmationBuffer(TrainingMode.Rowing);
+
+    const result = decodeNotification(buffer);
+
+    expect(result).not.toBeNull();
+    expect(result!.type).toBe('mode_confirmation');
+    if (result?.type === 'mode_confirmation') {
+      expect(result.mode).toBe(TrainingMode.Rowing);
+    }
+  });
+
+  it('falls back to TrainingMode.Idle for invalid mode value', () => {
+    // Mode value 99 is not a valid TrainingMode
+    const buffer = createModeConfirmationBuffer(99);
+
+    const result = decodeNotification(buffer);
+
+    expect(result).not.toBeNull();
+    expect(result!.type).toBe('mode_confirmation');
+    if (result?.type === 'mode_confirmation') {
+      expect(result.mode).toBe(TrainingMode.Idle);
+    }
+  });
+
+  it('returns mode_confirmation with Idle for mode value 0', () => {
+    const buffer = createModeConfirmationBuffer(TrainingMode.Idle);
+
+    const result = decodeNotification(buffer);
+
+    expect(result).not.toBeNull();
+    expect(result!.type).toBe('mode_confirmation');
+    if (result?.type === 'mode_confirmation') {
+      expect(result.mode).toBe(TrainingMode.Idle);
+    }
+  });
+});
+
+describe('decodeNotification – settings_update', () => {
+  it('returns settings_update with parsed baseWeight', () => {
+    const buffer = createSettingsUpdateBuffer([
+      { paramIdHex: ParamIdHex.BASE_WEIGHT, value: 75 },
+    ]);
+
+    const result = decodeNotification(buffer);
+
+    expect(result).not.toBeNull();
+    expect(result!.type).toBe('settings_update');
+    if (result?.type === 'settings_update') {
+      expect(result.settings.baseWeight).toBe(75);
+    }
+  });
+
+  it('returns settings_update with multiple params', () => {
+    const buffer = createSettingsUpdateBuffer([
+      { paramIdHex: ParamIdHex.BASE_WEIGHT, value: 100 },
+      { paramIdHex: ParamIdHex.CHAINS, value: 20 },
+      { paramIdHex: ParamIdHex.ECCENTRIC, value: 50 },
+      { paramIdHex: ParamIdHex.TRAINING_MODE, value: TrainingMode.WeightTraining },
+      { paramIdHex: ParamIdHex.INVERSE_CHAINS, value: 15 },
+    ]);
+
+    const result = decodeNotification(buffer);
+
+    expect(result).not.toBeNull();
+    expect(result!.type).toBe('settings_update');
+    if (result?.type === 'settings_update') {
+      expect(result.settings.baseWeight).toBe(100);
+      expect(result.settings.chains).toBe(20);
+      expect(result.settings.eccentric).toBe(50);
+      expect(result.settings.trainingMode).toBe(TrainingMode.WeightTraining);
+      expect(result.settings.inverseChains).toBe(15);
+    }
+  });
+
+  it('validates trainingMode in settings_update (invalid mode omitted)', () => {
+    const buffer = createSettingsUpdateBuffer([
+      { paramIdHex: ParamIdHex.TRAINING_MODE, value: 255 }, // invalid mode
+    ]);
+
+    const result = decodeNotification(buffer);
+
+    expect(result).not.toBeNull();
+    expect(result!.type).toBe('settings_update');
+    if (result?.type === 'settings_update') {
+      expect(result.settings.trainingMode).toBeUndefined();
+    }
+  });
+});
+
+describe('decodeNotification – device_status (deviceInit & statusBattery)', () => {
+  it('returns device_status with battery from deviceInit notification', () => {
+    const buffer = createDeviceInitBuffer(92);
+
+    const result = decodeNotification(buffer);
+
+    expect(result).not.toBeNull();
+    expect(result!.type).toBe('device_status');
+    if (result?.type === 'device_status') {
+      expect(result.battery).toBe(92);
+    }
+  });
+
+  it('returns device_status with battery from statusBattery notification', () => {
+    const buffer = createStatusBatteryBuffer(45);
+
+    const result = decodeNotification(buffer);
+
+    expect(result).not.toBeNull();
+    expect(result!.type).toBe('device_status');
+    if (result?.type === 'device_status') {
+      expect(result.battery).toBe(45);
+    }
+  });
+
+  it('handles zero battery level', () => {
+    const buffer = createDeviceInitBuffer(0);
+
+    const result = decodeNotification(buffer);
+
+    expect(result).not.toBeNull();
+    expect(result!.type).toBe('device_status');
+    if (result?.type === 'device_status') {
+      expect(result.battery).toBe(0);
+    }
+  });
+
+  it('handles 100% battery level', () => {
+    const buffer = createStatusBatteryBuffer(100);
+
+    const result = decodeNotification(buffer);
+
+    expect(result).not.toBeNull();
+    expect(result!.type).toBe('device_status');
+    if (result?.type === 'device_status') {
+      expect(result.battery).toBe(100);
     }
   });
 });

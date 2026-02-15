@@ -14,9 +14,17 @@ export type {
   VoltraClientEvent,
   VoltraClientEventListener,
   FrameListener,
+  RepBoundaryListener,
+  SetBoundaryListener,
+  ModeConfirmedListener,
+  SettingsUpdateListener,
+  BatteryUpdateListener,
   ScanOptions,
   DeviceChooser,
 } from './types';
+
+// Re-export DeviceSettings for typing event listeners
+export type { DeviceSettings } from '../voltra/protocol/types';
 
 export type {
   Platform,

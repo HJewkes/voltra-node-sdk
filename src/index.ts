@@ -88,15 +88,13 @@ export {
 } from './voltra/models/device-filter';
 
 // =============================================================================
-// Voltra Device
+// Voltra Device Types
 // =============================================================================
 
-export {
-  VoltraDevice,
-  DEFAULT_SETTINGS,
-  type VoltraDeviceSettings,
-  type VoltraRecordingState,
-  type VoltraDeviceState,
+export type {
+  VoltraDeviceSettings,
+  VoltraRecordingState,
+  VoltraDeviceState,
 } from './voltra/models/device';
 
 export type { VoltraConnectionState } from './voltra/models/connection';
@@ -122,6 +120,11 @@ export {
   PhaseNames,
   MessageTypes,
   TelemetryOffsets,
+  ParameterId,
+  ParameterNames,
+  TrainingMode,
+  TrainingModeNames,
+  VALID_TRAINING_MODES,
 } from './voltra/protocol/constants';
 
 // =============================================================================
@@ -129,10 +132,16 @@ export {
 // =============================================================================
 
 export {
-  WeightCommands,
-  ChainsCommands,
-  EccentricCommands,
-  type DualCommand,
+  getWeightCommand,
+  getChainsCommand,
+  getEccentricCommand,
+  getInverseChainsCommand,
+  getModeCommand,
+  getAvailableWeights,
+  getAvailableChains,
+  getAvailableEccentric,
+  getAvailableInverseChains,
+  getAvailableModes,
 } from './voltra/protocol/commands';
 
 // =============================================================================

@@ -121,7 +121,6 @@ export class ScannerController {
 
       // User cancelled device picker (web) - not an error
       if (errorMsg.includes('NotFoundError')) {
-        this._error = null;
         this.emit({ type: 'scanCompleted', devices: [] });
         return [];
       }
@@ -129,7 +128,6 @@ export class ScannerController {
       // On web, "permission" errors are expected when scan is called without user gesture
       // Don't show these as errors - user just needs to click the scan button
       if (this._environment.requiresUserGesture && errorMsg.includes('permission')) {
-        this._error = null;
         this.emit({ type: 'scanCompleted', devices: [] });
         return [];
       }
