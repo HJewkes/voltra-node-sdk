@@ -227,8 +227,11 @@ export abstract class WebBluetoothBase extends BaseBLEAdapter {
       throw new Error('Not connected to device');
     }
 
-    // Use ArrayBuffer.slice to ensure we have a proper ArrayBuffer
-    const buffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+    // Assert as ArrayBuffer since Uint8Array.buffer is ArrayBufferLike in TS 5.9+
+    const buffer = (data.buffer as ArrayBuffer).slice(
+      data.byteOffset,
+      data.byteOffset + data.byteLength
+    );
     await this.writeChar.writeValueWithResponse(buffer);
   }
 
