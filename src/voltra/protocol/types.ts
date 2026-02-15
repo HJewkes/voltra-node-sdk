@@ -131,6 +131,8 @@ export interface TelemetryConfig {
   phases: PhaseConfig;
   /** Notification type parsing configurations */
   notifications: NotificationsConfig;
+  /** Param IDs that use 2-byte (uint16) values in notifications (others use 1-byte uint8) */
+  uint16ParamIds?: string[];
   /** Known parameter IDs */
   paramIds: ParamIdsConfig;
   /** Training mode values */

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-02-15
+
+### Fixed
+- Telemetry decoder now correctly handles mixed-size notification parameters — param IDs in `Uint16ParamIds` are parsed as 2-byte uint16 LE values, all others as 1-byte uint8
+- `generate:protocol` script now points to `voltra-private/build.ts` (was referencing a removed path)
+
+### Added
+- `Uint16ParamIds` constant exported from protocol constants for identifying 2-byte notification params
+- `uint16ParamIds` field on `TelemetryConfig` type interface
+- Test coverage for mixed-size parameter parsing in settings update notifications
+
+### Changed
+- `decodeSettingsUpdate` uses variable-length offset tracking instead of fixed `paramSize` stride
+- Package author updated to "Henry Jewkes"
+
 ## [0.1.1] - 2026-01-22
 
 ### Fixed

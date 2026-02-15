@@ -68,6 +68,12 @@ export const ParamIdHex = {
 } as const;
 
 /**
+ * Param IDs that use 2-byte (uint16) values in notifications.
+ * All other param IDs use 1-byte (uint8) values.
+ */
+export const Uint16ParamIds: ReadonlySet<string> = new Set(protocol.telemetry.uint16ParamIds ?? []);
+
+/**
  * Training mode values from protocol.json.
  * These map to the TrainingMode enum values.
  */

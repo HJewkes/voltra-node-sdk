@@ -12,6 +12,7 @@ export {
   MessageTypes,
   TelemetryOffsets,
   NotificationConfigs,
+  Uint16ParamIds,
   ParamIdHex,
   TrainingModeValues,
 } from './message-types';
