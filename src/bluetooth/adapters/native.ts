@@ -11,6 +11,8 @@
  * Install it in your React Native project: npm install react-native-ble-plx
  */
 
+/* eslint-disable no-console -- BLE adapter uses console.log for device-level debug output */
+
 import { BleManager, type Device as BleDevice, State } from 'react-native-ble-plx';
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore - React Native imports may not be available in all environments
