@@ -12,6 +12,7 @@ import {
   MovementPhase,
   NotificationConfigs,
   ParamIdHex,
+  Uint16ParamIds,
   TrainingMode,
   VALID_TRAINING_MODES,
 } from './constants';
@@ -178,33 +179,37 @@ function decodeModeConfirmation(data: Uint8Array): DecodeResult {
 }
 
 /**
- * Decode a settings update notification.
- * Extracts parameter + value pairs.
+ * Decode a settings update or multi-param notification.
+ * Handles mixed-size value fields: param IDs in Uint16ParamIds get 2-byte
+ * (uint16 LE) values; all others get 1-byte (uint8) values.
  */
 function decodeSettingsUpdate(data: Uint8Array): DecodeResult {
   const config = NotificationConfigs.settingsUpdate;
-  if (
-    config.paramCountOffset === undefined ||
-    config.firstParamOffset === undefined ||
-    config.paramSize === undefined
-  ) {
+  if (config.paramCountOffset === undefined || config.firstParamOffset === undefined) {
     return null;
   }
 
   const settings: DeviceSettings = {};
   const paramCount = data[config.paramCountOffset];
+  let offset = config.firstParamOffset;
 
-  // Parse each param+value pair
   for (let i = 0; i < paramCount && i < 9; i++) {
-    const offset = config.firstParamOffset + i * config.paramSize;
-    if (offset + 4 > data.length) break;
+    if (offset + 2 > data.length) break;
 
-    // Param ID is 2 bytes little-endian
     const paramIdHex = bytesToHex(data.slice(offset, offset + 2));
-    // Value is 2 bytes little-endian
-    const value = readUint16LE(data, offset + 2);
+    offset += 2;
 
-    // Map param IDs to settings
+    let value: number;
+    if (Uint16ParamIds.has(paramIdHex)) {
+      if (offset + 2 > data.length) break;
+      value = readUint16LE(data, offset);
+      offset += 2;
+    } else {
+      if (offset + 1 > data.length) break;
+      value = data[offset];
+      offset += 1;
+    }
+
     if (paramIdHex === ParamIdHex.BASE_WEIGHT) {
       settings.baseWeight = value;
     } else if (paramIdHex === ParamIdHex.CHAINS) {

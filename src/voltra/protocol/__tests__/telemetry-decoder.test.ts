@@ -24,6 +24,7 @@ import {
   MovementPhase,
   NotificationConfigs,
   ParamIdHex,
+  Uint16ParamIds,
   TrainingMode,
 } from '../constants';
 import { hexToBytes } from '../../../shared/utils';
@@ -643,6 +644,7 @@ function createModeConfirmationBuffer(modeValue: number): Uint8Array {
 /**
  * Create a settings_update notification buffer.
  * Header: 0x55 0x2e, length: 46, params at offsets from protocol config.
+ * Uses mixed-size values: uint16 for params in Uint16ParamIds, uint8 otherwise.
  */
 function createSettingsUpdateBuffer(
   params: Array<{ paramIdHex: string; value: number }>
@@ -653,17 +655,23 @@ function createSettingsUpdateBuffer(
   buffer[0] = headerBytes[0];
   buffer[1] = headerBytes[1];
 
-  // Set param count
   buffer[config.paramCountOffset!] = params.length;
 
-  // Write each param (2-byte LE paramId + 2-byte LE value)
-  for (let i = 0; i < params.length; i++) {
-    const offset = config.firstParamOffset! + i * config.paramSize!;
-    const paramBytes = hexToBytes(params[i].paramIdHex);
+  let offset = config.firstParamOffset!;
+  for (const param of params) {
+    const paramBytes = hexToBytes(param.paramIdHex);
     buffer[offset] = paramBytes[0];
     buffer[offset + 1] = paramBytes[1];
-    buffer[offset + 2] = params[i].value & 0xff;
-    buffer[offset + 3] = (params[i].value >> 8) & 0xff;
+    offset += 2;
+
+    if (Uint16ParamIds.has(param.paramIdHex)) {
+      buffer[offset] = param.value & 0xff;
+      buffer[offset + 1] = (param.value >> 8) & 0xff;
+      offset += 2;
+    } else {
+      buffer[offset] = param.value & 0xff;
+      offset += 1;
+    }
   }
 
   return buffer;
@@ -784,6 +792,27 @@ describe('decodeNotification – settings_update', () => {
       expect(result.settings.eccentric).toBe(50);
       expect(result.settings.trainingMode).toBe(TrainingMode.WeightTraining);
       expect(result.settings.inverseChains).toBe(15);
+    }
+  });
+
+  it('correctly parses mixed-size params (uint16 + uint8)', () => {
+    const buffer = createSettingsUpdateBuffer([
+      { paramIdHex: ParamIdHex.BASE_WEIGHT, value: 100 },
+      { paramIdHex: ParamIdHex.CHAINS, value: 20 },
+      { paramIdHex: ParamIdHex.ECCENTRIC, value: 50 },
+      { paramIdHex: ParamIdHex.UNKNOWN_893E, value: 260 },
+      { paramIdHex: ParamIdHex.TRAINING_MODE, value: TrainingMode.WeightTraining },
+    ]);
+
+    const result = decodeNotification(buffer);
+
+    expect(result).not.toBeNull();
+    expect(result!.type).toBe('settings_update');
+    if (result?.type === 'settings_update') {
+      expect(result.settings.baseWeight).toBe(100);
+      expect(result.settings.chains).toBe(20);
+      expect(result.settings.eccentric).toBe(50);
+      expect(result.settings.trainingMode).toBe(TrainingMode.WeightTraining);
     }
   });
 
