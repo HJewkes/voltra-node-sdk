@@ -34,7 +34,6 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-          registry-url: 'https://registry.npmjs.org'
       - run: npm ci
       - run: npm run build
 
@@ -49,7 +48,7 @@ jobs:
           fi
           echo "Version verified: $PKG_VERSION"
 
-      # Publish with provenance (auth via OIDC — no npm token secret needed)
+      # Publish with OIDC trusted publishing (no token needed — npm CLI handles OIDC handshake)
       - name: Publish to NPM
         run: npm publish --provenance --access public
 
