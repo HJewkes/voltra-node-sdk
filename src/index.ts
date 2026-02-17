@@ -62,6 +62,7 @@ export {
 export { WebBLEAdapter } from './bluetooth/adapters/web';
 export { NodeBLEAdapter, type DeviceChooser } from './bluetooth/adapters/node';
 export { NativeBLEAdapter } from './bluetooth/adapters/native';
+export { MockBLEAdapter, type MockBLEConfig } from './bluetooth/adapters/mock';
 export { createBLEAdapter } from './bluetooth/adapters';
 
 // Adapter types (what consumers need to implement or use)

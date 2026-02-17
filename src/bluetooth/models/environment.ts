@@ -69,10 +69,14 @@ function isNodeEnvironment(): boolean {
 export function detectBLEEnvironment(): BLEEnvironmentInfo {
   // Check for browser environment first
   if (isBrowserEnvironment()) {
+    const hasWebBluetooth =
+      typeof navigator !== 'undefined' && 'bluetooth' in navigator && !!navigator.bluetooth;
     return {
       environment: 'web',
-      bleSupported: true, // Via Web Bluetooth API
-      warningMessage: null,
+      bleSupported: hasWebBluetooth,
+      warningMessage: hasWebBluetooth
+        ? null
+        : 'Web Bluetooth is not available. Use Chrome over HTTPS or localhost.',
       isWeb: true,
       requiresUserGesture: true, // Web Bluetooth requires user gesture for requestDevice()
     };

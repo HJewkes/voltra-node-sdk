@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-02-16
+
+### Added
+- `MockBLEAdapter` — simulates a connected Voltra device with realistic telemetry streaming for visual development and Playwright testing where Web Bluetooth is unavailable
+- `VoltraManager.forMock()` factory method for creating a manager with the mock adapter
+- `'mock'` platform option in `Platform` type union
+- `MockBLEConfig` interface for configuring mock device behavior (device name, scan/connect delays, weight, reps per set, rest period)
+- Telemetry simulation follows real device phase cycle (IDLE → CONCENTRIC → HOLD → ECCENTRIC) at ~11Hz with rep/set boundary notifications and per-rep fatigue model
+
 ## [0.2.1] - 2026-02-15
 
 ### Fixed

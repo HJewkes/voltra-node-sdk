@@ -44,6 +44,22 @@ export class WebBLEAdapter extends WebBluetoothBase {
    * @returns Array with single selected device, or empty if cancelled
    */
   async scan(_timeout: number): Promise<Device[]> {
+    if (typeof navigator === 'undefined' || !navigator.bluetooth) {
+      throw new Error('Web Bluetooth is not available in this browser');
+    }
+
+    // Check Bluetooth availability before opening the device picker.
+    // requestDevice() can crash the browser tab if Bluetooth is unavailable
+    // (no adapter, headless context, permissions blocked).
+    if (navigator.bluetooth.getAvailability) {
+      const available = await navigator.bluetooth.getAvailability();
+      if (!available) {
+        throw new Error(
+          'Bluetooth is not available. Ensure your device has a Bluetooth adapter and it is enabled.'
+        );
+      }
+    }
+
     try {
       // Request device from browser - this shows the native picker
       const device = await navigator.bluetooth.requestDevice({

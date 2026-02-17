@@ -29,6 +29,7 @@
  */
 
 import type { BLEAdapter } from '../bluetooth/adapters/types';
+import type { MockBLEConfig } from '../bluetooth/adapters/mock';
 import type { DiscoveredDevice } from '../bluetooth/models/device';
 import { filterVoltraDevices } from '../voltra/models/device-filter';
 import { BLE } from '../voltra/protocol/constants';
@@ -38,7 +39,7 @@ import type { VoltraClientOptions, VoltraClientEvent, ScanOptions } from './type
 /**
  * Supported platforms for BLE.
  */
-export type Platform = 'web' | 'node' | 'native';
+export type Platform = 'web' | 'node' | 'native' | 'mock';
 
 /**
  * Factory function to create a BLE adapter.
@@ -162,6 +163,21 @@ export class VoltraManager {
    */
   static forNative(options?: Omit<VoltraManagerOptions, 'platform'>): VoltraManager {
     return new VoltraManager({ ...options, platform: 'native' });
+  }
+
+  /**
+   * Create a manager with a mock adapter for testing/visual development.
+   * Simulates a connected Voltra device with realistic telemetry.
+   */
+  static forMock(config?: MockBLEConfig): VoltraManager {
+    return new VoltraManager({
+      platform: 'mock',
+      adapterFactory: () => {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { MockBLEAdapter } = require('../bluetooth/adapters/mock');
+        return new MockBLEAdapter(config);
+      },
+    });
   }
 
   // ===========================================================================
@@ -529,6 +545,13 @@ export class VoltraManager {
           // eslint-disable-next-line @typescript-eslint/no-require-imports
           const { NativeBLEAdapter } = require('../bluetooth/adapters/native');
           return new NativeBLEAdapter({ ble: bleConfig });
+        };
+
+      case 'mock':
+        return () => {
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          const { MockBLEAdapter } = require('../bluetooth/adapters/mock');
+          return new MockBLEAdapter();
         };
 
       default:

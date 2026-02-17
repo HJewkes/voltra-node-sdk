@@ -22,6 +22,7 @@ export type {
 export { WebBLEAdapter } from './web';
 export { NodeBLEAdapter, type NodeBLEConfig, type DeviceChooser } from './node';
 export { NativeBLEAdapter, type NativeAdapterConfig } from './native';
+export { MockBLEAdapter, type MockBLEConfig } from './mock';
 
 // Internal exports (for subclassing if needed, but not part of main API)
 // BaseBLEAdapter and WebBluetoothBase are intentionally not exported from main index

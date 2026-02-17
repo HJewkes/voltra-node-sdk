@@ -34,6 +34,8 @@ export {
   WebBLEAdapter,
   NodeBLEAdapter,
   NativeBLEAdapter,
+  MockBLEAdapter,
+  type MockBLEConfig,
   // Factory
   createBLEAdapter,
   type CreateBLEAdapterConfig,
