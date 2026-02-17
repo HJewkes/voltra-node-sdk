@@ -10,9 +10,11 @@ Publishing is handled by GitHub Actions — never run `npm publish` locally.
 
 Triggered by pushing a `v*` tag to `main`. Three jobs run in sequence:
 
-1. **validate** — `npm ci`, lint, typecheck, test, build
-2. **publish** — builds again, verifies tag version matches `package.json`, publishes with `--provenance --access public` using `NPM_TOKEN` secret
+1. **validate** — `npm ci`, lint, typecheck, test, build (Node 20)
+2. **publish** — builds again, verifies tag version matches `package.json`, publishes with `--provenance --access public` via OIDC trusted publishing (Node 24 — npm >= 11.5.1 required for OIDC)
 3. **github-release** — creates a GitHub Release with auto-generated release notes (marks as prerelease if tag contains `-alpha`, `-beta`, or `-rc`)
+
+Auth uses npm OIDC trusted publishing — no npm token secrets needed. The GitHub repo is configured as a trusted publisher on npmjs.com for workflow `release.yml`.
 
 ### CI: `.github/workflows/ci.yml`
 
