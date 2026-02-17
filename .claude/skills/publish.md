@@ -91,6 +91,6 @@ npm run typecheck && npm test
 | Issue | Fix |
 |-------|-----|
 | Tag/package.json version mismatch | The publish job verifies they match. Fix `package.json`, amend commit, re-tag. |
-| `NPM_TOKEN` expired | Regenerate at npmjs.com, update in repo Settings → Secrets → `NPM_TOKEN` |
+| npm auth failure | OIDC trust may be misconfigured — check npm package Settings → Publishing Access → Trusted Publishers |
 | Validate job fails | Fix the issue on `main` first, delete the tag (`git push --delete origin vX.Y.Z && git tag -d vX.Y.Z`), re-tag after fix |
 | Need to unpublish | `npm unpublish @voltras/node-sdk@X.Y.Z` (only within 72h, use sparingly) |

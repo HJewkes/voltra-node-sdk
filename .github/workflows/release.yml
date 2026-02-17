@@ -49,11 +49,9 @@ jobs:
           fi
           echo "Version verified: $PKG_VERSION"
 
-      # Publish with provenance
+      # Publish with provenance (auth via OIDC — no npm token secret needed)
       - name: Publish to NPM
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   # Create GitHub Release
   github-release:
