@@ -73,7 +73,7 @@
     "@types/react": "^19.0.0",
     "@types/web-bluetooth": "^0.0.21",
     "@vitest/coverage-v8": "^4.0.0",
-    "eslint": "^9.18.0",
+    "eslint": "^10.0.0",
     "husky": "^9.1.0",
     "lint-staged": "^16.2.7",
     "prettier": "^3.4.0",
