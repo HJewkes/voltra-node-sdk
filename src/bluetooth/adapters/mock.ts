@@ -50,9 +50,25 @@ const FATIGUE_RATE = 0.03;
 // Kinematics Profiles
 // =============================================================================
 
+interface KinematicsValues {
+  position: number;
+  velocity: number;
+  force: number;
+}
+
 interface PhaseDef {
   phase: MovementPhase;
   count: number;
+}
+
+type ForceCurve = (progress: number, baseForce: number, fatigue: number) => number;
+
+interface ModeConstants {
+  concentricVelocityPeak: number;
+  eccentricVelocityPeak: number;
+  holdForceMultiplier: number;
+  concentricForce: ForceCurve;
+  eccentricForce: ForceCurve;
 }
 
 interface KinematicsProfile {
@@ -63,257 +79,183 @@ interface KinematicsProfile {
     progress: number,
     fatigue: number,
     baseForce: number,
-    profile: KinematicsProfile
-  ): { position: number; velocity: number; force: number };
+    maxPosition: number
+  ): KinematicsValues;
 }
 
-function weightTrainingValues(
+function buildStandardValues(
+  constants: ModeConstants,
   phase: MovementPhase,
   progress: number,
   fatigue: number,
   baseForce: number,
-  profile: KinematicsProfile
-): { position: number; velocity: number; force: number } {
-  let position = 0;
-  let force = 0;
-  let velocity = 0;
-
+  maxPosition: number
+): KinematicsValues {
   switch (phase) {
     case MovementPhase.CONCENTRIC:
-      position = Math.round(progress * profile.maxPosition);
-      velocity = Math.round(Math.sin(progress * Math.PI) * 80 * fatigue);
-      force = Math.round(baseForce * (1 - progress * 0.3) * fatigue);
-      break;
+      return {
+        position: Math.round(progress * maxPosition),
+        velocity: Math.round(Math.sin(progress * Math.PI) * constants.concentricVelocityPeak * fatigue),
+        force: Math.round(constants.concentricForce(progress, baseForce, fatigue)),
+      };
     case MovementPhase.HOLD:
-      position = profile.maxPosition;
-      force = Math.round(baseForce * 0.5);
-      break;
+      return {
+        position: maxPosition,
+        velocity: 0,
+        force: Math.round(baseForce * constants.holdForceMultiplier),
+      };
     case MovementPhase.ECCENTRIC:
-      position = Math.round((1 - progress) * profile.maxPosition);
-      velocity = Math.round(Math.sin(progress * Math.PI) * 40 * fatigue);
-      force = Math.round(baseForce * 0.8 * (1 - progress * 0.2) * fatigue);
-      break;
+      return {
+        position: Math.round((1 - progress) * maxPosition),
+        velocity: Math.round(Math.sin(progress * Math.PI) * constants.eccentricVelocityPeak * fatigue),
+        force: Math.round(constants.eccentricForce(progress, baseForce, fatigue)),
+      };
     default:
-      break;
+      return { position: 0, velocity: 0, force: 0 };
   }
-
-  return { position, velocity, force };
 }
 
-function resistanceBandValues(
+function standardProfile(
+  phases: PhaseDef[],
+  maxPosition: number,
+  constants: ModeConstants
+): KinematicsProfile {
+  return {
+    phases,
+    maxPosition,
+    buildValues: (phase, progress, fatigue, baseForce, maxPos) =>
+      buildStandardValues(constants, phase, progress, fatigue, baseForce, maxPos),
+  };
+}
+
+// Damper: force depends on computed velocity, not a standard force curve
+function damperBuildValues(
   phase: MovementPhase,
   progress: number,
   fatigue: number,
   baseForce: number,
-  profile: KinematicsProfile
-): { position: number; velocity: number; force: number } {
-  let position = 0;
-  let force = 0;
-  let velocity = 0;
-
-  switch (phase) {
-    case MovementPhase.CONCENTRIC:
-      position = Math.round(progress * profile.maxPosition);
-      velocity = Math.round(Math.sin(progress * Math.PI) * 70 * fatigue);
-      force = Math.round(baseForce * (0.4 + progress * 0.6) * fatigue);
-      break;
-    case MovementPhase.HOLD:
-      position = profile.maxPosition;
-      force = Math.round(baseForce * 0.9);
-      break;
-    case MovementPhase.ECCENTRIC:
-      position = Math.round((1 - progress) * profile.maxPosition);
-      velocity = Math.round(Math.sin(progress * Math.PI) * 35 * fatigue);
-      force = Math.round(baseForce * (1.0 - progress * 0.6) * fatigue);
-      break;
-    default:
-      break;
-  }
-
-  return { position, velocity, force };
-}
-
-function rowingValues(
-  phase: MovementPhase,
-  progress: number,
-  fatigue: number,
-  baseForce: number,
-  profile: KinematicsProfile
-): { position: number; velocity: number; force: number } {
-  let position = 0;
-  let force = 0;
-  let velocity = 0;
-
-  switch (phase) {
-    case MovementPhase.CONCENTRIC:
-      position = Math.round(progress * profile.maxPosition);
-      velocity = Math.round(Math.sin(progress * Math.PI) * 50 * fatigue);
-      force = Math.round(baseForce * Math.exp(-progress * 0.5) * fatigue);
-      break;
-    case MovementPhase.HOLD:
-      position = profile.maxPosition;
-      force = Math.round(baseForce * 0.3);
-      break;
-    case MovementPhase.ECCENTRIC:
-      position = Math.round((1 - progress) * profile.maxPosition);
-      velocity = Math.round(Math.sin(progress * Math.PI) * 25 * fatigue);
-      force = Math.round(baseForce * 0.4 * fatigue);
-      break;
-    default:
-      break;
-  }
-
-  return { position, velocity, force };
-}
-
-function damperValues(
-  phase: MovementPhase,
-  progress: number,
-  fatigue: number,
-  baseForce: number,
-  profile: KinematicsProfile
-): { position: number; velocity: number; force: number } {
-  let position = 0;
-  let velocity = 0;
-  let force = 0;
-
+  maxPosition: number
+): KinematicsValues {
   switch (phase) {
     case MovementPhase.CONCENTRIC: {
-      position = Math.round(progress * profile.maxPosition);
-      velocity = Math.round(Math.sin(progress * Math.PI) * 75 * fatigue);
-      force = Math.round(velocity * baseForce * 0.02 * fatigue);
-      break;
+      const velocity = Math.round(Math.sin(progress * Math.PI) * 75 * fatigue);
+      return {
+        position: Math.round(progress * maxPosition),
+        velocity,
+        force: Math.round(velocity * baseForce * 0.02 * fatigue),
+      };
     }
     case MovementPhase.HOLD:
-      position = profile.maxPosition;
-      force = Math.round(baseForce * 0.1);
-      break;
+      return { position: maxPosition, velocity: 0, force: Math.round(baseForce * 0.1) };
     case MovementPhase.ECCENTRIC: {
-      position = Math.round((1 - progress) * profile.maxPosition);
-      velocity = Math.round(Math.sin(progress * Math.PI) * 38 * fatigue);
-      force = Math.round(velocity * baseForce * 0.015 * fatigue);
-      break;
+      const velocity = Math.round(Math.sin(progress * Math.PI) * 38 * fatigue);
+      return {
+        position: Math.round((1 - progress) * maxPosition),
+        velocity,
+        force: Math.round(velocity * baseForce * 0.015 * fatigue),
+      };
     }
     default:
-      break;
+      return { position: 0, velocity: 0, force: 0 };
   }
-
-  return { position, velocity, force };
 }
 
-function customCurvesValues(
+// Isokinetic: constant velocity, variable force
+function isokineticBuildValues(
   phase: MovementPhase,
   progress: number,
   fatigue: number,
   baseForce: number,
-  profile: KinematicsProfile
-): { position: number; velocity: number; force: number } {
-  let position = 0;
-  let velocity = 0;
-  let force = 0;
-
-  switch (phase) {
-    case MovementPhase.CONCENTRIC:
-      position = Math.round(progress * profile.maxPosition);
-      velocity = Math.round(Math.sin(progress * Math.PI) * 65 * fatigue);
-      force = Math.round(baseForce * Math.sin(progress * Math.PI) * fatigue);
-      break;
-    case MovementPhase.HOLD:
-      position = profile.maxPosition;
-      force = Math.round(baseForce * 0.5);
-      break;
-    case MovementPhase.ECCENTRIC:
-      position = Math.round((1 - progress) * profile.maxPosition);
-      velocity = Math.round(Math.sin(progress * Math.PI) * 32 * fatigue);
-      force = Math.round(baseForce * Math.sin(progress * Math.PI) * 0.8 * fatigue);
-      break;
-    default:
-      break;
-  }
-
-  return { position, velocity, force };
-}
-
-function isokineticValues(
-  phase: MovementPhase,
-  progress: number,
-  fatigue: number,
-  baseForce: number,
-  profile: KinematicsProfile
-): { position: number; velocity: number; force: number } {
+  maxPosition: number
+): KinematicsValues {
   const constantVelocity = 45;
-  let position = 0;
-  let velocity = 0;
-  let force = 0;
-
   switch (phase) {
     case MovementPhase.CONCENTRIC:
-      position = Math.round(progress * profile.maxPosition);
-      velocity = constantVelocity;
-      force = Math.round(baseForce * (0.8 + Math.sin(progress * Math.PI) * 0.4) * fatigue);
-      break;
+      return {
+        position: Math.round(progress * maxPosition),
+        velocity: constantVelocity,
+        force: Math.round(baseForce * (0.8 + Math.sin(progress * Math.PI) * 0.4) * fatigue),
+      };
     case MovementPhase.HOLD:
-      position = profile.maxPosition;
-      force = Math.round(baseForce * 0.6);
-      break;
+      return { position: maxPosition, velocity: 0, force: Math.round(baseForce * 0.6) };
     case MovementPhase.ECCENTRIC:
-      position = Math.round((1 - progress) * profile.maxPosition);
-      velocity = constantVelocity;
-      force = Math.round(baseForce * (0.6 + Math.sin(progress * Math.PI) * 0.3) * fatigue);
-      break;
+      return {
+        position: Math.round((1 - progress) * maxPosition),
+        velocity: constantVelocity,
+        force: Math.round(baseForce * (0.6 + Math.sin(progress * Math.PI) * 0.3) * fatigue),
+      };
     default:
-      break;
+      return { position: 0, velocity: 0, force: 0 };
   }
-
-  return { position, velocity, force };
 }
 
-function isometricValues(
+// Isometric: no movement, pure force output
+function isometricBuildValues(
   _phase: MovementPhase,
   progress: number,
   fatigue: number,
   baseForce: number
-): { position: number; velocity: number; force: number } {
-  const force = Math.round(
-    baseForce * (0.7 + Math.sin(progress * Math.PI * 2) * 0.3) * fatigue
-  );
-  return { position: 0, velocity: 0, force };
+): KinematicsValues {
+  return {
+    position: 0,
+    velocity: 0,
+    force: Math.round(baseForce * (0.7 + Math.sin(progress * Math.PI * 2) * 0.3) * fatigue),
+  };
 }
 
-const WEIGHT_TRAINING_PROFILE: KinematicsProfile = {
-  phases: [
-    { phase: MovementPhase.IDLE, count: 5 },
-    { phase: MovementPhase.CONCENTRIC, count: 9 },
-    { phase: MovementPhase.HOLD, count: 2 },
-    { phase: MovementPhase.ECCENTRIC, count: 16 },
-  ],
-  maxPosition: 600,
-  buildValues: weightTrainingValues,
-};
+const STANDARD_PHASES: PhaseDef[] = [
+  { phase: MovementPhase.IDLE, count: 5 },
+  { phase: MovementPhase.CONCENTRIC, count: 9 },
+  { phase: MovementPhase.HOLD, count: 2 },
+  { phase: MovementPhase.ECCENTRIC, count: 16 },
+];
+
+const WEIGHT_TRAINING_PROFILE = standardProfile(STANDARD_PHASES, 600, {
+  concentricVelocityPeak: 80,
+  eccentricVelocityPeak: 40,
+  holdForceMultiplier: 0.5,
+  concentricForce: (p, bf, f) => bf * (1 - p * 0.3) * f,
+  eccentricForce: (p, bf, f) => bf * 0.8 * (1 - p * 0.2) * f,
+});
 
 const KINEMATICS_PROFILES: Record<TrainingMode, KinematicsProfile> = {
   [TrainingMode.Idle]: WEIGHT_TRAINING_PROFILE,
   [TrainingMode.WeightTraining]: WEIGHT_TRAINING_PROFILE,
-  [TrainingMode.ResistanceBand]: {
-    phases: [
+
+  [TrainingMode.ResistanceBand]: standardProfile(
+    [
       { phase: MovementPhase.IDLE, count: 5 },
       { phase: MovementPhase.CONCENTRIC, count: 10 },
       { phase: MovementPhase.HOLD, count: 3 },
       { phase: MovementPhase.ECCENTRIC, count: 14 },
     ],
-    maxPosition: 650,
-    buildValues: resistanceBandValues,
-  },
-  [TrainingMode.Rowing]: {
-    phases: [
+    650,
+    {
+      concentricVelocityPeak: 70,
+      eccentricVelocityPeak: 35,
+      holdForceMultiplier: 0.9,
+      concentricForce: (p, bf, f) => bf * (0.4 + p * 0.6) * f,
+      eccentricForce: (p, bf, f) => bf * (1.0 - p * 0.6) * f,
+    }
+  ),
+
+  [TrainingMode.Rowing]: standardProfile(
+    [
       { phase: MovementPhase.IDLE, count: 6 },
       { phase: MovementPhase.CONCENTRIC, count: 14 },
       { phase: MovementPhase.HOLD, count: 2 },
       { phase: MovementPhase.ECCENTRIC, count: 20 },
     ],
-    maxPosition: 700,
-    buildValues: rowingValues,
-  },
+    700,
+    {
+      concentricVelocityPeak: 50,
+      eccentricVelocityPeak: 25,
+      holdForceMultiplier: 0.3,
+      concentricForce: (p, bf, f) => bf * Math.exp(-p * 0.5) * f,
+      eccentricForce: (_p, bf, f) => bf * 0.4 * f,
+    }
+  ),
+
   [TrainingMode.Damper]: {
     phases: [
       { phase: MovementPhase.IDLE, count: 5 },
@@ -322,18 +264,26 @@ const KINEMATICS_PROFILES: Record<TrainingMode, KinematicsProfile> = {
       { phase: MovementPhase.ECCENTRIC, count: 14 },
     ],
     maxPosition: 600,
-    buildValues: damperValues,
+    buildValues: damperBuildValues,
   },
-  [TrainingMode.CustomCurves]: {
-    phases: [
+
+  [TrainingMode.CustomCurves]: standardProfile(
+    [
       { phase: MovementPhase.IDLE, count: 4 },
       { phase: MovementPhase.CONCENTRIC, count: 11 },
       { phase: MovementPhase.HOLD, count: 3 },
       { phase: MovementPhase.ECCENTRIC, count: 15 },
     ],
-    maxPosition: 550,
-    buildValues: customCurvesValues,
-  },
+    550,
+    {
+      concentricVelocityPeak: 65,
+      eccentricVelocityPeak: 32,
+      holdForceMultiplier: 0.5,
+      concentricForce: (p, bf, f) => bf * Math.sin(p * Math.PI) * f,
+      eccentricForce: (p, bf, f) => bf * Math.sin(p * Math.PI) * 0.8 * f,
+    }
+  ),
+
   [TrainingMode.Isokinetic]: {
     phases: [
       { phase: MovementPhase.IDLE, count: 5 },
@@ -342,15 +292,16 @@ const KINEMATICS_PROFILES: Record<TrainingMode, KinematicsProfile> = {
       { phase: MovementPhase.ECCENTRIC, count: 12 },
     ],
     maxPosition: 600,
-    buildValues: isokineticValues,
+    buildValues: isokineticBuildValues,
   },
+
   [TrainingMode.Isometric]: {
     phases: [
       { phase: MovementPhase.IDLE, count: 5 },
       { phase: MovementPhase.CONCENTRIC, count: 20 },
     ],
     maxPosition: 0,
-    buildValues: isometricValues,
+    buildValues: isometricBuildValues,
   },
 };
 
@@ -461,7 +412,7 @@ export class MockBLEAdapter extends BaseBLEAdapter {
         progress,
         fatigue,
         baseForce,
-        profile
+        profile.maxPosition
       );
       const frame = createFrame(this.sequence++, current.phase, position, force, velocity);
       this.emitNotification(encodeTelemetryFrame(frame));
