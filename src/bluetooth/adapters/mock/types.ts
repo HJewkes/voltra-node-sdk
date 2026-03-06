@@ -63,3 +63,52 @@ export interface KinematicsProfile {
     maxPosition: number
   ): KinematicsValues;
 }
+
+// =============================================================================
+// Error Injection Types
+// =============================================================================
+
+export type ErrorScenarioType =
+  | 'disconnect'
+  | 'authTimeout'
+  | 'notificationDrop'
+  | 'malformedFrame'
+  | 'reconnectCycle';
+
+export interface DisconnectConfig {
+  afterMs: number;
+}
+
+export interface AuthTimeoutConfig {
+  timeoutMs?: number;
+}
+
+export interface NotificationDropConfig {
+  dropRate: number;
+}
+
+export interface MalformedFrameConfig {
+  corruptionRate: number;
+}
+
+export interface ReconnectCycleConfig {
+  disconnectAfterMs: number;
+  reconnectDelayMs: number;
+}
+
+export type ErrorConfig =
+  | DisconnectConfig
+  | AuthTimeoutConfig
+  | NotificationDropConfig
+  | MalformedFrameConfig
+  | ReconnectCycleConfig;
+
+export interface ErrorScenarioEntry {
+  type: ErrorScenarioType;
+  config: ErrorConfig;
+}
+
+export interface MockBLEErrorConfig {
+  errorScenario?: ErrorScenarioType;
+  errorConfig?: ErrorConfig;
+}

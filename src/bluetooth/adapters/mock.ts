@@ -8,6 +8,9 @@
  * On connect, emits encoded 30-byte telemetry frames at 11Hz following
  * real device phase transitions: IDLE -> CONCENTRIC -> HOLD -> ECCENTRIC -> IDLE.
  * Also emits rep/set boundary notifications.
+ *
+ * Supports optional error injection for robustness testing via constructor
+ * config or dynamic `injectError()` / `clearErrors()` methods.
  */
 
 import { BaseBLEAdapter } from './base';
@@ -23,11 +26,12 @@ import {
   buildModeConfirmation,
   detectModeCommand,
 } from './mock/notifications';
-import type { MockBLEConfig } from './mock/types';
+import type { MockBLEConfig, ErrorScenarioType, ErrorConfig, MockBLEErrorConfig } from './mock/types';
 import { MOCK_DEFAULTS, SAMPLE_INTERVAL_MS, FATIGUE_RATE } from './mock/types';
+import { ErrorInjector } from './mock/error-injector';
 
 // Re-export public types for backwards compatibility
-export type { MockBLEConfig } from './mock/types';
+export type { MockBLEConfig, ErrorScenarioType, ErrorConfig, MockBLEErrorConfig } from './mock/types';
 
 export class MockBLEAdapter extends BaseBLEAdapter {
   private readonly config: Required<MockBLEConfig>;
@@ -40,11 +44,18 @@ export class MockBLEAdapter extends BaseBLEAdapter {
   private sampleInPhase = 0;
   private resting = false;
   private restStart = 0;
+  private readonly errorInjector: ErrorInjector;
 
-  constructor(config?: MockBLEConfig) {
+  constructor(config?: MockBLEConfig & MockBLEErrorConfig) {
     super();
-    this.config = { ...MOCK_DEFAULTS, ...config };
+    const { errorScenario, errorConfig, ...bleConfig } = config ?? {};
+    this.config = { ...MOCK_DEFAULTS, ...bleConfig };
     this.activeMode = this.config.trainingMode;
+    this.errorInjector = new ErrorInjector();
+
+    if (errorScenario && errorConfig) {
+      this.errorInjector.inject(errorScenario, errorConfig);
+    }
   }
 
   async scan(_timeout: number): Promise<Device[]> {
@@ -59,10 +70,24 @@ export class MockBLEAdapter extends BaseBLEAdapter {
   }
 
   async connect(_deviceId: string, _options?: ConnectOptions): Promise<void> {
+    const authTimeout = this.errorInjector.shouldBlockAuth();
+    if (authTimeout) {
+      this.setConnectionState('connecting');
+      const timeoutMs = authTimeout.timeoutMs ?? 10_000;
+      await delay(timeoutMs);
+      this.setConnectionState('disconnected');
+      throw new Error('Authentication timed out');
+    }
+
     this.setConnectionState('connecting');
     await delay(this.config.connectDelayMs);
     this.setConnectionState('connected');
     this._startTelemetry();
+
+    this.errorInjector.startTimers({
+      triggerDisconnect: () => this._triggerDisconnect(),
+      triggerReconnect: (delayMs: number) => this._triggerReconnect(delayMs),
+    });
   }
 
   async write(data: Uint8Array): Promise<void> {
@@ -73,6 +98,7 @@ export class MockBLEAdapter extends BaseBLEAdapter {
   }
 
   async disconnect(): Promise<void> {
+    this.errorInjector.clearTimers();
     this._stopTelemetry();
     this.setConnectionState('disconnected');
   }
@@ -85,6 +111,32 @@ export class MockBLEAdapter extends BaseBLEAdapter {
     this.activeMode = mode;
     this._resetPhaseState();
     this.emitNotification(buildModeConfirmation(mode));
+  }
+
+  // ===========================================================================
+  // Error Injection API
+  // ===========================================================================
+
+  /**
+   * Inject an error scenario dynamically (can be called mid-test).
+   * Multiple error types can be composed by calling this multiple times.
+   */
+  injectError(type: ErrorScenarioType, config: ErrorConfig): void {
+    this.errorInjector.inject(type, config);
+
+    if (this.isConnected() && (type === 'disconnect' || type === 'reconnectCycle')) {
+      this.errorInjector.startTimers({
+        triggerDisconnect: () => this._triggerDisconnect(),
+        triggerReconnect: (delayMs: number) => this._triggerReconnect(delayMs),
+      });
+    }
+  }
+
+  /**
+   * Clear all injected errors and restore normal behavior.
+   */
+  clearErrors(): void {
+    this.errorInjector.clearAll();
   }
 
   // ===========================================================================
@@ -109,7 +161,7 @@ export class MockBLEAdapter extends BaseBLEAdapter {
           this.resting = false;
           this.repInSet = 0;
         } else {
-          this.emitNotification(buildIdleFrame(this.sequence++));
+          this._emitWithErrorFilter(buildIdleFrame(this.sequence++));
           return;
         }
       }
@@ -131,7 +183,7 @@ export class MockBLEAdapter extends BaseBLEAdapter {
         profile.maxPosition
       );
       const frame = createFrame(this.sequence++, current.phase, position, force, velocity);
-      this.emitNotification(encodeTelemetryFrame(frame));
+      this._emitWithErrorFilter(encodeTelemetryFrame(frame));
 
       this.sampleInPhase++;
 
@@ -155,11 +207,29 @@ export class MockBLEAdapter extends BaseBLEAdapter {
     }, SAMPLE_INTERVAL_MS);
   }
 
+  private _emitWithErrorFilter(data: Uint8Array): void {
+    const filtered = this.errorInjector.filterNotification(data);
+    if (filtered !== null) {
+      this.emitNotification(filtered);
+    }
+  }
+
   private _stopTelemetry(): void {
     if (this.telemetryInterval) {
       clearInterval(this.telemetryInterval);
       this.telemetryInterval = null;
     }
+  }
+
+  private _triggerDisconnect(): void {
+    this._stopTelemetry();
+    this.setConnectionState('disconnected');
+  }
+
+  private _triggerReconnect(_delayMs: number): void {
+    this.setConnectionState('connecting');
+    this.setConnectionState('connected');
+    this._startTelemetry();
   }
 }
 
