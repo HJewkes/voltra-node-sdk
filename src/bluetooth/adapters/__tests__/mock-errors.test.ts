@@ -8,9 +8,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MockBLEAdapter } from '../mock';
-import {
-  decodeTelemetryFrame,
-} from '../../../voltra/protocol/telemetry-decoder';
+import { decodeTelemetryFrame } from '../../../voltra/protocol/telemetry-decoder';
 import { MessageTypes } from '../../../voltra/protocol/constants/message-types';
 import { bytesEqual } from '../../../shared/utils';
 
@@ -290,9 +288,11 @@ describe('MockBLEAdapter error injection', () => {
       expect(adapter.getConnectionState()).toBe('connected');
 
       expect(states).toEqual([
-        'connecting', 'connected',   // initial connect
-        'disconnected',               // error disconnect
-        'connecting', 'connected',    // reconnect
+        'connecting',
+        'connected', // initial connect
+        'disconnected', // error disconnect
+        'connecting',
+        'connected', // reconnect
       ]);
 
       await adapter.disconnect();
