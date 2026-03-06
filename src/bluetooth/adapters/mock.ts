@@ -23,13 +23,14 @@ import {
   buildModeConfirmation,
   detectModeCommand,
 } from './mock/notifications';
+import type { MockBLEConfig } from './mock/types';
 import { MOCK_DEFAULTS, SAMPLE_INTERVAL_MS, FATIGUE_RATE } from './mock/types';
 
 // Re-export public types for backwards compatibility
 export type { MockBLEConfig } from './mock/types';
 
 export class MockBLEAdapter extends BaseBLEAdapter {
-  private readonly config: Required<import('./mock/types').MockBLEConfig>;
+  private readonly config: Required<MockBLEConfig>;
   private telemetryInterval: ReturnType<typeof setInterval> | null = null;
   private sequence = 0;
   private repInSet = 0;
@@ -40,7 +41,7 @@ export class MockBLEAdapter extends BaseBLEAdapter {
   private resting = false;
   private restStart = 0;
 
-  constructor(config?: import('./mock/types').MockBLEConfig) {
+  constructor(config?: MockBLEConfig) {
     super();
     this.config = { ...MOCK_DEFAULTS, ...config };
     this.activeMode = this.config.trainingMode;

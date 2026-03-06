@@ -30,6 +30,8 @@ const WEIGHT_TRAINING_PROFILE = standardProfile(STANDARD_PHASES, 600, {
 });
 
 export const KINEMATICS_PROFILES: Record<TrainingMode, KinematicsProfile> = {
+  // Idle uses weight training as the default profile — the device boots into
+  // weight training mode, so Idle telemetry mirrors that until a mode switch.
   [TrainingMode.Idle]: WEIGHT_TRAINING_PROFILE,
   [TrainingMode.WeightTraining]: WEIGHT_TRAINING_PROFILE,
 

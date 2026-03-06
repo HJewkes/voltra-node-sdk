@@ -7,8 +7,14 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MockBLEAdapter } from '../mock';
-import { decodeTelemetryFrame, decodeNotification } from '../../../voltra/protocol/telemetry-decoder';
-import { MessageTypes, NotificationConfigs } from '../../../voltra/protocol/constants/message-types';
+import {
+  decodeTelemetryFrame,
+  decodeNotification,
+} from '../../../voltra/protocol/telemetry-decoder';
+import {
+  MessageTypes,
+  NotificationConfigs,
+} from '../../../voltra/protocol/constants/message-types';
 import { MovementPhase, TrainingMode } from '../../../voltra/protocol/constants/enums';
 import { bytesEqual, bytesToHex } from '../../../shared/utils';
 import { getModeCommand } from '../../../voltra/protocol/commands';
@@ -543,9 +549,7 @@ describe('MockBLEAdapter', () => {
       tickSamples(samplesPerRep);
       await adapter.disconnect();
 
-      return notifications
-        .filter(isTelemetryFrame)
-        .map((d) => decodeTelemetryFrame(d)!);
+      return notifications.filter(isTelemetryFrame).map((d) => decodeTelemetryFrame(d)!);
     }
 
     it('resistance band: force increases with position during concentric', async () => {
@@ -579,14 +583,10 @@ describe('MockBLEAdapter', () => {
       const wtFrames = await collectOneRep(TrainingMode.WeightTraining, 32);
 
       const rowingPeakVel = Math.max(
-        ...rowingFrames
-          .filter((f) => f.phase === MovementPhase.CONCENTRIC)
-          .map((f) => f.velocity)
+        ...rowingFrames.filter((f) => f.phase === MovementPhase.CONCENTRIC).map((f) => f.velocity)
       );
       const wtPeakVel = Math.max(
-        ...wtFrames
-          .filter((f) => f.phase === MovementPhase.CONCENTRIC)
-          .map((f) => f.velocity)
+        ...wtFrames.filter((f) => f.phase === MovementPhase.CONCENTRIC).map((f) => f.velocity)
       );
 
       expect(rowingPeakVel).toBeLessThan(wtPeakVel);
@@ -674,14 +674,16 @@ describe('MockBLEAdapter', () => {
     });
 
     it('all modes produce valid decodable telemetry frames', async () => {
+      // Sample counts derived from phase definitions in profiles.ts:
+      // sum of all PhaseDef.count values for each mode's profile
       const modes: [TrainingMode, number][] = [
-        [TrainingMode.WeightTraining, 32],
-        [TrainingMode.ResistanceBand, 32],
-        [TrainingMode.Rowing, 42],
-        [TrainingMode.Damper, 31],
-        [TrainingMode.CustomCurves, 33],
-        [TrainingMode.Isokinetic, 31],
-        [TrainingMode.Isometric, 25],
+        [TrainingMode.WeightTraining, 32], // 5 idle + 9 con + 2 hold + 16 ecc
+        [TrainingMode.ResistanceBand, 32], // 5 idle + 10 con + 3 hold + 14 ecc
+        [TrainingMode.Rowing, 42], // 6 idle + 14 con + 2 hold + 20 ecc
+        [TrainingMode.Damper, 31], // 5 idle + 10 con + 2 hold + 14 ecc
+        [TrainingMode.CustomCurves, 33], // 4 idle + 11 con + 3 hold + 15 ecc
+        [TrainingMode.Isokinetic, 31], // 5 idle + 12 con + 2 hold + 12 ecc
+        [TrainingMode.Isometric, 25], // 5 idle + 20 con (2 phases only)
       ];
 
       for (const [mode, samples] of modes) {

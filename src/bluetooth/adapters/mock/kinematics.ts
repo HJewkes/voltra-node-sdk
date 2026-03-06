@@ -20,7 +20,9 @@ function buildStandardValues(
     case MovementPhase.CONCENTRIC:
       return {
         position: Math.round(progress * maxPosition),
-        velocity: Math.round(Math.sin(progress * Math.PI) * constants.concentricVelocityPeak * fatigue),
+        velocity: Math.round(
+          Math.sin(progress * Math.PI) * constants.concentricVelocityPeak * fatigue
+        ),
         force: Math.round(constants.concentricForce(progress, baseForce, fatigue)),
       };
     case MovementPhase.HOLD:
@@ -32,7 +34,9 @@ function buildStandardValues(
     case MovementPhase.ECCENTRIC:
       return {
         position: Math.round((1 - progress) * maxPosition),
-        velocity: Math.round(Math.sin(progress * Math.PI) * constants.eccentricVelocityPeak * fatigue),
+        velocity: Math.round(
+          Math.sin(progress * Math.PI) * constants.eccentricVelocityPeak * fatigue
+        ),
         force: Math.round(constants.eccentricForce(progress, baseForce, fatigue)),
       };
     default:
@@ -119,7 +123,8 @@ export function isometricBuildValues(
   _phase: MovementPhase,
   progress: number,
   fatigue: number,
-  baseForce: number
+  baseForce: number,
+  _maxPosition: number
 ): KinematicsValues {
   return {
     position: 0,

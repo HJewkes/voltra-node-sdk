@@ -5,8 +5,15 @@
  * set boundary, mode confirmation, idle frame, mode command detection).
  */
 
-import { MovementPhase, TrainingMode, VALID_TRAINING_MODES } from '../../../voltra/protocol/constants/enums';
-import { MessageTypes, NotificationConfigs } from '../../../voltra/protocol/constants/message-types';
+import {
+  MovementPhase,
+  TrainingMode,
+  VALID_TRAINING_MODES,
+} from '../../../voltra/protocol/constants/enums';
+import {
+  MessageTypes,
+  NotificationConfigs,
+} from '../../../voltra/protocol/constants/message-types';
 import { createFrame } from '../../../voltra/models/telemetry/frame';
 import { encodeTelemetryFrame } from '../../../voltra/protocol/telemetry-decoder';
 import { getModeCommand } from '../../../voltra/protocol/commands';
@@ -19,21 +26,13 @@ export function buildIdleFrame(sequence: number): Uint8Array {
 
 export function buildRepBoundary(): Uint8Array {
   const data = new Uint8Array(4);
-  const header = MessageTypes.REP_SUMMARY;
-  data[0] = header[0];
-  data[1] = header[1];
-  data[2] = header[2];
-  data[3] = header[3];
+  data.set(MessageTypes.REP_SUMMARY);
   return data;
 }
 
 export function buildSetBoundary(): Uint8Array {
   const data = new Uint8Array(4);
-  const header = MessageTypes.SET_SUMMARY;
-  data[0] = header[0];
-  data[1] = header[1];
-  data[2] = header[2];
-  data[3] = header[3];
+  data.set(MessageTypes.SET_SUMMARY);
   return data;
 }
 
