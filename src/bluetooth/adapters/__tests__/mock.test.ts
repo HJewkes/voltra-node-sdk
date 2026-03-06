@@ -78,11 +78,11 @@ describe('MockBLEAdapter', () => {
       const devices = await scanPromise;
 
       expect(devices).toHaveLength(1);
-      expect(devices[0]).toEqual({
-        id: 'mock-voltra-001',
-        name: 'VTR-Mock',
-        rssi: -50,
-      });
+      expect(devices[0].id).toBe('mock-voltra-001');
+      expect(devices[0].name).toBe('VTR-Mock');
+      expect(devices[0].rssi).toBeTypeOf('number');
+      expect(devices[0].rssi!).toBeGreaterThan(-80);
+      expect(devices[0].rssi!).toBeLessThan(-40);
     });
 
     it('uses custom device name and id from config', async () => {

@@ -4,6 +4,41 @@
 
 import { MovementPhase, TrainingMode } from '../../../voltra/protocol/constants/enums';
 
+export interface DeviceParameterConfig {
+  serialNumber?: string;
+  firmwareVersion?: string;
+  hardwareVersion?: string;
+  modelName?: string;
+  /** Initial battery level (0–100). Drains ~1% per minute during active motor engagement. */
+  batteryLevel?: number;
+  /** Base RSSI in dBm. Returned with gaussian noise (±5 dBm std dev). */
+  rssi?: number;
+}
+
+export interface ResolvedDeviceParams {
+  serialNumber: string;
+  firmwareVersion: string;
+  hardwareVersion: string;
+  modelName: string;
+  batteryLevel: number;
+  rssi: number;
+}
+
+export const DEVICE_PARAM_DEFAULTS: ResolvedDeviceParams = {
+  serialNumber: 'VLT-000000',
+  firmwareVersion: '1.0.0',
+  hardwareVersion: '1.0',
+  modelName: 'Voltra',
+  batteryLevel: 100,
+  rssi: -60,
+} as const;
+
+/** Battery drain rate: ~1% per minute = 1/60000 per ms */
+export const BATTERY_DRAIN_PER_MS = 1 / 60_000;
+
+/** Standard deviation for RSSI gaussian noise in dBm */
+export const RSSI_NOISE_STD_DEV = 5;
+
 export interface MockBLEConfig {
   deviceName?: string;
   deviceId?: string;
@@ -15,6 +50,8 @@ export interface MockBLEConfig {
   restBetweenSetsMs?: number;
   /** Training mode — defaults to WeightTraining for backwards compatibility */
   trainingMode?: TrainingMode;
+  /** Configurable device identity and simulation parameters */
+  device?: DeviceParameterConfig;
 }
 
 export const MOCK_DEFAULTS = {
