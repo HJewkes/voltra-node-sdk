@@ -7,10 +7,17 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MockBLEAdapter } from '../mock';
-import { decodeTelemetryFrame } from '../../../voltra/protocol/telemetry-decoder';
-import { MessageTypes } from '../../../voltra/protocol/constants/message-types';
-import { MovementPhase } from '../../../voltra/protocol/constants/enums';
-import { bytesEqual } from '../../../shared/utils';
+import {
+  decodeTelemetryFrame,
+  decodeNotification,
+} from '../../../voltra/protocol/telemetry-decoder';
+import {
+  MessageTypes,
+  NotificationConfigs,
+} from '../../../voltra/protocol/constants/message-types';
+import { MovementPhase, TrainingMode } from '../../../voltra/protocol/constants/enums';
+import { bytesEqual, bytesToHex } from '../../../shared/utils';
+import { getModeCommand } from '../../../voltra/protocol/commands';
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -40,6 +47,12 @@ function isRepBoundary(data: Uint8Array): boolean {
 
 function isSetBoundary(data: Uint8Array): boolean {
   return data.length === 4 && bytesEqual(data, MessageTypes.SET_SUMMARY);
+}
+
+function isModeConfirmation(data: Uint8Array): boolean {
+  if (data.length < 2) return false;
+  const header = bytesToHex(data.subarray(0, 2));
+  return header === NotificationConfigs.modeConfirmation.header;
 }
 
 /** Advance timers through N interval ticks (91ms each). */
@@ -509,6 +522,386 @@ describe('MockBLEAdapter', () => {
       const heavyMaxForce = Math.max(...heavyFrames.map((f) => f.force));
 
       expect(heavyMaxForce).toBeGreaterThan(lightMaxForce);
+    });
+  });
+
+  // ===========================================================================
+  // Training Mode Simulation
+  // ===========================================================================
+
+  describe('training modes', () => {
+    /** Connect, collect one rep cycle, disconnect, return decoded telemetry frames. */
+    async function collectOneRep(
+      mode: TrainingMode,
+      samplesPerRep: number
+    ): ReturnType<typeof decodeTelemetryFrame>[] {
+      const adapter = new MockBLEAdapter({
+        connectDelayMs: 0,
+        trainingMode: mode,
+      });
+      const notifications: Uint8Array[] = [];
+      adapter.onNotification((data) => notifications.push(data));
+
+      const p = adapter.connect('x');
+      vi.advanceTimersByTime(0);
+      await p;
+
+      tickSamples(samplesPerRep);
+      await adapter.disconnect();
+
+      return notifications.filter(isTelemetryFrame).map((d) => decodeTelemetryFrame(d)!);
+    }
+
+    it('resistance band: force increases with position during concentric', async () => {
+      // Resistance Band: 5 idle + 10 con + 3 hold + 14 ecc = 32
+      const frames = await collectOneRep(TrainingMode.ResistanceBand, 32);
+      const concentric = frames.filter((f) => f.phase === MovementPhase.CONCENTRIC);
+
+      expect(concentric.length).toBe(10);
+
+      // Force should trend upward as position increases (non-linear band stretch)
+      const firstThird = concentric.slice(1, 4);
+      const lastThird = concentric.slice(7, 10);
+      const avgForceEarly = firstThird.reduce((s, f) => s + f.force, 0) / firstThird.length;
+      const avgForceLate = lastThird.reduce((s, f) => s + f.force, 0) / lastThird.length;
+      expect(avgForceLate).toBeGreaterThan(avgForceEarly);
+    });
+
+    it('rowing: has longer phase durations than weight training', async () => {
+      // Rowing: 6 idle + 14 con + 2 hold + 20 ecc = 42
+      const frames = await collectOneRep(TrainingMode.Rowing, 42);
+      const concentric = frames.filter((f) => f.phase === MovementPhase.CONCENTRIC);
+      const eccentric = frames.filter((f) => f.phase === MovementPhase.ECCENTRIC);
+
+      // Rowing has 14 concentric (vs 9 for weight training) and 20 eccentric (vs 16)
+      expect(concentric.length).toBe(14);
+      expect(eccentric.length).toBe(20);
+    });
+
+    it('rowing: velocity peaks are lower than weight training', async () => {
+      const rowingFrames = await collectOneRep(TrainingMode.Rowing, 42);
+      const wtFrames = await collectOneRep(TrainingMode.WeightTraining, 32);
+
+      const rowingPeakVel = Math.max(
+        ...rowingFrames.filter((f) => f.phase === MovementPhase.CONCENTRIC).map((f) => f.velocity)
+      );
+      const wtPeakVel = Math.max(
+        ...wtFrames.filter((f) => f.phase === MovementPhase.CONCENTRIC).map((f) => f.velocity)
+      );
+
+      expect(rowingPeakVel).toBeLessThan(wtPeakVel);
+    });
+
+    it('damper: force correlates with velocity (force = f(velocity))', async () => {
+      // Damper: 5 idle + 10 con + 2 hold + 14 ecc = 31
+      const frames = await collectOneRep(TrainingMode.Damper, 31);
+      const concentric = frames.filter((f) => f.phase === MovementPhase.CONCENTRIC);
+
+      // When velocity is 0, force should be 0 (velocity-dependent resistance)
+      expect(concentric[0].velocity).toBe(0);
+      expect(concentric[0].force).toBe(0);
+
+      // At peak velocity, force should be highest
+      const peakVelFrame = concentric.reduce((a, b) => (a.velocity > b.velocity ? a : b));
+      expect(peakVelFrame.force).toBeGreaterThan(0);
+    });
+
+    it('custom curves: force follows a sine-wave profile', async () => {
+      // Custom Curves: 4 idle + 11 con + 3 hold + 15 ecc = 33
+      const frames = await collectOneRep(TrainingMode.CustomCurves, 33);
+      const concentric = frames.filter((f) => f.phase === MovementPhase.CONCENTRIC);
+
+      expect(concentric.length).toBe(11);
+
+      // Sine wave: starts at 0, peaks in middle, returns toward 0
+      expect(concentric[0].force).toBe(0);
+      const midIndex = Math.floor(concentric.length / 2);
+      expect(concentric[midIndex].force).toBeGreaterThan(concentric[0].force);
+      expect(concentric[midIndex].force).toBeGreaterThan(concentric[concentric.length - 1].force);
+    });
+
+    it('isokinetic: constant velocity during concentric and eccentric', async () => {
+      // Isokinetic: 5 idle + 12 con + 2 hold + 12 ecc = 31
+      const frames = await collectOneRep(TrainingMode.Isokinetic, 31);
+      const concentric = frames.filter((f) => f.phase === MovementPhase.CONCENTRIC);
+      const eccentric = frames.filter((f) => f.phase === MovementPhase.ECCENTRIC);
+
+      // All concentric velocity values should be the same constant (45)
+      const conVelocities = new Set(concentric.map((f) => f.velocity));
+      expect(conVelocities.size).toBe(1);
+      expect(concentric[0].velocity).toBe(45);
+
+      // All eccentric velocity values should also be constant
+      const eccVelocities = new Set(eccentric.map((f) => f.velocity));
+      expect(eccVelocities.size).toBe(1);
+    });
+
+    it('isometric: zero position and zero velocity, non-zero force', async () => {
+      // Isometric: 5 idle + 20 concentric = 25 (only 2 phases)
+      const frames = await collectOneRep(TrainingMode.Isometric, 25);
+      const activeFrames = frames.filter((f) => f.phase === MovementPhase.CONCENTRIC);
+
+      expect(activeFrames.length).toBe(20);
+
+      for (const f of activeFrames) {
+        expect(f.position).toBe(0);
+        expect(f.velocity).toBe(0);
+        expect(f.force).toBeGreaterThan(0);
+      }
+    });
+
+    it('isometric: emits rep boundaries with 2-phase cycle', async () => {
+      const adapter = new MockBLEAdapter({
+        connectDelayMs: 0,
+        trainingMode: TrainingMode.Isometric,
+        repsPerSet: 2,
+      });
+      const notifications: Uint8Array[] = [];
+      adapter.onNotification((data) => notifications.push(data));
+
+      const p = adapter.connect('x');
+      vi.advanceTimersByTime(0);
+      await p;
+
+      // 2 reps of isometric (25 samples each)
+      tickSamples(25 * 2);
+      await adapter.disconnect();
+
+      const repBoundaries = notifications.filter(isRepBoundary);
+      const setBoundaries = notifications.filter(isSetBoundary);
+      expect(repBoundaries).toHaveLength(2);
+      expect(setBoundaries).toHaveLength(1);
+    });
+
+    it('all modes produce valid decodable telemetry frames', async () => {
+      // Sample counts derived from phase definitions in profiles.ts:
+      // sum of all PhaseDef.count values for each mode's profile
+      const modes: [TrainingMode, number][] = [
+        [TrainingMode.WeightTraining, 32], // 5 idle + 9 con + 2 hold + 16 ecc
+        [TrainingMode.ResistanceBand, 32], // 5 idle + 10 con + 3 hold + 14 ecc
+        [TrainingMode.Rowing, 42], // 6 idle + 14 con + 2 hold + 20 ecc
+        [TrainingMode.Damper, 31], // 5 idle + 10 con + 2 hold + 14 ecc
+        [TrainingMode.CustomCurves, 33], // 4 idle + 11 con + 3 hold + 15 ecc
+        [TrainingMode.Isokinetic, 31], // 5 idle + 12 con + 2 hold + 12 ecc
+        [TrainingMode.Isometric, 25], // 5 idle + 20 con (2 phases only)
+      ];
+
+      for (const [mode, samples] of modes) {
+        const frames = await collectOneRep(mode, samples);
+        expect(frames.length).toBeGreaterThan(0);
+        for (const f of frames) {
+          expect(f).not.toBeNull();
+          expect(f.sequence).toBeGreaterThanOrEqual(0);
+        }
+      }
+    });
+  });
+
+  // ===========================================================================
+  // Mode Switching
+  // ===========================================================================
+
+  describe('mode switching', () => {
+    it('switches telemetry to isometric after setTrainingMode (velocity drops to 0)', async () => {
+      const adapter = new MockBLEAdapter({
+        connectDelayMs: 0,
+        trainingMode: TrainingMode.WeightTraining,
+      });
+      const notifications = collectNotifications(adapter);
+
+      const p = adapter.connect('x');
+      vi.advanceTimersByTime(0);
+      await p;
+
+      // Generate some weight training frames
+      tickSamples(SAMPLES_PER_REP);
+
+      const preSwitch = notifications.filter(isTelemetryFrame).map((d) => decodeTelemetryFrame(d)!);
+      const concentricVelocities = preSwitch
+        .filter((f) => f.phase === MovementPhase.CONCENTRIC)
+        .map((f) => f.velocity);
+      const peakVelocity = Math.max(...concentricVelocities);
+      expect(peakVelocity).toBeGreaterThan(0);
+
+      // Switch to isometric
+      notifications.length = 0;
+      adapter.setTrainingMode(TrainingMode.Isometric);
+
+      // Skip mode confirmation notification
+      // Isometric: 5 idle + 20 concentric = 25 samples
+      tickSamples(25);
+      await adapter.disconnect();
+
+      const postSwitch = notifications
+        .filter(isTelemetryFrame)
+        .map((d) => decodeTelemetryFrame(d)!);
+      const activeFrames = postSwitch.filter((f) => f.phase === MovementPhase.CONCENTRIC);
+
+      for (const f of activeFrames) {
+        expect(f.position).toBe(0);
+        expect(f.velocity).toBe(0);
+      }
+    });
+
+    it('resets rep counter on mode switch', async () => {
+      const adapter = new MockBLEAdapter({
+        connectDelayMs: 0,
+        trainingMode: TrainingMode.WeightTraining,
+        repsPerSet: 5,
+      });
+      const notifications = collectNotifications(adapter);
+
+      const p = adapter.connect('x');
+      vi.advanceTimersByTime(0);
+      await p;
+
+      // Complete 3 reps
+      tickSamples(SAMPLES_PER_REP * 3);
+      const repsBefore = notifications.filter(isRepBoundary).length;
+      expect(repsBefore).toBe(3);
+
+      // Switch mode — counters reset
+      notifications.length = 0;
+      adapter.setTrainingMode(TrainingMode.Isometric);
+
+      // Complete 2 reps of isometric (5 idle + 20 con = 25 each)
+      // With repsPerSet=5, 2 reps should NOT trigger a set boundary
+      tickSamples(25 * 2);
+      await adapter.disconnect();
+
+      const repsAfter = notifications.filter(isRepBoundary).length;
+      const setsAfter = notifications.filter(isSetBoundary).length;
+      expect(repsAfter).toBe(2);
+      expect(setsAfter).toBe(0);
+    });
+
+    it('emits mode confirmation notification on switch', async () => {
+      const adapter = new MockBLEAdapter({
+        connectDelayMs: 0,
+        trainingMode: TrainingMode.WeightTraining,
+      });
+      const notifications = collectNotifications(adapter);
+
+      const p = adapter.connect('x');
+      vi.advanceTimersByTime(0);
+      await p;
+
+      notifications.length = 0;
+      adapter.setTrainingMode(TrainingMode.Rowing);
+
+      const confirmations = notifications.filter(isModeConfirmation);
+      expect(confirmations).toHaveLength(1);
+
+      const decoded = decodeNotification(confirmations[0]);
+      expect(decoded).not.toBeNull();
+      expect(decoded!.type).toBe('mode_confirmation');
+      if (decoded!.type === 'mode_confirmation') {
+        expect(decoded!.mode).toBe(TrainingMode.Rowing);
+      }
+
+      await adapter.disconnect();
+    });
+
+    it('handles rapid mode switching without crashing', async () => {
+      const adapter = new MockBLEAdapter({
+        connectDelayMs: 0,
+        trainingMode: TrainingMode.WeightTraining,
+      });
+      const notifications = collectNotifications(adapter);
+
+      const p = adapter.connect('x');
+      vi.advanceTimersByTime(0);
+      await p;
+
+      // Rapidly switch through all modes
+      adapter.setTrainingMode(TrainingMode.ResistanceBand);
+      adapter.setTrainingMode(TrainingMode.Rowing);
+      adapter.setTrainingMode(TrainingMode.Damper);
+      adapter.setTrainingMode(TrainingMode.Isometric);
+      adapter.setTrainingMode(TrainingMode.Isokinetic);
+      adapter.setTrainingMode(TrainingMode.CustomCurves);
+
+      // Should have 6 mode confirmations
+      const confirmations = notifications.filter(isModeConfirmation);
+      expect(confirmations).toHaveLength(6);
+
+      // Telemetry should still work after rapid switching
+      notifications.length = 0;
+      // CustomCurves: 4 idle + 11 con + 3 hold + 15 ecc = 33
+      tickSamples(33);
+
+      const frames = notifications.filter(isTelemetryFrame).map((d) => decodeTelemetryFrame(d)!);
+      expect(frames.length).toBeGreaterThan(0);
+      for (const f of frames) {
+        expect(f).not.toBeNull();
+      }
+
+      await adapter.disconnect();
+    });
+
+    it('default mode works without explicit setTrainingMode call', async () => {
+      const adapter = new MockBLEAdapter({
+        connectDelayMs: 0,
+        trainingMode: TrainingMode.WeightTraining,
+      });
+      const notifications = collectNotifications(adapter);
+
+      const p = adapter.connect('x');
+      vi.advanceTimersByTime(0);
+      await p;
+
+      tickSamples(SAMPLES_PER_REP);
+      await adapter.disconnect();
+
+      const frames = notifications.filter(isTelemetryFrame).map((d) => decodeTelemetryFrame(d)!);
+      const concentric = frames.filter((f) => f.phase === MovementPhase.CONCENTRIC);
+      expect(concentric).toHaveLength(9);
+
+      // No mode confirmations should have been emitted
+      const confirmations = notifications.filter(isModeConfirmation);
+      expect(confirmations).toHaveLength(0);
+    });
+
+    it('detects mode command bytes via write() and switches mode', async () => {
+      const adapter = new MockBLEAdapter({
+        connectDelayMs: 0,
+        trainingMode: TrainingMode.WeightTraining,
+      });
+      const notifications = collectNotifications(adapter);
+
+      const p = adapter.connect('x');
+      vi.advanceTimersByTime(0);
+      await p;
+
+      // Write the raw mode command for Isometric
+      const modeCmd = getModeCommand(TrainingMode.Isometric);
+      expect(modeCmd).not.toBeNull();
+
+      notifications.length = 0;
+      await adapter.write(modeCmd!);
+
+      // Should emit mode confirmation
+      const confirmations = notifications.filter(isModeConfirmation);
+      expect(confirmations).toHaveLength(1);
+
+      const decoded = decodeNotification(confirmations[0]);
+      expect(decoded).not.toBeNull();
+      expect(decoded!.type).toBe('mode_confirmation');
+      if (decoded!.type === 'mode_confirmation') {
+        expect(decoded!.mode).toBe(TrainingMode.Isometric);
+      }
+
+      // Telemetry should now be isometric
+      notifications.length = 0;
+      tickSamples(25); // 5 idle + 20 concentric
+      await adapter.disconnect();
+
+      const frames = notifications.filter(isTelemetryFrame).map((d) => decodeTelemetryFrame(d)!);
+      const active = frames.filter((f) => f.phase === MovementPhase.CONCENTRIC);
+      for (const f of active) {
+        expect(f.velocity).toBe(0);
+        expect(f.position).toBe(0);
+      }
     });
   });
 });
