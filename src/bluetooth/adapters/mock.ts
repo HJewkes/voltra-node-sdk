@@ -26,15 +26,39 @@ import {
   buildModeConfirmation,
   detectModeCommand,
 } from './mock/notifications';
-import type { MockBLEConfig, ErrorScenarioType, ErrorConfig, MockBLEErrorConfig } from './mock/types';
-import { MOCK_DEFAULTS, SAMPLE_INTERVAL_MS, FATIGUE_RATE } from './mock/types';
+import type {
+  MockBLEConfig,
+  ErrorScenarioType,
+  ErrorConfig,
+  MockBLEErrorConfig,
+  DeviceParameterConfig,
+  ResolvedDeviceParams,
+} from './mock/types';
+import {
+  MOCK_DEFAULTS,
+  SAMPLE_INTERVAL_MS,
+  FATIGUE_RATE,
+  DEVICE_PARAM_DEFAULTS,
+  BATTERY_DRAIN_PER_MS,
+  RSSI_NOISE_STD_DEV,
+} from './mock/types';
 import { ErrorInjector } from './mock/error-injector';
 
 // Re-export public types for backwards compatibility
-export type { MockBLEConfig, ErrorScenarioType, ErrorConfig, MockBLEErrorConfig } from './mock/types';
+export type {
+  MockBLEConfig,
+  ErrorScenarioType,
+  ErrorConfig,
+  MockBLEErrorConfig,
+  DeviceParameterConfig,
+  ResolvedDeviceParams,
+} from './mock/types';
 
 export class MockBLEAdapter extends BaseBLEAdapter {
-  private readonly config: Required<MockBLEConfig>;
+  private readonly config: Required<Omit<MockBLEConfig, 'device'>>;
+  private readonly deviceParams: ResolvedDeviceParams;
+  private currentBattery: number;
+  private motorEngagedSince: number | null = null;
   private telemetryInterval: ReturnType<typeof setInterval> | null = null;
   private sequence = 0;
   private repInSet = 0;
@@ -48,8 +72,10 @@ export class MockBLEAdapter extends BaseBLEAdapter {
 
   constructor(config?: MockBLEConfig & MockBLEErrorConfig) {
     super();
-    const { errorScenario, errorConfig, ...bleConfig } = config ?? {};
+    const { errorScenario, errorConfig, device, ...bleConfig } = config ?? {};
     this.config = { ...MOCK_DEFAULTS, ...bleConfig };
+    this.deviceParams = resolveDeviceParams(device);
+    this.currentBattery = this.deviceParams.batteryLevel;
     this.activeMode = this.config.trainingMode;
     this.errorInjector = new ErrorInjector();
 
@@ -64,7 +90,7 @@ export class MockBLEAdapter extends BaseBLEAdapter {
       {
         id: this.config.deviceId,
         name: this.config.deviceName,
-        rssi: -50,
+        rssi: this.getRssi(),
       },
     ];
   }
@@ -140,6 +166,36 @@ export class MockBLEAdapter extends BaseBLEAdapter {
   }
 
   // ===========================================================================
+  // Device Parameter API
+  // ===========================================================================
+
+  /**
+   * Get the resolved device parameters (identity + simulation state).
+   */
+  getDeviceParams(): ResolvedDeviceParams {
+    return { ...this.deviceParams, batteryLevel: this.getBatteryLevel() };
+  }
+
+  /**
+   * Get the current battery level, accounting for drain during motor engagement.
+   */
+  getBatteryLevel(): number {
+    if (this.motorEngagedSince === null) {
+      return this.currentBattery;
+    }
+    const elapsed = Date.now() - this.motorEngagedSince;
+    const drained = elapsed * BATTERY_DRAIN_PER_MS;
+    return Math.max(0, this.currentBattery - drained);
+  }
+
+  /**
+   * Get simulated RSSI with gaussian noise around the base value.
+   */
+  getRssi(): number {
+    return this.deviceParams.rssi + gaussianNoise(RSSI_NOISE_STD_DEV);
+  }
+
+  // ===========================================================================
   // Telemetry Simulation
   // ===========================================================================
 
@@ -154,6 +210,7 @@ export class MockBLEAdapter extends BaseBLEAdapter {
     this.sequence = 0;
     this._resetPhaseState();
     this.totalReps = 0;
+    this._startBatteryDrain();
 
     this.telemetryInterval = setInterval(() => {
       if (this.resting) {
@@ -219,6 +276,18 @@ export class MockBLEAdapter extends BaseBLEAdapter {
       clearInterval(this.telemetryInterval);
       this.telemetryInterval = null;
     }
+    this._stopBatteryDrain();
+  }
+
+  private _startBatteryDrain(): void {
+    this.motorEngagedSince = Date.now();
+  }
+
+  private _stopBatteryDrain(): void {
+    if (this.motorEngagedSince !== null) {
+      this.currentBattery = this.getBatteryLevel();
+      this.motorEngagedSince = null;
+    }
   }
 
   private _triggerDisconnect(): void {
@@ -235,4 +304,17 @@ export class MockBLEAdapter extends BaseBLEAdapter {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function resolveDeviceParams(config?: DeviceParameterConfig): ResolvedDeviceParams {
+  return { ...DEVICE_PARAM_DEFAULTS, ...config };
+}
+
+/**
+ * Box-Muller transform: generates gaussian-distributed random values.
+ */
+function gaussianNoise(stdDev: number): number {
+  const u1 = Math.random() || 1e-10;
+  const u2 = Math.random();
+  return stdDev * Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
 }
