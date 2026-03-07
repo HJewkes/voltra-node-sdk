@@ -19,14 +19,14 @@ import type {
 
 export interface ErrorInjectorHost {
   triggerDisconnect(): void;
-  triggerReconnect(delayMs: number): void;
+  triggerReconnect(): void;
 }
 
 export class ErrorInjector {
   private scenarios: ErrorScenarioEntry[] = [];
   private disconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectCycleTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  private reconnectCycleActive = false;
   private rng: () => number;
 
   constructor(rng?: () => number) {
@@ -44,7 +44,6 @@ export class ErrorInjector {
   clearAll(): void {
     this.scenarios = [];
     this.clearTimers();
-    this.reconnectCycleActive = false;
   }
 
   hasScenario(type: ErrorScenarioType): boolean {
@@ -70,12 +69,10 @@ export class ErrorInjector {
 
     const reconnectCfg = this.getConfig<ReconnectCycleConfig>('reconnectCycle');
     if (reconnectCfg) {
-      this.reconnectCycleActive = true;
-      this.disconnectTimer = setTimeout(() => {
+      this.reconnectCycleTimer = setTimeout(() => {
         host.triggerDisconnect();
         this.reconnectTimer = setTimeout(() => {
-          host.triggerReconnect(0);
-          this.reconnectCycleActive = false;
+          host.triggerReconnect();
         }, reconnectCfg.reconnectDelayMs);
       }, reconnectCfg.disconnectAfterMs);
     }
@@ -113,6 +110,10 @@ export class ErrorInjector {
     if (this.disconnectTimer) {
       clearTimeout(this.disconnectTimer);
       this.disconnectTimer = null;
+    }
+    if (this.reconnectCycleTimer) {
+      clearTimeout(this.reconnectCycleTimer);
+      this.reconnectCycleTimer = null;
     }
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);

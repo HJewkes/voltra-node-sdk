@@ -227,19 +227,24 @@ describe('MockBLEAdapter error injection', () => {
 
       const telemetry = notifications.filter(isTelemetryFrame);
 
-      // At 100% corruption rate, all frames should have at least one flipped byte
-      // Collect the raw bytes and compare to a clean decode
-      let hasCorruption = false;
-      for (const frame of telemetry) {
-        const decoded = decodeTelemetryFrame(frame);
-        if (decoded === null || decoded.force < 0 || decoded.velocity < 0) {
-          hasCorruption = true;
-        }
-      }
+      // Collect uncorrupted frames from a clean adapter for comparison
+      const cleanAdapter = new MockBLEAdapter({ connectDelayMs: 0 });
+      const cleanNotifications = collectNotifications(cleanAdapter);
+      const cp = cleanAdapter.connect('mock-voltra-001');
+      vi.advanceTimersByTime(0);
+      await cp;
+      tickSamples(10);
+      await cleanAdapter.disconnect();
+      const cleanTelemetry = cleanNotifications.filter(isTelemetryFrame);
 
       // Frames are still emitted (30 bytes each) but with corrupted payload
       expect(telemetry.length).toBe(10);
-      expect(hasCorruption || telemetry.length > 0).toBe(true);
+      expect(cleanTelemetry.length).toBe(10);
+
+      // At 100% corruption rate, every frame must differ from its clean counterpart
+      for (let i = 0; i < telemetry.length; i++) {
+        expect(bytesEqual(telemetry[i], cleanTelemetry[i])).toBe(false);
+      }
     });
 
     it('leaves frames intact at rate 0.0', async () => {

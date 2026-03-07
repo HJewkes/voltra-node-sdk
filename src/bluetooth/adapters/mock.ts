@@ -86,7 +86,7 @@ export class MockBLEAdapter extends BaseBLEAdapter {
 
     this.errorInjector.startTimers({
       triggerDisconnect: () => this._triggerDisconnect(),
-      triggerReconnect: (delayMs: number) => this._triggerReconnect(delayMs),
+      triggerReconnect: () => this._triggerReconnect(),
     });
   }
 
@@ -127,7 +127,7 @@ export class MockBLEAdapter extends BaseBLEAdapter {
     if (this.isConnected() && (type === 'disconnect' || type === 'reconnectCycle')) {
       this.errorInjector.startTimers({
         triggerDisconnect: () => this._triggerDisconnect(),
-        triggerReconnect: (delayMs: number) => this._triggerReconnect(delayMs),
+        triggerReconnect: () => this._triggerReconnect(),
       });
     }
   }
@@ -226,7 +226,7 @@ export class MockBLEAdapter extends BaseBLEAdapter {
     this.setConnectionState('disconnected');
   }
 
-  private _triggerReconnect(_delayMs: number): void {
+  private _triggerReconnect(): void {
     this.setConnectionState('connecting');
     this.setConnectionState('connected');
     this._startTelemetry();
