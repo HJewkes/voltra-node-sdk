@@ -63,6 +63,20 @@ export const MOCK_DEFAULTS = {
 export const SAMPLE_INTERVAL_MS = 91; // ~11Hz
 export const FATIGUE_RATE = 0.03;
 
+/** A single rep profile for deterministic mock telemetry generation */
+export interface PlannedRepProfile {
+  /** Concentric phase duration in seconds */
+  conSeconds: number;
+  /** Hold/top phase duration in seconds */
+  holdSeconds: number;
+  /** Eccentric phase duration in seconds */
+  eccSeconds: number;
+  /** Idle time after this rep in seconds (>7s will trigger rest detection in session store) */
+  idleSeconds: number;
+  /** Range of motion in mm */
+  romMm: number;
+}
+
 export interface KinematicsValues {
   position: number;
   velocity: number;

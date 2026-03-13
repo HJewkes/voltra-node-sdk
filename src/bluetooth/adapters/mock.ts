@@ -23,11 +23,11 @@ import {
   buildModeConfirmation,
   detectModeCommand,
 } from './mock/notifications';
-import type { MockBLEConfig, MockSessionConfig, PhaseDef } from './mock/types';
+import type { MockBLEConfig, MockSessionConfig, PhaseDef, PlannedRepProfile } from './mock/types';
 import { MOCK_DEFAULTS, SAMPLE_INTERVAL_MS, FATIGUE_RATE } from './mock/types';
 
 // Re-export public types for backwards compatibility
-export type { MockBLEConfig, MockSessionConfig } from './mock/types';
+export type { MockBLEConfig, MockSessionConfig, PlannedRepProfile } from './mock/types';
 export {
   createMultiSetScenario,
   createPauseSetScenario,
@@ -54,6 +54,9 @@ export class MockBLEAdapter extends BaseBLEAdapter {
   private clusterRepCount = 0;
   private inPauseRest = false;
   private pauseStart = 0;
+
+  private repPlan: PlannedRepProfile[] | null = null;
+  private repPlanStartTime = 0;
 
   constructor(config?: MockBLEConfig) {
     super();
@@ -100,6 +103,20 @@ export class MockBLEAdapter extends BaseBLEAdapter {
     this.activeMode = mode;
     this._resetPhaseState();
     this.emitNotification(buildModeConfirmation(mode));
+  }
+
+  /**
+   * Set a deterministic rep plan that replaces normal fatigue-based phase cycling.
+   * Each rep follows the exact timing and ROM specified in the profile.
+   */
+  setRepPlan(reps: PlannedRepProfile[]): void {
+    this.repPlan = reps;
+    this.repPlanStartTime = 0; // Lazy init on first sample
+  }
+
+  /** Revert to normal fatigue-based cycling. */
+  clearRepPlan(): void {
+    this.repPlan = null;
   }
 
   // ===========================================================================
@@ -174,6 +191,57 @@ export class MockBLEAdapter extends BaseBLEAdapter {
     return false;
   }
 
+  private _generateRepPlanSample(): void {
+    const plan = this.repPlan!;
+    // Lazy init: start timing from first sample, not from setRepPlan() call
+    if (this.repPlanStartTime === 0) {
+      this.repPlanStartTime = Date.now();
+    }
+    const elapsed = (Date.now() - this.repPlanStartTime) / 1000;
+
+    let cursor = 0;
+    for (const rep of plan) {
+      const repDuration = rep.conSeconds + rep.holdSeconds + rep.eccSeconds + rep.idleSeconds;
+      if (elapsed < cursor + repDuration) {
+        const t = elapsed - cursor;
+        let phase: MovementPhase;
+        let position: number;
+        let velocity: number;
+
+        if (t < rep.conSeconds) {
+          phase = MovementPhase.CONCENTRIC;
+          const progress = t / rep.conSeconds;
+          position = progress * rep.romMm;
+          velocity = rep.romMm / rep.conSeconds;
+        } else if (t < rep.conSeconds + rep.holdSeconds) {
+          phase = MovementPhase.HOLD;
+          position = rep.romMm;
+          velocity = 0;
+        } else if (t < rep.conSeconds + rep.holdSeconds + rep.eccSeconds) {
+          phase = MovementPhase.ECCENTRIC;
+          const eccElapsed = t - rep.conSeconds - rep.holdSeconds;
+          const progress = eccElapsed / rep.eccSeconds;
+          position = rep.romMm * (1 - progress);
+          velocity = rep.romMm / rep.eccSeconds;
+        } else {
+          phase = MovementPhase.IDLE;
+          position = 0;
+          velocity = 0;
+        }
+
+        const force = velocity * 0.5;
+        const frame = createFrame(this.sequence++, phase, position, force, velocity);
+        this.emitNotification(encodeTelemetryFrame(frame));
+        return;
+      }
+      cursor += repDuration;
+    }
+
+    // All reps consumed — stay in IDLE
+    const frame = createFrame(this.sequence++, MovementPhase.IDLE, 0, 0, 0);
+    this.emitNotification(encodeTelemetryFrame(frame));
+  }
+
   private _startTelemetry(): void {
     this.sequence = 0;
     this._resetPhaseState();
@@ -185,6 +253,10 @@ export class MockBLEAdapter extends BaseBLEAdapter {
     this.inPauseRest = false;
 
     this.telemetryInterval = setInterval(() => {
+      if (this.repPlan) {
+        this._generateRepPlanSample();
+        return;
+      }
       if (this._handlePauseRest()) return;
 
       if (this.resting) {
