@@ -66,6 +66,7 @@ export {
   MockBLEAdapter,
   type MockBLEConfig,
   type MockSessionConfig,
+  type PlannedRepProfile,
   createMultiSetScenario,
   createPauseSetScenario,
   createTempoScenario,
