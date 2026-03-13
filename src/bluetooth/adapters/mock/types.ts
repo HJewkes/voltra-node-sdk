@@ -4,6 +4,36 @@
 
 import { MovementPhase, TrainingMode } from '../../../voltra/protocol/constants/enums';
 
+export interface MockSessionConfig {
+  /** Number of sets to simulate */
+  sets: number;
+  /** Reps per set (overrides MockBLEConfig.repsPerSet) */
+  repsPerSet: number;
+  /** Rest between sets in ms (overrides MockBLEConfig.restBetweenSetsMs) */
+  restBetweenSetsMs: number;
+
+  /** Pause set config — one set gets intra-set pauses */
+  pauseSet?: {
+    /** Which set index (0-based) has pauses */
+    setIndex: number;
+    /** Pause after these rep counts, e.g. [5, 3] = pause after rep 5, then 3 more */
+    pauseAfterReps: number[];
+    /** Duration of each intra-set pause in ms */
+    pauseDurationMs: number;
+  };
+
+  /** Per-phase sample count overrides (overrides profile defaults) */
+  tempo?: {
+    concentricCount?: number;
+    holdCount?: number;
+    eccentricCount?: number;
+    idleCount?: number;
+  };
+
+  /** How much fatigue recovers between sets (0.0-1.0) */
+  interSetRecovery: number;
+}
+
 export interface MockBLEConfig {
   deviceName?: string;
   deviceId?: string;
@@ -15,6 +45,8 @@ export interface MockBLEConfig {
   restBetweenSetsMs?: number;
   /** Training mode — defaults to WeightTraining for backwards compatibility */
   trainingMode?: TrainingMode;
+  /** Session-level config for multi-set simulation */
+  sessionConfig?: MockSessionConfig;
 }
 
 export const MOCK_DEFAULTS = {
