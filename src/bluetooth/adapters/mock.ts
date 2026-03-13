@@ -15,7 +15,7 @@
 
 import { BaseBLEAdapter } from './base';
 import type { Device, ConnectOptions } from './types';
-import { TrainingMode } from '../../voltra/protocol/constants/enums';
+import { MovementPhase, TrainingMode } from '../../voltra/protocol/constants/enums';
 import { createFrame } from '../../voltra/models/telemetry/frame';
 import { encodeTelemetryFrame } from '../../voltra/protocol/telemetry-decoder';
 import { KINEMATICS_PROFILES } from './mock/profiles';
@@ -28,6 +28,8 @@ import {
 } from './mock/notifications';
 import type {
   MockBLEConfig,
+  MockSessionConfig,
+  PhaseDef,
   ErrorScenarioType,
   ErrorConfig,
   MockBLEErrorConfig,
@@ -47,15 +49,22 @@ import { ErrorInjector } from './mock/error-injector';
 // Re-export public types for backwards compatibility
 export type {
   MockBLEConfig,
+  MockSessionConfig,
   ErrorScenarioType,
   ErrorConfig,
   MockBLEErrorConfig,
   DeviceParameterConfig,
   ResolvedDeviceParams,
 } from './mock/types';
+export {
+  createMultiSetScenario,
+  createPauseSetScenario,
+  createTempoScenario,
+  createShortRestScenario,
+} from './mock/session-config';
 
 export class MockBLEAdapter extends BaseBLEAdapter {
-  private readonly config: Required<Omit<MockBLEConfig, 'device'>>;
+  private readonly config: Required<Omit<MockBLEConfig, 'device' | 'sessionConfig'>>;
   private readonly deviceParams: ResolvedDeviceParams;
   private currentBattery: number;
   private motorEngagedSince: number | null = null;
@@ -70,12 +79,21 @@ export class MockBLEAdapter extends BaseBLEAdapter {
   private restStart = 0;
   private readonly errorInjector: ErrorInjector;
 
+  private readonly sessionConfig: MockSessionConfig | null;
+  private currentSet = 0;
+  private fatigueReps = 0;
+  private pauseClusterIndex = 0;
+  private clusterRepCount = 0;
+  private inPauseRest = false;
+  private pauseStart = 0;
+
   constructor(config?: MockBLEConfig & MockBLEErrorConfig) {
     super();
-    const { errorScenario, errorConfig, device, ...bleConfig } = config ?? {};
+    const { errorScenario, errorConfig, device, sessionConfig, ...bleConfig } = config ?? {};
     this.config = { ...MOCK_DEFAULTS, ...bleConfig };
     this.deviceParams = resolveDeviceParams(device);
     this.currentBattery = this.deviceParams.batteryLevel;
+    this.sessionConfig = sessionConfig ?? null;
     this.activeMode = this.config.trainingMode;
     this.errorInjector = new ErrorInjector();
 
@@ -206,15 +224,83 @@ export class MockBLEAdapter extends BaseBLEAdapter {
     this.resting = false;
   }
 
+  private _getEffectiveRepsPerSet(): number {
+    return this.sessionConfig?.repsPerSet ?? this.config.repsPerSet;
+  }
+
+  private _getEffectiveRestMs(): number {
+    return this.sessionConfig?.restBetweenSetsMs ?? this.config.restBetweenSetsMs;
+  }
+
+  private _applyTempoOverrides(phases: PhaseDef[]): PhaseDef[] {
+    const tempo = this.sessionConfig?.tempo;
+    if (!tempo) return phases;
+
+    return phases.map((p) => {
+      const { phase, count } = p;
+      switch (phase) {
+        case MovementPhase.CONCENTRIC:
+          return { phase, count: tempo.concentricCount ?? count };
+        case MovementPhase.HOLD:
+          return { phase, count: tempo.holdCount ?? count };
+        case MovementPhase.ECCENTRIC:
+          return { phase, count: tempo.eccentricCount ?? count };
+        case MovementPhase.IDLE:
+          return { phase, count: tempo.idleCount ?? count };
+        default:
+          return p;
+      }
+    });
+  }
+
+  private _isPauseSet(): boolean {
+    return this.sessionConfig?.pauseSet?.setIndex === this.currentSet;
+  }
+
+  private _handlePauseRest(): boolean {
+    if (!this.inPauseRest) return false;
+
+    if (Date.now() - this.pauseStart >= this.sessionConfig!.pauseSet!.pauseDurationMs) {
+      this.inPauseRest = false;
+      this.pauseClusterIndex++;
+      this.clusterRepCount = 0;
+      return false;
+    }
+
+    this.emitNotification(buildIdleFrame(this.sequence++));
+    return true;
+  }
+
+  private _checkPauseTrigger(): boolean {
+    const pauseSet = this.sessionConfig?.pauseSet;
+    if (!pauseSet || !this._isPauseSet()) return false;
+    if (this.pauseClusterIndex >= pauseSet.pauseAfterReps.length) return false;
+
+    const targetReps = pauseSet.pauseAfterReps[this.pauseClusterIndex];
+    if (this.clusterRepCount >= targetReps) {
+      this.inPauseRest = true;
+      this.pauseStart = Date.now();
+      return true;
+    }
+    return false;
+  }
+
   private _startTelemetry(): void {
     this.sequence = 0;
     this._resetPhaseState();
     this.totalReps = 0;
     this._startBatteryDrain();
+    this.currentSet = 0;
+    this.fatigueReps = 0;
+    this.pauseClusterIndex = 0;
+    this.clusterRepCount = 0;
+    this.inPauseRest = false;
 
     this.telemetryInterval = setInterval(() => {
+      if (this._handlePauseRest()) return;
+
       if (this.resting) {
-        if (Date.now() - this.restStart >= this.config.restBetweenSetsMs) {
+        if (Date.now() - this.restStart >= this._getEffectiveRestMs()) {
           this.resting = false;
           this.repInSet = 0;
         } else {
@@ -224,12 +310,13 @@ export class MockBLEAdapter extends BaseBLEAdapter {
       }
 
       const profile = KINEMATICS_PROFILES[this.activeMode];
-      const phases = profile.phases;
+      const phases = this._applyTempoOverrides(profile.phases);
       const lastPhaseIndex = phases.length - 1;
 
       const current = phases[this.phaseIndex];
       const progress = this.sampleInPhase / current.count;
-      const fatigue = 1 - FATIGUE_RATE * this.repInSet;
+      const fatigueSource = this.sessionConfig ? this.fatigueReps : this.repInSet;
+      const fatigue = 1 - FATIGUE_RATE * fatigueSource;
       const baseForce = this.config.weight * 1.5;
 
       const { position, velocity, force } = profile.buildValues(
@@ -250,10 +337,27 @@ export class MockBLEAdapter extends BaseBLEAdapter {
         if (this.phaseIndex === lastPhaseIndex) {
           this.repInSet++;
           this.totalReps++;
+          this.fatigueReps++;
+          if (this._isPauseSet()) this.clusterRepCount++;
           this.emitNotification(buildRepBoundary());
 
-          if (this.repInSet >= this.config.repsPerSet) {
+          if (this._checkPauseTrigger()) {
+            // Pause triggered — don't check set boundary yet
+          } else if (this.repInSet >= this._getEffectiveRepsPerSet()) {
             this.emitNotification(buildSetBoundary());
+            this.currentSet++;
+            this.pauseClusterIndex = 0;
+            this.clusterRepCount = 0;
+
+            if (this.sessionConfig) {
+              this.fatigueReps *= 1 - this.sessionConfig.interSetRecovery;
+            }
+
+            if (this.sessionConfig && this.currentSet >= this.sessionConfig.sets) {
+              this._stopTelemetry();
+              return;
+            }
+
             this.resting = true;
             this.restStart = Date.now();
           }
