@@ -212,6 +212,14 @@ export class VoltraManager {
     return [...this.discoveredDevices];
   }
 
+  /**
+   * Get the underlying BLE adapter (for mock adapter debug access).
+   * Returns null if no adapter has been created yet.
+   */
+  getAdapter(): BLEAdapter | null {
+    return this.scanAdapter;
+  }
+
   // ===========================================================================
   // Device Access
   // ===========================================================================
