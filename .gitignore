@@ -31,3 +31,9 @@ docs/api/
 *.tmp
 *.temp
 .cache/
+
+# Planning workflow artifacts (working state, not committed)
+.plans/
+
+# brain tool local artifacts
+.brain/
