@@ -7,12 +7,8 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MockBLEAdapter } from '../mock';
-import {
-  decodeTelemetryFrame,
-} from '../../../voltra/protocol/telemetry-decoder';
-import {
-  MessageTypes,
-} from '../../../voltra/protocol/constants/message-types';
+import { decodeTelemetryFrame } from '../../../voltra/protocol/telemetry-decoder';
+import { MessageTypes } from '../../../voltra/protocol/constants/message-types';
 import { MovementPhase } from '../../../voltra/protocol/constants/enums';
 import { bytesEqual } from '../../../shared/utils';
 import {

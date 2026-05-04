@@ -179,7 +179,12 @@ describe('MockBLEAdapter rep plan', () => {
 
   it('stays in IDLE after all reps are consumed', async () => {
     const adapter = new MockBLEAdapter({ connectDelayMs: 0 });
-    const rep = makeSimpleRep({ conSeconds: 0.3, holdSeconds: 0.1, eccSeconds: 0.3, idleSeconds: 0.3 });
+    const rep = makeSimpleRep({
+      conSeconds: 0.3,
+      holdSeconds: 0.1,
+      eccSeconds: 0.3,
+      idleSeconds: 0.3,
+    });
     adapter.setRepPlan([rep]);
 
     const notifications = collectNotifications(adapter);
@@ -203,8 +208,20 @@ describe('MockBLEAdapter rep plan', () => {
   it('produces correct sequence for multiple reps', async () => {
     const adapter = new MockBLEAdapter({ connectDelayMs: 0 });
     const reps = [
-      makeSimpleRep({ conSeconds: 0.5, holdSeconds: 0.2, eccSeconds: 0.5, idleSeconds: 0.3, romMm: 400 }),
-      makeSimpleRep({ conSeconds: 0.5, holdSeconds: 0.2, eccSeconds: 0.5, idleSeconds: 0.3, romMm: 400 }),
+      makeSimpleRep({
+        conSeconds: 0.5,
+        holdSeconds: 0.2,
+        eccSeconds: 0.5,
+        idleSeconds: 0.3,
+        romMm: 400,
+      }),
+      makeSimpleRep({
+        conSeconds: 0.5,
+        holdSeconds: 0.2,
+        eccSeconds: 0.5,
+        idleSeconds: 0.3,
+        romMm: 400,
+      }),
     ];
     adapter.setRepPlan(reps);
 
@@ -280,7 +297,13 @@ describe('MockBLEAdapter rep plan', () => {
 
     // Now set a rep plan mid-stream
     adapter.setRepPlan([
-      makeSimpleRep({ conSeconds: 0.5, holdSeconds: 0.2, eccSeconds: 0.5, idleSeconds: 0.3, romMm: 800 }),
+      makeSimpleRep({
+        conSeconds: 0.5,
+        holdSeconds: 0.2,
+        eccSeconds: 0.5,
+        idleSeconds: 0.3,
+        romMm: 800,
+      }),
     ]);
 
     // Tick through the rep plan

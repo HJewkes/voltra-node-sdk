@@ -928,7 +928,7 @@ describe('MockBLEAdapter', () => {
       // concentric frame has velocity=0 (Isometric pins it). Not all frames
       // pre-configure satisfy that, so we only require existence.
       const isometricLooking = frames.filter(
-        (f) => f.phase === MovementPhase.CONCENTRIC && f.velocity === 0 && f.position === 0,
+        (f) => f.phase === MovementPhase.CONCENTRIC && f.velocity === 0 && f.position === 0
       );
       expect(isometricLooking.length).toBeGreaterThan(0);
     });
