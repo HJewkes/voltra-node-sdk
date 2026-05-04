@@ -66,7 +66,10 @@ export {
 } from './mock/session-config';
 
 export class MockBLEAdapter extends BaseBLEAdapter {
-  private readonly config: Required<Omit<MockBLEConfig, 'device' | 'sessionConfig'>>;
+  // Mutable so `configure()` can override runtime-relevant fields mid-stream.
+  // Connect-time fields (scanDelayMs, connectDelayMs, deviceId, deviceName)
+  // remain effective only on subsequent connect cycles.
+  private config: Required<Omit<MockBLEConfig, 'device' | 'sessionConfig'>>;
   private readonly deviceParams: ResolvedDeviceParams;
   private currentBattery: number;
   private motorEngagedSince: number | null = null;
@@ -179,6 +182,21 @@ export class MockBLEAdapter extends BaseBLEAdapter {
   // ===========================================================================
   // Error Injection API
   // ===========================================================================
+
+  /**
+   * Update mock configuration at runtime. Runtime-relevant fields
+   * (`trainingMode`, `repsPerSet`, `restBetweenSetsMs`, telemetry rates,
+   * etc.) take effect immediately for the next emitted frame / boundary.
+   * Connect-time fields (`scanDelayMs`, `connectDelayMs`, `deviceId`,
+   * `deviceName`) only take effect on the next `scan` / `connect` call.
+   * Pass only the fields you want to change; others are preserved.
+   */
+  configure(partial: Partial<Omit<MockBLEConfig, 'device' | 'sessionConfig'>>): void {
+    this.config = { ...this.config, ...partial };
+    if (partial.trainingMode !== undefined) {
+      this.activeMode = partial.trainingMode;
+    }
+  }
 
   /**
    * Inject an error scenario dynamically (can be called mid-test).

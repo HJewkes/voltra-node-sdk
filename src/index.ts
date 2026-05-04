@@ -59,9 +59,17 @@ export {
 // Platform Adapters
 // =============================================================================
 
-export { WebBLEAdapter } from './bluetooth/adapters/web';
-export { NodeBLEAdapter, type DeviceChooser } from './bluetooth/adapters/node';
-export { NativeBLEAdapter } from './bluetooth/adapters/native';
+// Platform adapter classes are exported as TYPE-ONLY from the root entry to
+// avoid eagerly loading platform-specific peer dependencies (e.g.
+// `react-native-ble-plx`, `noble`) when a consumer only needs typing or
+// uses the high-level `VoltraManager.forX()` factories. To get the
+// adapter class as a value (for `new NativeBLEAdapter(...)`), import via
+// the subpath: `@voltras/node-sdk/native`, `@voltras/node-sdk/node`, etc.
+export type { WebBLEAdapter } from './bluetooth/adapters/web';
+export type { NodeBLEAdapter, DeviceChooser } from './bluetooth/adapters/node';
+export type { NativeBLEAdapter } from './bluetooth/adapters/native';
+// MockBLEAdapter has no platform-specific peers, so it stays as a value
+// export — `forMock()` already eagerly imports it.
 export {
   MockBLEAdapter,
   type MockBLEConfig,
