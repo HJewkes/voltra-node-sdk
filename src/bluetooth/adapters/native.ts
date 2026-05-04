@@ -320,7 +320,7 @@ export class NativeBLEAdapter extends BaseBLEAdapter {
         this.manager.stopDeviceScan();
         log.debug(`Scan complete. Found ${devices.length} device(s)`);
         resolve(devices);
-      }, timeout * 1000);
+      }, timeout);
     });
   }
 
