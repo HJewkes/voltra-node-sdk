@@ -54,15 +54,18 @@ describe('MockBLEAdapter device parameters', () => {
       const adapter = new MockBLEAdapter({ scanDelayMs: 0 });
 
       const rssiValues: number[] = [];
-      for (let i = 0; i < 50; i++) {
+      for (let i = 0; i < 500; i++) {
         const scanPromise = adapter.scan(5);
         vi.advanceTimersByTime(0);
         const devices = await scanPromise;
         rssiValues.push(devices[0].rssi!);
       }
 
+      // With stddev=5 and 500 samples, standard error ~0.22, so ±2 is very safe.
+      // Previously n=50 with toBeCloseTo(_, 0) (±0.5) flaked at ~50%.
       const mean = rssiValues.reduce((a, b) => a + b, 0) / rssiValues.length;
-      expect(mean).toBeCloseTo(DEVICE_PARAM_DEFAULTS.rssi, 0);
+      expect(mean).toBeGreaterThan(DEVICE_PARAM_DEFAULTS.rssi - 2);
+      expect(mean).toBeLessThan(DEVICE_PARAM_DEFAULTS.rssi + 2);
     });
   });
 
