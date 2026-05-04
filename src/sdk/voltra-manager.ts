@@ -29,7 +29,7 @@
  */
 
 import type { BLEAdapter } from '../bluetooth/adapters/types';
-import type { MockBLEConfig } from '../bluetooth/adapters/mock';
+import { MockBLEAdapter, type MockBLEConfig } from '../bluetooth/adapters/mock';
 import type { DiscoveredDevice } from '../bluetooth/models/device';
 import { filterVoltraDevices } from '../voltra/models/device-filter';
 import { BLE } from '../voltra/protocol/constants';
@@ -172,11 +172,7 @@ export class VoltraManager {
   static forMock(config?: MockBLEConfig): VoltraManager {
     return new VoltraManager({
       platform: 'mock',
-      adapterFactory: () => {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { MockBLEAdapter } = require('../bluetooth/adapters/mock');
-        return new MockBLEAdapter(config);
-      },
+      adapterFactory: () => new MockBLEAdapter(config),
     });
   }
 

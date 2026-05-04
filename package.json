@@ -26,15 +26,46 @@
         "types": "./dist/types/react/index.d.ts",
         "default": "./dist/cjs/react/index.js"
       }
+    },
+    "./native": {
+      "import": {
+        "types": "./dist/types/bluetooth/adapters/native.d.ts",
+        "default": "./dist/esm/bluetooth/adapters/native.js"
+      },
+      "require": {
+        "types": "./dist/types/bluetooth/adapters/native.d.ts",
+        "default": "./dist/cjs/bluetooth/adapters/native.js"
+      }
+    },
+    "./node": {
+      "import": {
+        "types": "./dist/types/bluetooth/adapters/node.d.ts",
+        "default": "./dist/esm/bluetooth/adapters/node.js"
+      },
+      "require": {
+        "types": "./dist/types/bluetooth/adapters/node.d.ts",
+        "default": "./dist/cjs/bluetooth/adapters/node.js"
+      }
+    },
+    "./web": {
+      "import": {
+        "types": "./dist/types/bluetooth/adapters/web.d.ts",
+        "default": "./dist/esm/bluetooth/adapters/web.js"
+      },
+      "require": {
+        "types": "./dist/types/bluetooth/adapters/web.d.ts",
+        "default": "./dist/cjs/bluetooth/adapters/web.js"
+      }
     }
   },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "npm run clean && npm run build:esm && npm run build:cjs",
-    "build:esm": "tsc -p tsconfig.esm.json",
+    "build": "npm run clean && npm run build:esm && npm run build:cjs && npm run build:esm-pkg",
+    "build:esm": "tsc -p tsconfig.esm.json && tsc-alias -p tsconfig.esm.json --resolve-full-paths",
     "build:cjs": "tsc -p tsconfig.cjs.json",
+    "build:esm-pkg": "node -e \"require('node:fs').writeFileSync('dist/esm/package.json', JSON.stringify({type:'module'},null,2))\"",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -77,6 +108,7 @@
     "husky": "^9.1.0",
     "lint-staged": "^16.2.7",
     "prettier": "^3.4.0",
+    "tsc-alias": "^1.8.17",
     "typedoc": "^0.28.17",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.21.0",

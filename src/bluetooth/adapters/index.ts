@@ -18,10 +18,12 @@ export type {
   BLEServiceConfig,
 } from './types';
 
-// Platform adapters
+// Platform adapters. Native adapter is type-only here to avoid eagerly
+// loading `react-native-ble-plx` for non-RN consumers; the value is
+// reachable via the `@voltras/node-sdk/native` subpath.
 export { WebBLEAdapter } from './web';
 export { NodeBLEAdapter, type NodeBLEConfig, type DeviceChooser } from './node';
-export { NativeBLEAdapter, type NativeAdapterConfig } from './native';
+export type { NativeBLEAdapter, NativeAdapterConfig } from './native';
 export {
   MockBLEAdapter,
   type MockBLEConfig,
