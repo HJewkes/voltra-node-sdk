@@ -8,7 +8,7 @@
 
 import { hexToBytes } from '../../../shared/utils';
 import protocolData from '../data/protocol-data.generated';
-import type { ProtocolData } from '../types';
+import type { ProtocolData, VendorSubTypeConfig } from '../types';
 
 const protocol = protocolData as ProtocolData;
 
@@ -18,17 +18,47 @@ const protocol = protocolData as ProtocolData;
 
 /**
  * Message type identifiers (first 4 bytes of notifications).
+ *
+ * Only the telemetry stream has a stable 4-byte signature. Frames previously
+ * exposed as REP_SUMMARY / SET_SUMMARY / STATUS_UPDATE are now identified
+ * via {@link VendorMessages} sub-type matching or the 2-byte statusBattery
+ * notification path (see Phase A validation, 2026-05-05).
  */
 export const MessageTypes = {
   /** Real-time telemetry stream (~11 Hz) */
   TELEMETRY_STREAM: hexToBytes(protocol.telemetry.messageTypes.stream),
-  /** Rep completion summary */
-  REP_SUMMARY: hexToBytes(protocol.telemetry.messageTypes.repSummary),
-  /** Set completion summary */
-  SET_SUMMARY: hexToBytes(protocol.telemetry.messageTypes.setSummary),
-  /** Status update */
-  STATUS_UPDATE: hexToBytes(protocol.telemetry.messageTypes.statusUpdate),
 } as const;
+
+// =============================================================================
+// Vendor Sub-Type Frames
+// =============================================================================
+
+/**
+ * Vendor sub-type frame definitions.
+ *
+ * Vendor frames carry the 0xaa cmd marker at frame offset {@link cmdByteOffset}
+ * followed by sub-type identifier bytes. Use {@link matchesVendorSubType} to
+ * test a buffer against a sub-type.
+ */
+export const VendorMessages = {
+  cmdByteOffset: protocol.telemetry.vendorMessages.cmdByteOffset,
+  cmdValue: protocol.telemetry.vendorMessages.cmdValue,
+  subTypes: protocol.telemetry.vendorMessages.subTypes,
+} as const;
+
+/**
+ * Test whether a notification buffer matches a vendor sub-type by checking
+ * the cmd marker and identifier bytes.
+ */
+export function matchesVendorSubType(data: Uint8Array, subType: VendorSubTypeConfig): boolean {
+  if (data[VendorMessages.cmdByteOffset] !== VendorMessages.cmdValue) return false;
+  const idStart = VendorMessages.cmdByteOffset + 1;
+  if (data.length < idStart + subType.identifierBytes.length) return false;
+  for (let i = 0; i < subType.identifierBytes.length; i++) {
+    if (data[idStart + i] !== subType.identifierBytes[i]) return false;
+  }
+  return true;
+}
 
 // =============================================================================
 // Telemetry Offsets

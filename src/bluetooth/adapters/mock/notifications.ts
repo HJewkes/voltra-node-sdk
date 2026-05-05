@@ -11,29 +11,43 @@ import {
   VALID_TRAINING_MODES,
 } from '../../../voltra/protocol/constants/enums';
 import {
-  MessageTypes,
   NotificationConfigs,
+  VendorMessages,
 } from '../../../voltra/protocol/constants/message-types';
 import { createFrame } from '../../../voltra/models/telemetry/frame';
 import { encodeTelemetryFrame } from '../../../voltra/protocol/telemetry-decoder';
 import { getModeCommand } from '../../../voltra/protocol/commands';
 import { bytesEqual, hexToBytes } from '../../../shared/utils';
+import type { VendorSubTypeConfig } from '../../../voltra/protocol/types';
 
 export function buildIdleFrame(sequence: number): Uint8Array {
   const frame = createFrame(sequence, MovementPhase.IDLE, 0, 0, 0);
   return encodeTelemetryFrame(frame);
 }
 
-export function buildRepBoundary(): Uint8Array {
-  const data = new Uint8Array(4);
-  data.set(MessageTypes.REP_SUMMARY);
+/**
+ * Build a stub vendor sub-type frame containing the cmd marker and
+ * identifier bytes at the documented offsets. Padded to the sub-type's
+ * documented frameLength so consumers see realistic frame sizes; all
+ * other bytes are zero.
+ */
+function buildVendorSubTypeStub(subType: VendorSubTypeConfig): Uint8Array {
+  const minLength = VendorMessages.cmdByteOffset + 1 + subType.identifierBytes.length;
+  const length = subType.frameLength ?? minLength;
+  const data = new Uint8Array(length);
+  data[VendorMessages.cmdByteOffset] = VendorMessages.cmdValue;
+  for (let i = 0; i < subType.identifierBytes.length; i++) {
+    data[VendorMessages.cmdByteOffset + 1 + i] = subType.identifierBytes[i];
+  }
   return data;
 }
 
+export function buildRepBoundary(): Uint8Array {
+  return buildVendorSubTypeStub(VendorMessages.subTypes.perRep);
+}
+
 export function buildSetBoundary(): Uint8Array {
-  const data = new Uint8Array(4);
-  data.set(MessageTypes.SET_SUMMARY);
-  return data;
+  return buildVendorSubTypeStub(VendorMessages.subTypes.inProgress);
 }
 
 export function buildModeConfirmation(mode: TrainingMode): Uint8Array {

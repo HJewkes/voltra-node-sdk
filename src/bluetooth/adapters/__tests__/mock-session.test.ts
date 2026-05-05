@@ -8,7 +8,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MockBLEAdapter } from '../mock';
 import { decodeTelemetryFrame } from '../../../voltra/protocol/telemetry-decoder';
-import { MessageTypes } from '../../../voltra/protocol/constants/message-types';
+import {
+  MessageTypes,
+  VendorMessages,
+  matchesVendorSubType,
+} from '../../../voltra/protocol/constants/message-types';
 import { MovementPhase } from '../../../voltra/protocol/constants/enums';
 import { bytesEqual } from '../../../shared/utils';
 import {
@@ -41,11 +45,11 @@ function isTelemetryFrame(data: Uint8Array): boolean {
 }
 
 function isRepBoundary(data: Uint8Array): boolean {
-  return data.length === 4 && bytesEqual(data, MessageTypes.REP_SUMMARY);
+  return matchesVendorSubType(data, VendorMessages.subTypes.perRep);
 }
 
 function isSetBoundary(data: Uint8Array): boolean {
-  return data.length === 4 && bytesEqual(data, MessageTypes.SET_SUMMARY);
+  return matchesVendorSubType(data, VendorMessages.subTypes.inProgress);
 }
 
 function tickSamples(n: number): void {

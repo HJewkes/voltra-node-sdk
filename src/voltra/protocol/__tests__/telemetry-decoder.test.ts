@@ -20,6 +20,7 @@ import {
 } from '../telemetry-decoder';
 import {
   MessageTypes,
+  VendorMessages,
   TelemetryOffsets,
   MovementPhase,
   NotificationConfigs,
@@ -29,6 +30,7 @@ import {
 } from '../constants';
 import { hexToBytes } from '../../../shared/utils';
 import type { TelemetryFrame } from '../../models/telemetry/frame';
+import type { VendorSubTypeConfig } from '../types';
 
 // =============================================================================
 // Helpers
@@ -91,6 +93,34 @@ function createMessageBuffer(header: Uint8Array, minLength: number = 30): Uint8A
   return buffer;
 }
 
+/**
+ * Create a buffer that matches a vendor sub-type by writing the 0xaa cmd
+ * marker and identifier bytes at the documented offsets. Padded with zeros
+ * to the sub-type's documented frameLength (or `minLength` if larger).
+ */
+function createVendorSubTypeBuffer(subType: VendorSubTypeConfig, minLength?: number): Uint8Array {
+  const required = VendorMessages.cmdByteOffset + 1 + subType.identifierBytes.length;
+  const length = Math.max(minLength ?? 30, subType.frameLength ?? 0, required);
+  const buffer = new Uint8Array(length);
+  buffer[VendorMessages.cmdByteOffset] = VendorMessages.cmdValue;
+  for (let i = 0; i < subType.identifierBytes.length; i++) {
+    buffer[VendorMessages.cmdByteOffset + 1 + i] = subType.identifierBytes[i];
+  }
+  return buffer;
+}
+
+/**
+ * Create a buffer with the statusBattery 2-byte header, padded to the
+ * configured length. Phase A confirmed the legacy STATUS_UPDATE path
+ * collapses into this single 2-byte notification.
+ */
+function createStatusUpdateBuffer(): Uint8Array {
+  const length = NotificationConfigs.statusBattery.length ?? 52;
+  const buffer = new Uint8Array(length);
+  buffer.set(hexToBytes(NotificationConfigs.statusBattery.header));
+  return buffer;
+}
+
 // =============================================================================
 // Message Type Identification Tests
 // =============================================================================
@@ -104,24 +134,24 @@ describe('identifyMessageType', () => {
     expect(result).toBe('telemetry_stream');
   });
 
-  it('identifies rep summary messages', () => {
-    const buffer = createMessageBuffer(MessageTypes.REP_SUMMARY);
+  it('identifies rep summary messages (perRep vendor sub-type)', () => {
+    const buffer = createVendorSubTypeBuffer(VendorMessages.subTypes.perRep);
 
     const result = identifyMessageType(buffer);
 
     expect(result).toBe('rep_summary');
   });
 
-  it('identifies set summary messages', () => {
-    const buffer = createMessageBuffer(MessageTypes.SET_SUMMARY);
+  it('identifies set summary messages (inProgress vendor sub-type)', () => {
+    const buffer = createVendorSubTypeBuffer(VendorMessages.subTypes.inProgress);
 
     const result = identifyMessageType(buffer);
 
     expect(result).toBe('set_summary');
   });
 
-  it('identifies status update messages', () => {
-    const buffer = createMessageBuffer(MessageTypes.STATUS_UPDATE);
+  it('identifies status update messages (statusBattery 2-byte header)', () => {
+    const buffer = createStatusUpdateBuffer();
 
     const result = identifyMessageType(buffer);
 
@@ -339,7 +369,7 @@ describe('decodeNotification', () => {
   });
 
   it('decodes rep summary to rep_boundary result', () => {
-    const buffer = createMessageBuffer(MessageTypes.REP_SUMMARY);
+    const buffer = createVendorSubTypeBuffer(VendorMessages.subTypes.perRep);
 
     const result = decodeNotification(buffer);
 
@@ -348,7 +378,7 @@ describe('decodeNotification', () => {
   });
 
   it('decodes set summary to set_boundary result', () => {
-    const buffer = createMessageBuffer(MessageTypes.SET_SUMMARY);
+    const buffer = createVendorSubTypeBuffer(VendorMessages.subTypes.inProgress);
 
     const result = decodeNotification(buffer);
 
@@ -357,10 +387,9 @@ describe('decodeNotification', () => {
   });
 
   it('decodes status update to device_status result', () => {
-    // Create a buffer that meets the statusBattery length requirement (52 bytes)
-    const buffer = createMessageBuffer(MessageTypes.STATUS_UPDATE, 52);
-    // Set battery level
-    buffer[12] = 85;
+    const buffer = createStatusUpdateBuffer();
+    // Battery level field at the configured offset
+    buffer[NotificationConfigs.statusBattery.batteryOffset!] = 85;
 
     const result = decodeNotification(buffer);
 
@@ -580,11 +609,17 @@ describe('practical scenarios', () => {
     const messages: Array<{ buffer: Uint8Array; expectedType: MessageType | null }> = [
       { buffer: createTelemetryBuffer({ sequence: 1 }), expectedType: 'telemetry_stream' },
       { buffer: createTelemetryBuffer({ sequence: 2 }), expectedType: 'telemetry_stream' },
-      { buffer: createMessageBuffer(MessageTypes.REP_SUMMARY), expectedType: 'rep_summary' },
+      {
+        buffer: createVendorSubTypeBuffer(VendorMessages.subTypes.perRep),
+        expectedType: 'rep_summary',
+      },
       { buffer: createTelemetryBuffer({ sequence: 3 }), expectedType: 'telemetry_stream' },
-      { buffer: createMessageBuffer(MessageTypes.STATUS_UPDATE), expectedType: 'status_update' },
+      { buffer: createStatusUpdateBuffer(), expectedType: 'status_update' },
       { buffer: createTelemetryBuffer({ sequence: 4 }), expectedType: 'telemetry_stream' },
-      { buffer: createMessageBuffer(MessageTypes.SET_SUMMARY), expectedType: 'set_summary' },
+      {
+        buffer: createVendorSubTypeBuffer(VendorMessages.subTypes.inProgress),
+        expectedType: 'set_summary',
+      },
     ];
 
     for (const { buffer, expectedType } of messages) {

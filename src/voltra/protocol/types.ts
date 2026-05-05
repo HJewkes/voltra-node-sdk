@@ -137,20 +137,78 @@ export interface TelemetryConfig {
   paramIds: ParamIdsConfig;
   /** Training mode values */
   trainingModes: TrainingModesConfig;
+  /** Vendor frame sub-type definitions */
+  vendorMessages: VendorMessagesConfig;
 }
 
 /**
  * Message type header bytes (4-byte hex strings).
+ *
+ * Phase A on-device validation (2026-05-05, 1369 frames) confirmed that
+ * the previously-documented `repSummary`, `setSummary`, and `statusUpdate`
+ * 4-byte signatures were aliases for vendor sub-type frames (perRep,
+ * inProgress) and the 2-byte statusBattery notification respectively.
+ * They were collapsed into a single classification path; only the
+ * telemetry stream remains as a distinct 4-byte signature.
  */
 export interface MessageTypeConfig {
   /** Real-time telemetry stream (~11 Hz) */
   stream: string;
-  /** Rep completion summary */
-  repSummary: string;
-  /** Set completion summary */
-  setSummary: string;
-  /** Status update */
-  statusUpdate: string;
+}
+
+/**
+ * Vendor frame sub-type definitions.
+ *
+ * Vendor frames carry a 0xaa cmd marker at frame offset `cmdByteOffset`
+ * followed by sub-type identifier bytes (e.g., [0x82, 0x3b] = perRep).
+ */
+export interface VendorMessagesConfig {
+  /** Byte offset of the vendor cmd marker (0xaa) within the frame */
+  cmdByteOffset: number;
+  /** Vendor cmd marker value (0xaa) */
+  cmdValue: number;
+  /** Documented sub-type frames */
+  subTypes: VendorSubTypesConfig;
+}
+
+export interface VendorSubTypesConfig {
+  /** Per-rep boundary frame (74 B). Fires at pull start and return start. */
+  perRep: VendorSubTypeConfig;
+  /** End-of-workout summary frame (140 B). Fires once after STOP. */
+  summary: VendorSubTypeConfig;
+  /** Recurring in-progress telemetry (79 B). Was previously aliased as setSummary. */
+  inProgress: VendorSubTypeConfig;
+  /** Pre-summary frame (110 B). Fires once near workout end. */
+  preSummary: VendorSubTypeConfig;
+  /** Rowing-mode telemetry. Field offsets unvalidated. */
+  rowing: VendorSubTypeConfig;
+  /** Per-set isometric summary. Field layout unknown. */
+  isometricSummary: VendorSubTypeConfig;
+  /** Indexed batches of isometric force samples. */
+  isometricWaveform: VendorSubTypeConfig;
+}
+
+/**
+ * A single vendor sub-type definition.
+ */
+export interface VendorSubTypeConfig {
+  /** Identifier bytes following the cmd marker (1–3 bytes) */
+  identifierBytes: number[];
+  /** Total frame length in bytes, or null for variable-length frames */
+  frameLength: number | null;
+  /** Whether field offsets are validated against device captures */
+  fieldsValidated: boolean;
+  /** Optional parsed field positions */
+  fields?: Record<
+    string,
+    { payloadOffset: number; byteLength: number; byteOrder?: 'big' | 'little' }
+  >;
+  /** Optional motion-phase enum (perRep only) */
+  motionPhases?: { pull: number; return: number };
+  /** Optional sample unit metadata (isometricWaveform only) */
+  sampleUnit?: string;
+  /** Optional notes from external research */
+  externalNotes?: string[];
 }
 
 /**

@@ -8,6 +8,8 @@
 
 import {
   MessageTypes,
+  VendorMessages,
+  matchesVendorSubType,
   TelemetryOffsets,
   MovementPhase,
   NotificationConfigs,
@@ -84,15 +86,18 @@ export function identifyMessageType(data: Uint8Array): MessageType {
 
   const msgType = data.slice(0, 4);
 
-  // Check 4-byte message types first (telemetry stream types)
   if (bytesEqual(msgType, MessageTypes.TELEMETRY_STREAM)) {
     return 'telemetry_stream';
-  } else if (bytesEqual(msgType, MessageTypes.REP_SUMMARY)) {
+  }
+
+  // Vendor sub-type classification. Phase A on-device validation
+  // (2026-05-05, 1369 frames) confirmed that perRep frames alias the
+  // legacy 4-byte repSummary header and inProgress frames alias the
+  // legacy 4-byte setSummary header.
+  if (matchesVendorSubType(data, VendorMessages.subTypes.perRep)) {
     return 'rep_summary';
-  } else if (bytesEqual(msgType, MessageTypes.SET_SUMMARY)) {
+  } else if (matchesVendorSubType(data, VendorMessages.subTypes.inProgress)) {
     return 'set_summary';
-  } else if (bytesEqual(msgType, MessageTypes.STATUS_UPDATE)) {
-    return 'status_update';
   }
 
   // Check 2-byte headers for other notification types
@@ -107,7 +112,9 @@ export function identifyMessageType(data: Uint8Array): MessageType {
   } else if (header2 === NotificationConfigs.deviceInit.header) {
     return 'device_init';
   } else if (header2 === NotificationConfigs.statusBattery.header) {
-    return 'status_update'; // Also a status type
+    // Phase A confirmed the legacy 4-byte STATUS_UPDATE signature
+    // (553404ac) was an alias for this 2-byte path.
+    return 'status_update';
   }
 
   return 'unknown';
