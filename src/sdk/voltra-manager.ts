@@ -293,13 +293,21 @@ export class VoltraManager {
       return this.clients.get(device.id)!;
     }
 
-    // Reuse scan adapter if available, otherwise create new.
-    // Web REQUIRES reuse (BluetoothDevice reference stored in adapter).
-    // Native/Node benefit from reuse (shared BLE manager, less overhead).
-    if (!this.scanAdapter) {
-      this.scanAdapter = this.adapterFactory();
+    // Build a fresh adapter per client so each VoltraClient owns its own
+    // BLE handle. Sharing one adapter across clients caused multi-device
+    // writes to all route to the most-recently-connected peripheral
+    // because the adapter holds singleton device/server/writeChar fields.
+    //
+    // On web, the scanAdapter holds the BluetoothDevice reference returned
+    // from requestDevice(); reuse it for the first connect after a scan
+    // and then null it out so the next connect triggers a new picker.
+    let adapter: BLEAdapter;
+    if (this.platform === 'web' && this.scanAdapter) {
+      adapter = this.scanAdapter;
+      this.scanAdapter = null;
+    } else {
+      adapter = this.adapterFactory();
     }
-    const adapter = this.scanAdapter;
 
     const client = new VoltraClient({
       ...this.clientOptions,
@@ -325,13 +333,6 @@ export class VoltraManager {
         deviceName: device.name ?? null,
         client,
       });
-
-      // On web, clear scanAdapter after connection because Web Bluetooth
-      // requires a new requestDevice() call for each device.
-      // On native/node, keep reusing the same adapter.
-      if (this.platform === 'web') {
-        this.scanAdapter = null;
-      }
 
       return client;
     } catch (error) {
