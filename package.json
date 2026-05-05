@@ -1,6 +1,6 @@
 {
   "name": "@voltras/node-sdk",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "SDK for connecting to and controlling Voltra fitness devices",
   "main": "./dist/cjs/index.js",
   "module": "./dist/esm/index.js",
@@ -63,7 +63,7 @@
   ],
   "scripts": {
     "build": "npm run clean && npm run build:esm && npm run build:cjs && npm run build:esm-pkg",
-    "build:esm": "tsc -p tsconfig.esm.json && tsc-alias -p tsconfig.esm.json --resolve-full-paths",
+    "build:esm": "tsc -p tsconfig.esm.json && tsc-alias -p tsconfig.esm.json --resolve-full-paths && node scripts/inject-esm-require-shim.mjs",
     "build:cjs": "tsc -p tsconfig.cjs.json",
     "build:esm-pkg": "node -e \"require('node:fs').writeFileSync('dist/esm/package.json', JSON.stringify({type:'module'},null,2))\"",
     "test": "vitest run",

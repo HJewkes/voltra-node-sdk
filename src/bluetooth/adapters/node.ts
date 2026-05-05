@@ -110,7 +110,7 @@ export class NodeBLEAdapter extends WebBluetoothBase {
         // Timeout - return discovered devices
         log.debug(`Scan timeout. Found ${this.discoveredDevices.length} device(s)`);
         resolve(this.discoveredDevices);
-      }, timeout * 1000);
+      }, timeout);
 
       // Create a new Bluetooth instance with deviceFound in constructor
       // This is required for the callback to fire reliably in webbluetooth

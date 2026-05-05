@@ -67,7 +67,7 @@ export interface BLEServiceConfig {
 export interface BLEAdapter {
   /**
    * Scan for devices.
-   * @param timeout Scan duration in seconds
+   * @param timeout Scan duration in milliseconds
    * @returns List of discovered devices
    */
   scan(timeout: number): Promise<Device[]>;

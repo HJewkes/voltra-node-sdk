@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-05-04
+
+### Fixed
+- ESM build of `voltra-manager` no longer throws "require is not defined" under stock Node ESM. A post-build script (`scripts/inject-esm-require-shim.mjs`) prepends `createRequire(import.meta.url)` to the dist output so the lazy-loaded BLE adapter factories work in both CJS and ESM contexts.
+- `BLEAdapter.scan(timeout)` now consistently treats `timeout` as milliseconds. The `node` and `native` adapters previously multiplied the value by 1000 even though every consumer (manager default, mobile, MCP) passed milliseconds; scan durations were 1000× longer than intended. Typedoc updated to match.
+
 ## [0.3.0] - 2026-02-16
 
 ### Added

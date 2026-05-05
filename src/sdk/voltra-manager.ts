@@ -531,7 +531,10 @@ export class VoltraManager {
     switch (platform) {
       case 'web':
         return () => {
-          // Dynamic import to avoid bundling issues
+          // Dynamic require to avoid eager-loading platform peers.
+          // In the ESM build a `require` shim is prepended at build time
+          // (see scripts/inject-esm-require-shim.mjs) so this works in
+          // both CommonJS and ECMAScript module contexts.
           // eslint-disable-next-line @typescript-eslint/no-require-imports
           const { WebBLEAdapter } = require('../bluetooth/adapters/web');
           return new WebBLEAdapter({ ble: bleConfig });
