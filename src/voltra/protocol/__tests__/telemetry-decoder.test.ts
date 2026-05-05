@@ -70,14 +70,14 @@ function createTelemetryBuffer(
   buffer[TelemetryOffsets.POSITION] = position & 0xff;
   buffer[TelemetryOffsets.POSITION + 1] = (position >> 8) & 0xff;
 
-  // Force (little-endian int16)
-  let force = overrides.force ?? 0;
-  if (force < 0) force += 0x10000;
+  // Force (little-endian uint16, tenths of pounds — always non-negative)
+  const force = overrides.force ?? 0;
   buffer[TelemetryOffsets.FORCE] = force & 0xff;
   buffer[TelemetryOffsets.FORCE + 1] = (force >> 8) & 0xff;
 
-  // Velocity (little-endian uint16)
-  const velocity = overrides.velocity ?? 0;
+  // Velocity (little-endian int16, mm/s — sign flips with direction)
+  let velocity = overrides.velocity ?? 0;
+  if (velocity < 0) velocity += 0x10000;
   buffer[TelemetryOffsets.VELOCITY] = velocity & 0xff;
   buffer[TelemetryOffsets.VELOCITY + 1] = (velocity >> 8) & 0xff;
 
@@ -248,29 +248,29 @@ describe('decodeTelemetryFrame', () => {
     expect(frame!.phase).toBe(MovementPhase.UNKNOWN);
   });
 
-  it('handles negative force values (eccentric)', () => {
-    const buffer = createTelemetryBuffer({ force: -50 });
+  it('handles negative int16 velocity (eccentric direction)', () => {
+    const buffer = createTelemetryBuffer({ velocity: -500 });
 
     const frame = decodeTelemetryFrame(buffer);
 
     expect(frame).not.toBeNull();
-    expect(frame!.force).toBe(-50);
+    expect(frame!.velocity).toBe(-500);
   });
 
-  it('handles maximum int16 force', () => {
-    const buffer = createTelemetryBuffer({ force: 32767 });
+  it('handles maximum int16 velocity', () => {
+    const buffer = createTelemetryBuffer({ velocity: 32767 });
 
     const frame = decodeTelemetryFrame(buffer);
 
-    expect(frame!.force).toBe(32767);
+    expect(frame!.velocity).toBe(32767);
   });
 
-  it('handles minimum int16 force', () => {
-    const buffer = createTelemetryBuffer({ force: -32768 });
+  it('handles minimum int16 velocity', () => {
+    const buffer = createTelemetryBuffer({ velocity: -32768 });
 
     const frame = decodeTelemetryFrame(buffer);
 
-    expect(frame!.force).toBe(-32768);
+    expect(frame!.velocity).toBe(-32768);
   });
 
   it('handles maximum uint16 sequence', () => {
@@ -289,12 +289,13 @@ describe('decodeTelemetryFrame', () => {
     expect(frame!.position).toBe(65535);
   });
 
-  it('handles maximum uint16 velocity', () => {
-    const buffer = createTelemetryBuffer({ velocity: 65535 });
+  it('handles maximum uint16 force', () => {
+    // Physically implausible but guards the unsigned-decode contract.
+    const buffer = createTelemetryBuffer({ force: 65000 });
 
     const frame = decodeTelemetryFrame(buffer);
 
-    expect(frame!.velocity).toBe(65535);
+    expect(frame!.force).toBe(65000);
   });
 
   it('handles zero values', () => {
@@ -490,20 +491,20 @@ describe('encodeTelemetryFrame', () => {
     expect(decoded!.velocity).toBe(original.velocity);
   });
 
-  it('round-trips negative force correctly', () => {
+  it('round-trips negative velocity correctly (eccentric direction)', () => {
     const original: TelemetryFrame = {
       sequence: 1,
       phase: MovementPhase.ECCENTRIC,
       position: 100,
-      force: -75, // Negative eccentric force
-      velocity: 200,
+      force: 75,
+      velocity: -200, // Negative — eccentric/return direction
       timestamp: Date.now(),
     };
 
     const encoded = encodeTelemetryFrame(original);
     const decoded = decodeTelemetryFrame(encoded);
 
-    expect(decoded!.force).toBe(-75);
+    expect(decoded!.velocity).toBe(-200);
   });
 
   it('round-trips all phases correctly', () => {
@@ -531,13 +532,13 @@ describe('encodeTelemetryFrame', () => {
     }
   });
 
-  it('round-trips max uint16 values', () => {
+  it('round-trips max uint16 values for unsigned fields', () => {
     const original: TelemetryFrame = {
       sequence: 65535,
       phase: MovementPhase.IDLE,
       position: 65535,
-      force: 32767,
-      velocity: 65535,
+      force: 65000,
+      velocity: 32767,
       timestamp: Date.now(),
     };
 
@@ -546,24 +547,24 @@ describe('encodeTelemetryFrame', () => {
 
     expect(decoded!.sequence).toBe(65535);
     expect(decoded!.position).toBe(65535);
-    expect(decoded!.force).toBe(32767);
-    expect(decoded!.velocity).toBe(65535);
+    expect(decoded!.force).toBe(65000);
+    expect(decoded!.velocity).toBe(32767);
   });
 
-  it('round-trips min int16 force', () => {
+  it('round-trips min int16 velocity', () => {
     const original: TelemetryFrame = {
       sequence: 1,
       phase: MovementPhase.ECCENTRIC,
       position: 0,
-      force: -32768,
-      velocity: 0,
+      force: 0,
+      velocity: -32768,
       timestamp: Date.now(),
     };
 
     const encoded = encodeTelemetryFrame(original);
     const decoded = decodeTelemetryFrame(encoded);
 
-    expect(decoded!.force).toBe(-32768);
+    expect(decoded!.velocity).toBe(-32768);
   });
 });
 
@@ -578,8 +579,8 @@ describe('practical scenarios', () => {
       { phase: MovementPhase.CONCENTRIC, position: 100, force: 80, velocity: 500 },
       { phase: MovementPhase.CONCENTRIC, position: 300, force: 85, velocity: 450 },
       { phase: MovementPhase.HOLD, position: 450, force: 60, velocity: 50 },
-      { phase: MovementPhase.ECCENTRIC, position: 400, force: -40, velocity: 200 },
-      { phase: MovementPhase.ECCENTRIC, position: 100, force: -35, velocity: 180 },
+      { phase: MovementPhase.ECCENTRIC, position: 400, force: 40, velocity: -200 },
+      { phase: MovementPhase.ECCENTRIC, position: 100, force: 35, velocity: -180 },
       { phase: MovementPhase.IDLE, position: 0, force: 0, velocity: 0 },
     ];
 

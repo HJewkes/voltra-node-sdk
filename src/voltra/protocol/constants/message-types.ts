@@ -70,9 +70,9 @@ export function matchesVendorSubType(data: Uint8Array, subType: VendorSubTypeCon
 export const TelemetryOffsets = {
   SEQUENCE: protocol.telemetry.offsets.sequence, // 2 bytes, little-endian
   PHASE: protocol.telemetry.offsets.phase, // 1 byte
-  POSITION: protocol.telemetry.offsets.position, // 2 bytes, little-endian unsigned
-  FORCE: protocol.telemetry.offsets.force, // 2 bytes, little-endian signed
-  VELOCITY: protocol.telemetry.offsets.velocity, // 2 bytes, little-endian unsigned
+  POSITION: protocol.telemetry.offsets.position, // 2 bytes, little-endian unsigned (mm)
+  FORCE: protocol.telemetry.offsets.force, // 2 bytes, little-endian unsigned (tenths of pounds)
+  VELOCITY: protocol.telemetry.offsets.velocity, // 2 bytes, little-endian signed (mm/s, sign flips with direction)
 } as const;
 
 // =============================================================================

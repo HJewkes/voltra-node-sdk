@@ -162,9 +162,11 @@ export function decodeTelemetryFrame(data: Uint8Array): TelemetryFrame | null {
   }
 
   // Sensor data
+  // Force is uint16 (tenths of pounds, always non-negative).
+  // Velocity is int16 (mm/s, sign flips with direction: eccentric/return is negative).
   const position = readUint16LE(data, TelemetryOffsets.POSITION);
-  const force = readInt16LE(data, TelemetryOffsets.FORCE);
-  const velocity = readUint16LE(data, TelemetryOffsets.VELOCITY);
+  const force = readUint16LE(data, TelemetryOffsets.FORCE);
+  const velocity = readInt16LE(data, TelemetryOffsets.VELOCITY);
 
   return createFrame(sequence, phase, position, force, velocity);
 }
@@ -334,14 +336,14 @@ export function encodeTelemetryFrame(frame: TelemetryFrame): Uint8Array {
   // Phase (byte 13)
   data[TelemetryOffsets.PHASE] = frame.phase;
 
-  // Position (bytes 24-25)
+  // Position (bytes 24-25, unsigned)
   writeUint16LE(data, TelemetryOffsets.POSITION, frame.position);
 
-  // Force (bytes 26-27, signed)
-  writeInt16LE(data, TelemetryOffsets.FORCE, frame.force);
+  // Force (bytes 26-27, unsigned tenths of pounds)
+  writeUint16LE(data, TelemetryOffsets.FORCE, frame.force);
 
-  // Velocity (bytes 28-29)
-  writeUint16LE(data, TelemetryOffsets.VELOCITY, frame.velocity);
+  // Velocity (bytes 28-29, signed — sign flips with direction)
+  writeInt16LE(data, TelemetryOffsets.VELOCITY, frame.velocity);
 
   return data;
 }
