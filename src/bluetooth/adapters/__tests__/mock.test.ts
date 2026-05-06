@@ -14,6 +14,8 @@ import {
 import {
   MessageTypes,
   NotificationConfigs,
+  VendorMessages,
+  matchesVendorSubType,
 } from '../../../voltra/protocol/constants/message-types';
 import { MovementPhase, TrainingMode } from '../../../voltra/protocol/constants/enums';
 import { bytesEqual, bytesToHex } from '../../../shared/utils';
@@ -42,11 +44,11 @@ function isTelemetryFrame(data: Uint8Array): boolean {
 }
 
 function isRepBoundary(data: Uint8Array): boolean {
-  return data.length === 4 && bytesEqual(data, MessageTypes.REP_SUMMARY);
+  return matchesVendorSubType(data, VendorMessages.subTypes.perRep);
 }
 
 function isSetBoundary(data: Uint8Array): boolean {
-  return data.length === 4 && bytesEqual(data, MessageTypes.SET_SUMMARY);
+  return matchesVendorSubType(data, VendorMessages.subTypes.inProgress);
 }
 
 function isModeConfirmation(data: Uint8Array): boolean {

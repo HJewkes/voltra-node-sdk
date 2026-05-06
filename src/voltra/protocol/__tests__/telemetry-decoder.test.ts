@@ -20,6 +20,7 @@ import {
 } from '../telemetry-decoder';
 import {
   MessageTypes,
+  VendorMessages,
   TelemetryOffsets,
   MovementPhase,
   NotificationConfigs,
@@ -29,6 +30,7 @@ import {
 } from '../constants';
 import { hexToBytes } from '../../../shared/utils';
 import type { TelemetryFrame } from '../../models/telemetry/frame';
+import type { VendorSubTypeConfig } from '../types';
 
 // =============================================================================
 // Helpers
@@ -68,14 +70,14 @@ function createTelemetryBuffer(
   buffer[TelemetryOffsets.POSITION] = position & 0xff;
   buffer[TelemetryOffsets.POSITION + 1] = (position >> 8) & 0xff;
 
-  // Force (little-endian int16)
-  let force = overrides.force ?? 0;
-  if (force < 0) force += 0x10000;
+  // Force (little-endian uint16, tenths of pounds — always non-negative)
+  const force = overrides.force ?? 0;
   buffer[TelemetryOffsets.FORCE] = force & 0xff;
   buffer[TelemetryOffsets.FORCE + 1] = (force >> 8) & 0xff;
 
-  // Velocity (little-endian uint16)
-  const velocity = overrides.velocity ?? 0;
+  // Velocity (little-endian int16, mm/s — sign flips with direction)
+  let velocity = overrides.velocity ?? 0;
+  if (velocity < 0) velocity += 0x10000;
   buffer[TelemetryOffsets.VELOCITY] = velocity & 0xff;
   buffer[TelemetryOffsets.VELOCITY + 1] = (velocity >> 8) & 0xff;
 
@@ -88,6 +90,34 @@ function createTelemetryBuffer(
 function createMessageBuffer(header: Uint8Array, minLength: number = 30): Uint8Array {
   const buffer = new Uint8Array(minLength);
   buffer.set(header);
+  return buffer;
+}
+
+/**
+ * Create a buffer that matches a vendor sub-type by writing the 0xaa cmd
+ * marker and identifier bytes at the documented offsets. Padded with zeros
+ * to the sub-type's documented frameLength (or `minLength` if larger).
+ */
+function createVendorSubTypeBuffer(subType: VendorSubTypeConfig, minLength?: number): Uint8Array {
+  const required = VendorMessages.cmdByteOffset + 1 + subType.identifierBytes.length;
+  const length = Math.max(minLength ?? 30, subType.frameLength ?? 0, required);
+  const buffer = new Uint8Array(length);
+  buffer[VendorMessages.cmdByteOffset] = VendorMessages.cmdValue;
+  for (let i = 0; i < subType.identifierBytes.length; i++) {
+    buffer[VendorMessages.cmdByteOffset + 1 + i] = subType.identifierBytes[i];
+  }
+  return buffer;
+}
+
+/**
+ * Create a buffer with the statusBattery 2-byte header, padded to the
+ * configured length. Phase A confirmed the legacy STATUS_UPDATE path
+ * collapses into this single 2-byte notification.
+ */
+function createStatusUpdateBuffer(): Uint8Array {
+  const length = NotificationConfigs.statusBattery.length ?? 52;
+  const buffer = new Uint8Array(length);
+  buffer.set(hexToBytes(NotificationConfigs.statusBattery.header));
   return buffer;
 }
 
@@ -104,24 +134,24 @@ describe('identifyMessageType', () => {
     expect(result).toBe('telemetry_stream');
   });
 
-  it('identifies rep summary messages', () => {
-    const buffer = createMessageBuffer(MessageTypes.REP_SUMMARY);
+  it('identifies rep summary messages (perRep vendor sub-type)', () => {
+    const buffer = createVendorSubTypeBuffer(VendorMessages.subTypes.perRep);
 
     const result = identifyMessageType(buffer);
 
     expect(result).toBe('rep_summary');
   });
 
-  it('identifies set summary messages', () => {
-    const buffer = createMessageBuffer(MessageTypes.SET_SUMMARY);
+  it('identifies set summary messages (inProgress vendor sub-type)', () => {
+    const buffer = createVendorSubTypeBuffer(VendorMessages.subTypes.inProgress);
 
     const result = identifyMessageType(buffer);
 
     expect(result).toBe('set_summary');
   });
 
-  it('identifies status update messages', () => {
-    const buffer = createMessageBuffer(MessageTypes.STATUS_UPDATE);
+  it('identifies status update messages (statusBattery 2-byte header)', () => {
+    const buffer = createStatusUpdateBuffer();
 
     const result = identifyMessageType(buffer);
 
@@ -218,29 +248,29 @@ describe('decodeTelemetryFrame', () => {
     expect(frame!.phase).toBe(MovementPhase.UNKNOWN);
   });
 
-  it('handles negative force values (eccentric)', () => {
-    const buffer = createTelemetryBuffer({ force: -50 });
+  it('handles negative int16 velocity (eccentric direction)', () => {
+    const buffer = createTelemetryBuffer({ velocity: -500 });
 
     const frame = decodeTelemetryFrame(buffer);
 
     expect(frame).not.toBeNull();
-    expect(frame!.force).toBe(-50);
+    expect(frame!.velocity).toBe(-500);
   });
 
-  it('handles maximum int16 force', () => {
-    const buffer = createTelemetryBuffer({ force: 32767 });
+  it('handles maximum int16 velocity', () => {
+    const buffer = createTelemetryBuffer({ velocity: 32767 });
 
     const frame = decodeTelemetryFrame(buffer);
 
-    expect(frame!.force).toBe(32767);
+    expect(frame!.velocity).toBe(32767);
   });
 
-  it('handles minimum int16 force', () => {
-    const buffer = createTelemetryBuffer({ force: -32768 });
+  it('handles minimum int16 velocity', () => {
+    const buffer = createTelemetryBuffer({ velocity: -32768 });
 
     const frame = decodeTelemetryFrame(buffer);
 
-    expect(frame!.force).toBe(-32768);
+    expect(frame!.velocity).toBe(-32768);
   });
 
   it('handles maximum uint16 sequence', () => {
@@ -259,12 +289,13 @@ describe('decodeTelemetryFrame', () => {
     expect(frame!.position).toBe(65535);
   });
 
-  it('handles maximum uint16 velocity', () => {
-    const buffer = createTelemetryBuffer({ velocity: 65535 });
+  it('handles maximum uint16 force', () => {
+    // Physically implausible but guards the unsigned-decode contract.
+    const buffer = createTelemetryBuffer({ force: 65000 });
 
     const frame = decodeTelemetryFrame(buffer);
 
-    expect(frame!.velocity).toBe(65535);
+    expect(frame!.force).toBe(65000);
   });
 
   it('handles zero values', () => {
@@ -339,7 +370,7 @@ describe('decodeNotification', () => {
   });
 
   it('decodes rep summary to rep_boundary result', () => {
-    const buffer = createMessageBuffer(MessageTypes.REP_SUMMARY);
+    const buffer = createVendorSubTypeBuffer(VendorMessages.subTypes.perRep);
 
     const result = decodeNotification(buffer);
 
@@ -348,7 +379,7 @@ describe('decodeNotification', () => {
   });
 
   it('decodes set summary to set_boundary result', () => {
-    const buffer = createMessageBuffer(MessageTypes.SET_SUMMARY);
+    const buffer = createVendorSubTypeBuffer(VendorMessages.subTypes.inProgress);
 
     const result = decodeNotification(buffer);
 
@@ -357,10 +388,9 @@ describe('decodeNotification', () => {
   });
 
   it('decodes status update to device_status result', () => {
-    // Create a buffer that meets the statusBattery length requirement (52 bytes)
-    const buffer = createMessageBuffer(MessageTypes.STATUS_UPDATE, 52);
-    // Set battery level
-    buffer[12] = 85;
+    const buffer = createStatusUpdateBuffer();
+    // Battery level field at the configured offset
+    buffer[NotificationConfigs.statusBattery.batteryOffset!] = 85;
 
     const result = decodeNotification(buffer);
 
@@ -461,20 +491,20 @@ describe('encodeTelemetryFrame', () => {
     expect(decoded!.velocity).toBe(original.velocity);
   });
 
-  it('round-trips negative force correctly', () => {
+  it('round-trips negative velocity correctly (eccentric direction)', () => {
     const original: TelemetryFrame = {
       sequence: 1,
       phase: MovementPhase.ECCENTRIC,
       position: 100,
-      force: -75, // Negative eccentric force
-      velocity: 200,
+      force: 75,
+      velocity: -200, // Negative — eccentric/return direction
       timestamp: Date.now(),
     };
 
     const encoded = encodeTelemetryFrame(original);
     const decoded = decodeTelemetryFrame(encoded);
 
-    expect(decoded!.force).toBe(-75);
+    expect(decoded!.velocity).toBe(-200);
   });
 
   it('round-trips all phases correctly', () => {
@@ -502,13 +532,13 @@ describe('encodeTelemetryFrame', () => {
     }
   });
 
-  it('round-trips max uint16 values', () => {
+  it('round-trips max uint16 values for unsigned fields', () => {
     const original: TelemetryFrame = {
       sequence: 65535,
       phase: MovementPhase.IDLE,
       position: 65535,
-      force: 32767,
-      velocity: 65535,
+      force: 65000,
+      velocity: 32767,
       timestamp: Date.now(),
     };
 
@@ -517,24 +547,24 @@ describe('encodeTelemetryFrame', () => {
 
     expect(decoded!.sequence).toBe(65535);
     expect(decoded!.position).toBe(65535);
-    expect(decoded!.force).toBe(32767);
-    expect(decoded!.velocity).toBe(65535);
+    expect(decoded!.force).toBe(65000);
+    expect(decoded!.velocity).toBe(32767);
   });
 
-  it('round-trips min int16 force', () => {
+  it('round-trips min int16 velocity', () => {
     const original: TelemetryFrame = {
       sequence: 1,
       phase: MovementPhase.ECCENTRIC,
       position: 0,
-      force: -32768,
-      velocity: 0,
+      force: 0,
+      velocity: -32768,
       timestamp: Date.now(),
     };
 
     const encoded = encodeTelemetryFrame(original);
     const decoded = decodeTelemetryFrame(encoded);
 
-    expect(decoded!.force).toBe(-32768);
+    expect(decoded!.velocity).toBe(-32768);
   });
 });
 
@@ -549,8 +579,8 @@ describe('practical scenarios', () => {
       { phase: MovementPhase.CONCENTRIC, position: 100, force: 80, velocity: 500 },
       { phase: MovementPhase.CONCENTRIC, position: 300, force: 85, velocity: 450 },
       { phase: MovementPhase.HOLD, position: 450, force: 60, velocity: 50 },
-      { phase: MovementPhase.ECCENTRIC, position: 400, force: -40, velocity: 200 },
-      { phase: MovementPhase.ECCENTRIC, position: 100, force: -35, velocity: 180 },
+      { phase: MovementPhase.ECCENTRIC, position: 400, force: 40, velocity: -200 },
+      { phase: MovementPhase.ECCENTRIC, position: 100, force: 35, velocity: -180 },
       { phase: MovementPhase.IDLE, position: 0, force: 0, velocity: 0 },
     ];
 
@@ -580,11 +610,17 @@ describe('practical scenarios', () => {
     const messages: Array<{ buffer: Uint8Array; expectedType: MessageType | null }> = [
       { buffer: createTelemetryBuffer({ sequence: 1 }), expectedType: 'telemetry_stream' },
       { buffer: createTelemetryBuffer({ sequence: 2 }), expectedType: 'telemetry_stream' },
-      { buffer: createMessageBuffer(MessageTypes.REP_SUMMARY), expectedType: 'rep_summary' },
+      {
+        buffer: createVendorSubTypeBuffer(VendorMessages.subTypes.perRep),
+        expectedType: 'rep_summary',
+      },
       { buffer: createTelemetryBuffer({ sequence: 3 }), expectedType: 'telemetry_stream' },
-      { buffer: createMessageBuffer(MessageTypes.STATUS_UPDATE), expectedType: 'status_update' },
+      { buffer: createStatusUpdateBuffer(), expectedType: 'status_update' },
       { buffer: createTelemetryBuffer({ sequence: 4 }), expectedType: 'telemetry_stream' },
-      { buffer: createMessageBuffer(MessageTypes.SET_SUMMARY), expectedType: 'set_summary' },
+      {
+        buffer: createVendorSubTypeBuffer(VendorMessages.subTypes.inProgress),
+        expectedType: 'set_summary',
+      },
     ];
 
     for (const { buffer, expectedType } of messages) {

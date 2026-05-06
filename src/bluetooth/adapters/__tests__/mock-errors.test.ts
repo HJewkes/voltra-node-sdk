@@ -9,7 +9,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MockBLEAdapter } from '../mock';
 import { decodeTelemetryFrame } from '../../../voltra/protocol/telemetry-decoder';
-import { MessageTypes } from '../../../voltra/protocol/constants/message-types';
+import {
+  MessageTypes,
+  VendorMessages,
+  matchesVendorSubType,
+} from '../../../voltra/protocol/constants/message-types';
 import { bytesEqual } from '../../../shared/utils';
 
 beforeEach(() => {
@@ -465,11 +469,11 @@ describe('MockBLEAdapter error injection', () => {
       tickSamples(SAMPLES_PER_REP * 2);
       await adapter.disconnect();
 
-      const repBoundaries = notifications.filter(
-        (d) => d.length === 4 && bytesEqual(d, MessageTypes.REP_SUMMARY)
+      const repBoundaries = notifications.filter((d) =>
+        matchesVendorSubType(d, VendorMessages.subTypes.perRep)
       );
-      const setBoundaries = notifications.filter(
-        (d) => d.length === 4 && bytesEqual(d, MessageTypes.SET_SUMMARY)
+      const setBoundaries = notifications.filter((d) =>
+        matchesVendorSubType(d, VendorMessages.subTypes.inProgress)
       );
       expect(repBoundaries).toHaveLength(2);
       expect(setBoundaries).toHaveLength(1);

@@ -1,0 +1,6 @@
+# Auto-generated files from voltra-private's build.ts. Their formatting is
+# determined by the generator, not editor convention. Format-checking them
+# here causes false positives when the generator's wrap width disagrees with
+# Prettier's printWidth.
+src/voltra/protocol/_factories/*.generated.ts
+src/voltra/protocol/data/*.generated.ts

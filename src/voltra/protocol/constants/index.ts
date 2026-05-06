@@ -10,6 +10,8 @@ export { Timing } from './timing';
 export { Auth, Init, Workout } from './connection-commands';
 export {
   MessageTypes,
+  VendorMessages,
+  matchesVendorSubType,
   TelemetryOffsets,
   NotificationConfigs,
   Uint16ParamIds,

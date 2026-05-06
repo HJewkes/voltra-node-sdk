@@ -83,26 +83,26 @@ describe('Telemetry Codec', () => {
       }
     });
 
-    it('preserves negative force values', () => {
-      const forces = [-50, -100, -200];
+    it('preserves negative velocity values (eccentric direction)', () => {
+      const velocities = [-50, -100, -200, -1000];
 
-      for (const force of forces) {
-        const original = createFrame(1, MovementPhase.ECCENTRIC, 300, force, 100);
+      for (const velocity of velocities) {
+        const original = createFrame(1, MovementPhase.ECCENTRIC, 300, 50, velocity);
         const encoded = encodeTelemetryFrame(original);
         const decoded = decodeTelemetryFrame(encoded);
 
         expect(decoded).not.toBeNull();
-        expect(decoded!.force).toBe(force);
+        expect(decoded!.velocity).toBe(velocity);
       }
     });
 
     it('handles complete frame with all fields', () => {
       const original = createFrame(
         9999, // sequence
-        MovementPhase.CONCENTRIC, // phase
+        MovementPhase.ECCENTRIC, // phase
         450, // position
-        -75, // force (negative)
-        250 // velocity
+        75, // force (uint16 — non-negative, tenths of pounds)
+        -250 // velocity (int16 — negative on eccentric direction)
       );
 
       const encoded = encodeTelemetryFrame(original);
@@ -110,10 +110,10 @@ describe('Telemetry Codec', () => {
 
       expect(decoded).not.toBeNull();
       expect(decoded!.sequence).toBe(9999);
-      expect(decoded!.phase).toBe(MovementPhase.CONCENTRIC);
+      expect(decoded!.phase).toBe(MovementPhase.ECCENTRIC);
       expect(decoded!.position).toBe(450);
-      expect(decoded!.force).toBe(-75);
-      expect(decoded!.velocity).toBe(250);
+      expect(decoded!.force).toBe(75);
+      expect(decoded!.velocity).toBe(-250);
     });
   });
 
@@ -145,13 +145,24 @@ describe('Telemetry Codec', () => {
       expect(decoded!.position).toBe(600);
     });
 
-    it('handles minimum force (most negative int16)', () => {
-      // int16 min is -32768, but realistic force values are smaller
-      const original = createFrame(1, MovementPhase.ECCENTRIC, 300, -500, 100);
+    it('handles maximum uint16 force', () => {
+      // uint16 max is 65535; realistic force values are smaller, but the
+      // decode contract is unsigned tenths of pounds.
+      const original = createFrame(1, MovementPhase.CONCENTRIC, 300, 65000, 100);
       const encoded = encodeTelemetryFrame(original);
       const decoded = decodeTelemetryFrame(encoded);
 
-      expect(decoded!.force).toBe(-500);
+      expect(decoded!.force).toBe(65000);
+    });
+
+    it('handles minimum int16 velocity (most negative)', () => {
+      // int16 min is -32768; realistic velocity values are smaller, but the
+      // decode contract is signed mm/s.
+      const original = createFrame(1, MovementPhase.ECCENTRIC, 300, 50, -32768);
+      const encoded = encodeTelemetryFrame(original);
+      const decoded = decodeTelemetryFrame(encoded);
+
+      expect(decoded!.velocity).toBe(-32768);
     });
   });
 

@@ -8,6 +8,8 @@
 
 import {
   MessageTypes,
+  VendorMessages,
+  matchesVendorSubType,
   TelemetryOffsets,
   MovementPhase,
   NotificationConfigs,
@@ -84,15 +86,18 @@ export function identifyMessageType(data: Uint8Array): MessageType {
 
   const msgType = data.slice(0, 4);
 
-  // Check 4-byte message types first (telemetry stream types)
   if (bytesEqual(msgType, MessageTypes.TELEMETRY_STREAM)) {
     return 'telemetry_stream';
-  } else if (bytesEqual(msgType, MessageTypes.REP_SUMMARY)) {
+  }
+
+  // Vendor sub-type classification. Phase A on-device validation
+  // (2026-05-05, 1369 frames) confirmed that perRep frames alias the
+  // legacy 4-byte repSummary header and inProgress frames alias the
+  // legacy 4-byte setSummary header.
+  if (matchesVendorSubType(data, VendorMessages.subTypes.perRep)) {
     return 'rep_summary';
-  } else if (bytesEqual(msgType, MessageTypes.SET_SUMMARY)) {
+  } else if (matchesVendorSubType(data, VendorMessages.subTypes.inProgress)) {
     return 'set_summary';
-  } else if (bytesEqual(msgType, MessageTypes.STATUS_UPDATE)) {
-    return 'status_update';
   }
 
   // Check 2-byte headers for other notification types
@@ -107,7 +112,9 @@ export function identifyMessageType(data: Uint8Array): MessageType {
   } else if (header2 === NotificationConfigs.deviceInit.header) {
     return 'device_init';
   } else if (header2 === NotificationConfigs.statusBattery.header) {
-    return 'status_update'; // Also a status type
+    // Phase A confirmed the legacy 4-byte STATUS_UPDATE signature
+    // (553404ac) was an alias for this 2-byte path.
+    return 'status_update';
   }
 
   return 'unknown';
@@ -155,9 +162,11 @@ export function decodeTelemetryFrame(data: Uint8Array): TelemetryFrame | null {
   }
 
   // Sensor data
+  // Force is uint16 (tenths of pounds, always non-negative).
+  // Velocity is int16 (mm/s, sign flips with direction: eccentric/return is negative).
   const position = readUint16LE(data, TelemetryOffsets.POSITION);
-  const force = readInt16LE(data, TelemetryOffsets.FORCE);
-  const velocity = readUint16LE(data, TelemetryOffsets.VELOCITY);
+  const force = readUint16LE(data, TelemetryOffsets.FORCE);
+  const velocity = readInt16LE(data, TelemetryOffsets.VELOCITY);
 
   return createFrame(sequence, phase, position, force, velocity);
 }
@@ -327,14 +336,14 @@ export function encodeTelemetryFrame(frame: TelemetryFrame): Uint8Array {
   // Phase (byte 13)
   data[TelemetryOffsets.PHASE] = frame.phase;
 
-  // Position (bytes 24-25)
+  // Position (bytes 24-25, unsigned)
   writeUint16LE(data, TelemetryOffsets.POSITION, frame.position);
 
-  // Force (bytes 26-27, signed)
-  writeInt16LE(data, TelemetryOffsets.FORCE, frame.force);
+  // Force (bytes 26-27, unsigned tenths of pounds)
+  writeUint16LE(data, TelemetryOffsets.FORCE, frame.force);
 
-  // Velocity (bytes 28-29)
-  writeUint16LE(data, TelemetryOffsets.VELOCITY, frame.velocity);
+  // Velocity (bytes 28-29, signed — sign flips with direction)
+  writeInt16LE(data, TelemetryOffsets.VELOCITY, frame.velocity);
 
   return data;
 }
