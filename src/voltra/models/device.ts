@@ -23,6 +23,11 @@ export interface VoltraDeviceSettings {
   mode: TrainingMode;
   /** Battery level (0-100) or null if unknown */
   battery: number | null;
+  /**
+   * Current damper level (protocol value 0-9; UI displays N+1).
+   * Reflected from device settingsUpdate notifications.
+   */
+  damperLevel?: number;
 }
 
 /**

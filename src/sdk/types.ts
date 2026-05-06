@@ -60,6 +60,10 @@ export interface ScanOptions {
 
 /**
  * Client event types.
+ *
+ * 0.6.0 dropped the payload-less `'repBoundary'` and `'setBoundary'`
+ * variants. Subscribe to `'perRep'` / `'inProgress'` for the typed
+ * replacements.
  */
 export type VoltraClientEvent =
   // Connection events
@@ -71,9 +75,6 @@ export type VoltraClientEvent =
   | { type: 'recordingStateChanged'; state: VoltraRecordingState }
   // Telemetry events
   | { type: 'frame'; frame: TelemetryFrame }
-  // Workout boundary events (legacy, payload-less; prefer typed vendor events below)
-  | { type: 'repBoundary' }
-  | { type: 'setBoundary' }
   // Typed vendor-frame events (0.6.0+)
   | { type: 'perRep'; event: PerRepEvent }
   | { type: 'summary'; event: SummaryEvent }
@@ -97,16 +98,6 @@ export type VoltraClientEventListener = (event: VoltraClientEvent) => void;
 export type FrameListener = (frame: TelemetryFrame) => void;
 
 /**
- * Rep boundary listener (called when device signals rep completion).
- */
-export type RepBoundaryListener = () => void;
-
-/**
- * Set boundary listener (called when device signals set completion).
- */
-export type SetBoundaryListener = () => void;
-
-/**
  * Mode confirmed listener (called when device confirms mode change).
  */
 export type ModeConfirmedListener = (mode: TrainingMode) => void;
@@ -125,9 +116,9 @@ export type BatteryUpdateListener = (battery: number) => void;
 // Typed vendor-frame events (0.6.0+)
 //
 // Field offsets validated 2026-05-06 on VTR-212006 (voltra-private phase-5
-// captures). Backward-compatible with 0.5.0: existing onRepBoundary /
-// onSetBoundary callbacks keep firing alongside the typed perRep / inProgress
-// events.
+// captures). 0.6.0 removed the legacy onRepBoundary / onSetBoundary listeners
+// — the four vendor frames are now exclusively surfaced via their typed
+// perRep / inProgress / summary / preSummary callbacks.
 // =============================================================================
 
 /**

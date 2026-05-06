@@ -14,8 +14,6 @@ export type {
   VoltraClientEvent,
   VoltraClientEventListener,
   FrameListener,
-  RepBoundaryListener,
-  SetBoundaryListener,
   ModeConfirmedListener,
   SettingsUpdateListener,
   BatteryUpdateListener,

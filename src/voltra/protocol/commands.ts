@@ -207,6 +207,30 @@ for (const [lbs, hex] of Object.entries(protocol.commands.isokineticEccOverloadW
   isokineticEccOverloadWeightCommands[Number(lbs)] = hexToBytes(hex);
 }
 
+/** Telemetry rate commands (Hz) */
+const telemetryRateCommands: Record<number, Uint8Array> = {};
+for (const [hz, hex] of Object.entries(protocol.commands.telemetryRate)) {
+  telemetryRateCommands[Number(hz)] = hexToBytes(hex);
+}
+
+/** Telemetry subscribe commands ('none' | 'all') */
+const telemetrySubscribeCommands: Record<string, Uint8Array> = {};
+for (const [mode, hex] of Object.entries(protocol.commands.telemetrySubscribe)) {
+  telemetrySubscribeCommands[mode] = hexToBytes(hex);
+}
+
+/** Cable trigger commands ('open' | 'close') */
+const cableTriggerCommands: Record<string, Uint8Array> = {};
+for (const [mode, hex] of Object.entries(protocol.commands.cableTrigger)) {
+  cableTriggerCommands[mode] = hexToBytes(hex);
+}
+
+/** Resistance experience commands ('intense' | 'standard') */
+const resistanceExperienceCommands: Record<string, Uint8Array> = {};
+for (const [mode, hex] of Object.entries(protocol.commands.resistanceExperience)) {
+  resistanceExperienceCommands[mode] = hexToBytes(hex);
+}
+
 /**
  * Get damper level command.
  * @param level Damper level (0-9; UI displays N+1)
@@ -319,4 +343,71 @@ export function getAvailableIsokineticEccOverloadWeights(): number[] {
   return Object.keys(isokineticEccOverloadWeightCommands)
     .map(Number)
     .sort((a, b) => a - b);
+}
+
+/**
+ * Get telemetry rate command.
+ *
+ * @experimental — register validated in voltra-private PR #11 but not yet
+ * validated end-to-end on-device. The protocol bytes are correct; the
+ * device-side behavior may produce side effects not yet documented.
+ *
+ * @param hz Telemetry frame emission rate in Hz
+ * @returns Command bytes, or null if not available
+ */
+export function getTelemetryRateCommand(hz: number): Uint8Array | null {
+  return telemetryRateCommands[hz] || null;
+}
+
+/**
+ * Get available telemetry rates (Hz).
+ *
+ * @experimental — see {@link getTelemetryRateCommand}.
+ */
+export function getAvailableTelemetryRates(): number[] {
+  return Object.keys(telemetryRateCommands)
+    .map(Number)
+    .sort((a, b) => a - b);
+}
+
+/**
+ * Get telemetry subscribe command.
+ *
+ * @experimental — register validated in voltra-private PR #11 but not yet
+ * validated end-to-end on-device. The protocol bytes are correct; the
+ * device-side behavior may produce side effects not yet documented.
+ *
+ * @param mode 'none' or 'all'
+ * @returns Command bytes, or null if not available
+ */
+export function getTelemetrySubscribeCommand(mode: 'none' | 'all'): Uint8Array | null {
+  return telemetrySubscribeCommands[mode] || null;
+}
+
+/**
+ * Get cable trigger command.
+ *
+ * @experimental — register validated in voltra-private PR #11 but not yet
+ * validated end-to-end on-device. The protocol bytes are correct; the
+ * device-side behavior may produce side effects not yet documented.
+ *
+ * @param mode 'open' or 'close'
+ * @returns Command bytes, or null if not available
+ */
+export function getCableTriggerCommand(mode: 'open' | 'close'): Uint8Array | null {
+  return cableTriggerCommands[mode] || null;
+}
+
+/**
+ * Get resistance experience command.
+ *
+ * @experimental — register validated in voltra-private PR #11 but not yet
+ * validated end-to-end on-device. The protocol bytes are correct; the
+ * device-side behavior may produce side effects not yet documented.
+ *
+ * @param mode 'intense' or 'standard'
+ * @returns Command bytes, or null if not available
+ */
+export function getResistanceExperienceCommand(mode: 'intense' | 'standard'): Uint8Array | null {
+  return resistanceExperienceCommands[mode] || null;
 }

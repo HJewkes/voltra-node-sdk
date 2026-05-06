@@ -403,10 +403,10 @@ describe('decodeNotification', () => {
     expect(result!.type).toBe('inProgress');
   });
 
-  it('falls back to rep_boundary for truncated perRep frames (decode fails)', () => {
+  it('falls back to unknown for truncated perRep frames (decode fails)', () => {
     // Build a buffer that matches the perRep sub-type but is too short for
-    // typed decoding — verifies the decoder still emits the legacy
-    // rep_boundary fallback so 0.5.0 onRepBoundary listeners keep firing.
+    // typed decoding. 0.6.0 surfaces this as 'unknown' rather than the legacy
+    // payload-less rep_boundary downgrade.
     const buffer = createVendorSubTypeBuffer(VendorMessages.subTypes.perRep, 14);
     // Truncate below frameLength.
     const short = buffer.slice(0, 14);
@@ -414,17 +414,17 @@ describe('decodeNotification', () => {
     const result = decodeNotification(short);
 
     expect(result).not.toBeNull();
-    expect(result!.type).toBe('rep_boundary');
+    expect(result!.type).toBe('unknown');
   });
 
-  it('falls back to set_boundary for truncated inProgress frames (decode fails)', () => {
+  it('falls back to unknown for truncated inProgress frames (decode fails)', () => {
     const buffer = createVendorSubTypeBuffer(VendorMessages.subTypes.inProgress, 14);
     const short = buffer.slice(0, 14);
 
     const result = decodeNotification(short);
 
     expect(result).not.toBeNull();
-    expect(result!.type).toBe('set_boundary');
+    expect(result!.type).toBe('unknown');
   });
 
   it('decodes status update to device_status result', () => {
@@ -903,6 +903,40 @@ describe('decodeNotification – settings_update', () => {
     expect(result!.type).toBe('settings_update');
     if (result?.type === 'settings_update') {
       expect(result.settings.trainingMode).toBeUndefined();
+    }
+  });
+
+  it('decodes damperLevel from settings_update (paramId 0x0351, uint8)', () => {
+    // 0x0351 stored little-endian = '5103'. uint8 value path (not in
+    // Uint16ParamIds), opcode 0xc7 per phase-5 Block F.
+    const buffer = createSettingsUpdateBuffer([
+      { paramIdHex: '5103', value: 7 }, // damper level 7 (UI displays "8")
+    ]);
+
+    const result = decodeNotification(buffer);
+
+    expect(result).not.toBeNull();
+    expect(result!.type).toBe('settings_update');
+    if (result?.type === 'settings_update') {
+      expect(result.settings.damperLevel).toBe(7);
+    }
+  });
+
+  it('decodes damperLevel alongside other params', () => {
+    const buffer = createSettingsUpdateBuffer([
+      { paramIdHex: ParamIdHex.BASE_WEIGHT, value: 100 },
+      { paramIdHex: '5103', value: 0 }, // damper level 0 (UI displays "1")
+      { paramIdHex: ParamIdHex.CHAINS, value: 25 },
+    ]);
+
+    const result = decodeNotification(buffer);
+
+    expect(result).not.toBeNull();
+    expect(result!.type).toBe('settings_update');
+    if (result?.type === 'settings_update') {
+      expect(result.settings.baseWeight).toBe(100);
+      expect(result.settings.damperLevel).toBe(0);
+      expect(result.settings.chains).toBe(25);
     }
   });
 });

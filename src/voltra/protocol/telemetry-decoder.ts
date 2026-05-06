@@ -25,6 +25,19 @@ import type { DeviceSettings } from './types';
 import type { PerRepEvent, SummaryEvent, PreSummaryEvent, InProgressEvent } from '../../sdk/types';
 
 // =============================================================================
+// Param ID constants
+// =============================================================================
+
+/**
+ * Param ID for damperLevel (0x0351, stored little-endian as `5103`).
+ *
+ * Phase-5 Block F (handoff 2026-05-06) identified damperLevel as one of the
+ * ~9 registers in the settingsUpdate curated subset. Hardcoded here pending
+ * a future regen sync that promotes it into `protocol.telemetry.paramIds`.
+ */
+const DAMPER_LEVEL_PARAM_ID_HEX = '5103';
+
+// =============================================================================
 // Byte Parsing Helpers
 // =============================================================================
 
@@ -155,11 +168,13 @@ export function identifyMessageType(data: Uint8Array): MessageType {
 
 /**
  * Result of decoding a telemetry notification.
+ *
+ * 0.6.0 dropped the legacy `'rep_boundary'` / `'set_boundary'` variants —
+ * vendor-frame decode failures now collapse into `'unknown'` rather than
+ * downgrading to the payload-less boundary types.
  */
 export type DecodeResult =
   | { type: 'frame'; frame: TelemetryFrame }
-  | { type: 'rep_boundary' } // Legacy payload-less rep boundary
-  | { type: 'set_boundary' } // Legacy payload-less set boundary (inProgress alias)
   | { type: 'perRep'; event: PerRepEvent } // Typed perRep frame (0.6.0+)
   | { type: 'summary'; event: SummaryEvent } // Typed end-of-set summary (0.6.0+)
   | { type: 'preSummary'; event: PreSummaryEvent } // Typed pre-summary (0.6.0+)
@@ -385,6 +400,11 @@ function decodeSettingsUpdate(data: Uint8Array): DecodeResult {
         : undefined;
     } else if (paramIdHex === ParamIdHex.INVERSE_CHAINS) {
       settings.inverseChains = value;
+    } else if (paramIdHex === DAMPER_LEVEL_PARAM_ID_HEX) {
+      // damperLevel uses uint8 value (opcode 0xc7). Phase-5 Block F
+      // confirmed damperLevel is one of the ~9 registers reflected in the
+      // settingsUpdate curated subset.
+      settings.damperLevel = value;
     }
   }
 
@@ -442,16 +462,16 @@ export function decodeNotification(data: Uint8Array): DecodeResult {
     }
 
     case 'vendor_per_rep': {
-      // Decoder remains pure; the dispatcher fans out to legacy onRepBoundary
-      // for backward-compat with 0.5.0 consumers. If decode fails, fall back
-      // to the payload-less rep_boundary so legacy listeners still fire.
+      // 0.6.0 dropped the legacy rep_boundary fallback. Truncated or otherwise
+      // unparseable vendor frames now surface as 'unknown' rather than silently
+      // downgrading.
       const event = decodeVendorPerRep(data);
-      return event ? { type: 'perRep', event } : { type: 'rep_boundary' };
+      return event ? { type: 'perRep', event } : { type: 'unknown', data };
     }
 
     case 'vendor_in_progress': {
       const event = decodeVendorInProgress(data);
-      return event ? { type: 'inProgress', event } : { type: 'set_boundary' };
+      return event ? { type: 'inProgress', event } : { type: 'unknown', data };
     }
 
     case 'vendor_summary': {

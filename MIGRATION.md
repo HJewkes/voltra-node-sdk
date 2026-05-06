@@ -2,6 +2,139 @@
 
 Breaking changes and migration steps for consumers upgrading to the latest version of `@voltras/node-sdk`.
 
+## Migrating from 0.5.x to 0.6.0
+
+### `onRepBoundary` removed — use `onPerRep` instead
+
+The payload-less `onRepBoundary` listener has been removed. The replacement
+`onPerRep` callback receives a typed event payload with motion phase, frame
+counter, set counter, rep count, and target weight.
+
+**Before (0.5.x):**
+
+```typescript
+client.onRepBoundary(() => {
+  repCount++;
+  playRepSound();
+});
+```
+
+**After (0.6.0):**
+
+```typescript
+client.onPerRep((event) => {
+  // event.phase: 'pull' | 'return'
+  // event.repCount, event.setCounter, event.frameCounter, event.targetWeightTenths
+  if (event.phase === 'pull') {
+    repCount++;
+    playRepSound();
+  }
+});
+```
+
+`onPerRep` fires twice per rep (pull start + return start). Filter on
+`event.phase === 'pull'` if you only want a single per-rep edge.
+
+---
+
+### `onSetBoundary` removed — use `onInProgress` instead
+
+The payload-less `onSetBoundary` listener has been removed. The replacement
+`onInProgress` callback fires on the vendor `inProgress` heartbeat (~1 Hz)
+and carries a typed payload with peak/current force, velocity, and target
+weight.
+
+**Before (0.5.x):**
+
+```typescript
+client.onSetBoundary(() => {
+  logHeartbeat();
+});
+```
+
+**After (0.6.0):**
+
+```typescript
+client.onInProgress((event) => {
+  // event.peakForceTenths, event.currentForceTenths,
+  // event.velocityCmPerSec, event.targetWeightTenths, event.raw
+  logHeartbeat(event.peakForceTenths);
+});
+```
+
+**Throttling note:** `onInProgress` fires at the same ~1 Hz rate as the legacy
+`onSetBoundary`. If you only care about the first beat, gate on a flag in your
+own state. Latency-sensitive code paths should prefer `onSummary` / `onPerRep`.
+
+---
+
+### `'repBoundary'` / `'setBoundary'` variants removed from `VoltraClientEvent`
+
+If you used the unified `client.subscribe()` event listener, the
+`'repBoundary'` and `'setBoundary'` variants no longer exist on the
+discriminated union. Replace them with `'perRep'` and `'inProgress'`:
+
+```typescript
+client.subscribe((event) => {
+  switch (event.type) {
+    case 'perRep':
+      // event.event: PerRepEvent
+      break;
+    case 'inProgress':
+      // event.event: InProgressEvent
+      break;
+    case 'summary':
+      // event.event: SummaryEvent
+      break;
+    case 'preSummary':
+      // event.event: PreSummaryEvent
+      break;
+    // ... other variants unchanged
+  }
+});
+```
+
+---
+
+### `MessageType` string rename
+
+`identifyMessageType()` (low-level decoder API) returns renamed strings for
+the vendor sub-type frames. Only matters if you call `identifyMessageType()`
+or pattern-match on `DecodeResult.type` directly:
+
+| 0.5.x                                   | 0.6.0                       |
+| --------------------------------------- | --------------------------- |
+| `'rep_summary'`                         | `'vendor_per_rep'`          |
+| `'set_summary'`                         | `'vendor_in_progress'`      |
+| (didn't exist)                          | `'vendor_summary'`          |
+| (didn't exist)                          | `'vendor_pre_summary'`      |
+| `DecodeResult` `'rep_boundary'` variant | merged into `'unknown'`     |
+| `DecodeResult` `'set_boundary'` variant | merged into `'unknown'`     |
+
+The high-level `VoltraClient` API never surfaced these strings, so most
+consumers can ignore this change.
+
+---
+
+### New imports for typed vendor events
+
+```typescript
+import {
+  VendorMessages,
+  VendorSchemaVersion,
+  decodeVendorPerRep,
+  decodeVendorSummary,
+  decodeVendorPreSummary,
+  decodeVendorInProgress,
+  type PerRepEvent,
+  type SummaryEvent,
+  type PreSummaryEvent,
+  type InProgressEvent,
+} from '@voltras/node-sdk';
+```
+
+---
+
 ## Breaking Changes
 
 ### `VoltraDevice` class removed from public exports

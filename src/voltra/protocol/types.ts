@@ -373,4 +373,9 @@ export interface DeviceSettings {
   trainingMode?: TrainingMode;
   /** Inverse chains setting */
   inverseChains?: number;
+  /**
+   * Damper level (protocol value 0-9; UI displays N+1).
+   * Reflected when paramId 0x0351 is present in a settings_update notification.
+   */
+  damperLevel?: number;
 }

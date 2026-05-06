@@ -189,6 +189,11 @@ export {
   getAvailableIsokineticEccSpeedLimits,
   getAvailableIsokineticEccConstWeights,
   getAvailableIsokineticEccOverloadWeights,
+  getTelemetryRateCommand,
+  getTelemetrySubscribeCommand,
+  getCableTriggerCommand,
+  getResistanceExperienceCommand,
+  getAvailableTelemetryRates,
 } from './voltra/protocol/commands';
 
 // =============================================================================

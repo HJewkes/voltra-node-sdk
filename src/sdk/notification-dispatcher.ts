@@ -15,32 +15,19 @@ import type { PerRepEvent, SummaryEvent, PreSummaryEvent, InProgressEvent } from
 /**
  * Callbacks for each notification type.
  *
- * The four typed vendor-frame callbacks are optional so existing 0.5.x
- * consumers and test mocks don't need to implement them. They fan out
- * IN ADDITION to the legacy `onRepBoundary` / `onSetBoundary` callbacks
- * for backward compatibility.
+ * 0.6.0 dropped the legacy `onRepBoundary` / `onSetBoundary` payload-less
+ * callbacks. The four vendor-frame events surface exclusively through their
+ * typed counterparts (`onPerRep`, `onInProgress`, `onSummary`, `onPreSummary`).
  */
 export interface NotificationCallbacks {
   onFrame: (frame: TelemetryFrame) => void;
-  /**
-   * Legacy payload-less rep-boundary callback. Fires for every `perRep`
-   * frame (i.e. twice per rep) alongside `onPerRep`.
-   */
-  onRepBoundary: () => void;
-  /**
-   * @deprecated Fires on every `inProgress` heartbeat (~1 Hz) alongside
-   * `onInProgress` for backward compatibility. Prefer `onInProgress` for
-   * typed payload access. Removal deferred to 0.7.0.
-   */
-  onSetBoundary: () => void;
   onModeConfirmed: (mode: TrainingMode) => void;
   onSettingsUpdate: (settings: DeviceSettings) => void;
   onBatteryUpdate: (battery: number) => void;
-  // Typed vendor-frame callbacks (0.6.0+, optional)
-  onPerRep?: (event: PerRepEvent) => void;
-  onSummary?: (event: SummaryEvent) => void;
-  onPreSummary?: (event: PreSummaryEvent) => void;
-  onInProgress?: (event: InProgressEvent) => void;
+  onPerRep: (event: PerRepEvent) => void;
+  onSummary: (event: SummaryEvent) => void;
+  onPreSummary: (event: PreSummaryEvent) => void;
+  onInProgress: (event: InProgressEvent) => void;
 }
 
 /**
@@ -59,32 +46,20 @@ export function createNotificationHandler(callbacks: NotificationCallbacks): Not
         callbacks.onFrame(result.frame);
         break;
 
-      case 'rep_boundary':
-        callbacks.onRepBoundary();
-        break;
-
-      case 'set_boundary':
-        callbacks.onSetBoundary();
-        break;
-
       case 'perRep':
-        callbacks.onPerRep?.(result.event);
-        // Legacy fan-out preserves 0.5.0 onRepBoundary semantics.
-        callbacks.onRepBoundary();
+        callbacks.onPerRep(result.event);
         break;
 
       case 'inProgress':
-        callbacks.onInProgress?.(result.event);
-        // Legacy fan-out preserves 0.5.0 onSetBoundary semantics.
-        callbacks.onSetBoundary();
+        callbacks.onInProgress(result.event);
         break;
 
       case 'summary':
-        callbacks.onSummary?.(result.event);
+        callbacks.onSummary(result.event);
         break;
 
       case 'preSummary':
-        callbacks.onPreSummary?.(result.event);
+        callbacks.onPreSummary(result.event);
         break;
 
       case 'mode_confirmation':

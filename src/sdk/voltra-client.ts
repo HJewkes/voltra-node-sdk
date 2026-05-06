@@ -67,6 +67,11 @@ import {
   getAvailableIsokineticEccSpeedLimits,
   getAvailableIsokineticEccConstWeights,
   getAvailableIsokineticEccOverloadWeights,
+  getTelemetryRateCommand,
+  getAvailableTelemetryRates,
+  getTelemetrySubscribeCommand,
+  getCableTriggerCommand,
+  getResistanceExperienceCommand,
 } from '../voltra/protocol/commands';
 import { TrainingMode } from '../voltra/protocol/constants';
 import { delay } from '../shared/utils';
@@ -87,8 +92,6 @@ import type {
   VoltraClientEvent,
   VoltraClientEventListener,
   FrameListener,
-  RepBoundaryListener,
-  SetBoundaryListener,
   ModeConfirmedListener,
   SettingsUpdateListener,
   BatteryUpdateListener,
@@ -136,8 +139,6 @@ export class VoltraClient {
   // Event listeners
   private listeners: Set<VoltraClientEventListener> = new Set();
   private frameListeners: Set<FrameListener> = new Set();
-  private repBoundaryListeners: Set<RepBoundaryListener> = new Set();
-  private setBoundaryListeners: Set<SetBoundaryListener> = new Set();
   private perRepListeners: Set<PerRepListener> = new Set();
   private summaryListeners: Set<SummaryListener> = new Set();
   private preSummaryListeners: Set<PreSummaryListener> = new Set();
@@ -536,8 +537,8 @@ export class VoltraClient {
    * Note: the underlying value is 0-9; the Voltra UI displays this as N+1
    * (i.e. level 0 -> "1" in the app).
    *
-   * Note: `client.settings` does not currently reflect this value; the device
-   * does not echo it in settings-update notifications as of protocol v0.5.0.
+   * Reflected in `client.settings.damperLevel` once the device emits the next
+   * `settingsUpdate` notification (paramId 0x0351).
    *
    * @param level Damper level (0-9)
    */
@@ -827,6 +828,145 @@ export class VoltraClient {
   }
 
   // ===========================================================================
+  // QoL Setters (added in 0.6.0, @experimental)
+  // ===========================================================================
+  //
+  // The four setters below were typed in voltra-private's regen but were not
+  // validated end-to-end on-device during phase-5 Block F (only the underlying
+  // register defs were validated in voltra-private PR #11). The protocol bytes
+  // are correct; device-side behavior may produce side effects not yet
+  // documented. File an issue if observed behavior differs from expectation.
+
+  /**
+   * Set telemetry frame emission rate.
+   *
+   * Settings persist GLOBALLY across mode switches. Resolves on adapter.write
+   * completion only.
+   *
+   * @experimental — register validated in voltra-private PR #11 but not yet
+   * validated end-to-end on-device. The protocol bytes are correct; the
+   * device-side behavior may produce side effects not yet documented. File
+   * an issue if observed behavior differs from expectation.
+   *
+   * @param hz Telemetry frame emission rate in Hz
+   */
+  async setTelemetryRate(hz: number): Promise<void> {
+    this.ensureConnected();
+
+    const cmd = getTelemetryRateCommand(hz);
+    if (!cmd) {
+      throw new InvalidSettingError('telemetryRate', hz, getAvailableTelemetryRates());
+    }
+
+    try {
+      await this.adapter!.write(cmd);
+    } catch (e) {
+      throw new CommandError(
+        `Failed to set telemetry rate: ${this.getErrorMessage(e)}`,
+        'setTelemetryRate'
+      );
+    }
+  }
+
+  /**
+   * Set telemetry subscription state.
+   *
+   * Settings persist GLOBALLY across mode switches. Resolves on adapter.write
+   * completion only.
+   *
+   * @experimental — register validated in voltra-private PR #11 but not yet
+   * validated end-to-end on-device. The protocol bytes are correct; the
+   * device-side behavior may produce side effects not yet documented. File
+   * an issue if observed behavior differs from expectation.
+   *
+   * @param mode 'none' or 'all'
+   */
+  async setTelemetrySubscribe(mode: 'none' | 'all'): Promise<void> {
+    this.ensureConnected();
+
+    const cmd = getTelemetrySubscribeCommand(mode);
+    if (!cmd) {
+      throw new InvalidSettingError('telemetrySubscribe', mode, ['none', 'all']);
+    }
+
+    try {
+      await this.adapter!.write(cmd);
+    } catch (e) {
+      throw new CommandError(
+        `Failed to set telemetry subscribe: ${this.getErrorMessage(e)}`,
+        'setTelemetrySubscribe'
+      );
+    }
+  }
+
+  /**
+   * Set cable trigger state.
+   *
+   * Settings persist GLOBALLY across mode switches. Resolves on adapter.write
+   * completion only.
+   *
+   * @experimental — register validated in voltra-private PR #11 but not yet
+   * validated end-to-end on-device. The protocol bytes are correct; the
+   * device-side behavior may produce side effects not yet documented. File
+   * an issue if observed behavior differs from expectation.
+   *
+   * @param mode 'open' or 'close'
+   */
+  async setCableTrigger(mode: 'open' | 'close'): Promise<void> {
+    this.ensureConnected();
+
+    const cmd = getCableTriggerCommand(mode);
+    if (!cmd) {
+      throw new InvalidSettingError('cableTrigger', mode, ['open', 'close']);
+    }
+
+    try {
+      await this.adapter!.write(cmd);
+    } catch (e) {
+      throw new CommandError(
+        `Failed to set cable trigger: ${this.getErrorMessage(e)}`,
+        'setCableTrigger'
+      );
+    }
+  }
+
+  /**
+   * Set resistance experience preset.
+   *
+   * Settings persist GLOBALLY across mode switches. Resolves on adapter.write
+   * completion only.
+   *
+   * @experimental — register validated in voltra-private PR #11 but not yet
+   * validated end-to-end on-device. The protocol bytes are correct; the
+   * device-side behavior may produce side effects not yet documented. File
+   * an issue if observed behavior differs from expectation.
+   *
+   * @param mode 'intense' or 'standard'
+   */
+  async setResistanceExperience(mode: 'intense' | 'standard'): Promise<void> {
+    this.ensureConnected();
+
+    const cmd = getResistanceExperienceCommand(mode);
+    if (!cmd) {
+      throw new InvalidSettingError('resistanceExperience', mode, ['intense', 'standard']);
+    }
+
+    try {
+      await this.adapter!.write(cmd);
+    } catch (e) {
+      throw new CommandError(
+        `Failed to set resistance experience: ${this.getErrorMessage(e)}`,
+        'setResistanceExperience'
+      );
+    }
+  }
+
+  /** Get available telemetry rates (Hz). @experimental */
+  getAvailableTelemetryRates(): number[] {
+    return getAvailableTelemetryRates();
+  }
+
+  // ===========================================================================
   // Recording
   // ===========================================================================
 
@@ -954,38 +1094,10 @@ export class VoltraClient {
   }
 
   /**
-   * Subscribe to rep boundary events.
-   * Called when the device signals a rep completion (end of concentric or eccentric phase).
-   *
-   * @param listener Rep boundary listener
-   * @returns Unsubscribe function
-   */
-  onRepBoundary(listener: RepBoundaryListener): () => void {
-    this.repBoundaryListeners.add(listener);
-    return () => this.repBoundaryListeners.delete(listener);
-  }
-
-  /**
-   * Subscribe to set boundary events.
-   *
-   * @deprecated Fires on every `inProgress` heartbeat (~1 Hz) — same payload-less
-   * semantics as 0.5.0. Prefer {@link onInProgress} for typed payload access.
-   * Removal deferred to 0.7.0.
-   *
-   * @param listener Set boundary listener
-   * @returns Unsubscribe function
-   */
-  onSetBoundary(listener: SetBoundaryListener): () => void {
-    this.setBoundaryListeners.add(listener);
-    return () => this.setBoundaryListeners.delete(listener);
-  }
-
-  /**
    * Subscribe to typed `perRep` frame events. Fires twice per rep —
    * pull start (motionPhase 1) and return start (motionPhase 2).
    *
-   * The legacy {@link onRepBoundary} callback continues to fire alongside
-   * this typed callback for backward compatibility.
+   * Replaces the 0.5.0 `onRepBoundary` listener (removed in 0.6.0).
    *
    * @param listener perRep listener
    * @returns Unsubscribe function
@@ -1029,8 +1141,7 @@ export class VoltraClient {
    * Subscribe to typed `inProgress` heartbeat events. Fires ~1 Hz during
    * active sets — use sparingly in latency-sensitive code paths.
    *
-   * The legacy {@link onSetBoundary} callback continues to fire alongside
-   * this typed callback for backward compatibility.
+   * Replaces the 0.5.0 `onSetBoundary` listener (removed in 0.6.0).
    *
    * @param listener inProgress listener
    * @returns Unsubscribe function
@@ -1099,8 +1210,6 @@ export class VoltraClient {
     // Clear all listeners
     this.listeners.clear();
     this.frameListeners.clear();
-    this.repBoundaryListeners.clear();
-    this.setBoundaryListeners.clear();
     this.perRepListeners.clear();
     this.summaryListeners.clear();
     this.preSummaryListeners.clear();
@@ -1144,14 +1253,6 @@ export class VoltraClient {
       onFrame: (frame) => {
         this.emit({ type: 'frame', frame });
         this.frameListeners.forEach((listener) => listener(frame));
-      },
-      onRepBoundary: () => {
-        this.emit({ type: 'repBoundary' });
-        this.repBoundaryListeners.forEach((listener) => listener());
-      },
-      onSetBoundary: () => {
-        this.emit({ type: 'setBoundary' });
-        this.setBoundaryListeners.forEach((listener) => listener());
       },
       onPerRep: (event) => {
         this.emit({ type: 'perRep', event });
@@ -1324,6 +1425,9 @@ export class VoltraClient {
     }
     if (deviceSettings.trainingMode !== undefined) {
       this._settings.mode = deviceSettings.trainingMode;
+    }
+    if (deviceSettings.damperLevel !== undefined) {
+      this._settings.damperLevel = deviceSettings.damperLevel;
     }
   }
 }
