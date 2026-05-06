@@ -6,11 +6,12 @@
  * function coverage on voltra-manager.ts above the 60% global threshold
  * without changing production semantics.
  *
- * Note on web-platform handoff: the `platform === 'web' && this.scanAdapter`
- * branch is exercised here by injecting a custom adapterFactory and
- * pre-seeding scanAdapter via a scan() call before connect. The web
- * BLE peer module isn't loaded — only the boolean flag matters for
- * the handoff branch.
+ * Note on scan-adapter handoff: the `this.scanAdapter` reuse branch in
+ * `connect()` is platform-agnostic. On web the scanAdapter holds a
+ * BluetoothDevice reference from requestDevice(); on node it holds the
+ * selectedDevice populated during scan. Both must be reused on the first
+ * connect after a scan or `adapter.connect()` will throw. The block
+ * below exercises both platforms.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { BaseBLEAdapter } from '../../bluetooth/adapters/base';
@@ -254,6 +255,57 @@ describe('VoltraManager', () => {
       const clientB = await flushAndAwait(webManager.connect(deviceB));
       expect(clientB.getAdapter()).not.toBe(scanAdapter);
       expect(adapters.length).toBe(2);
+    });
+  });
+
+  // Regression tests for the bug introduced in 0.4.2 where the scan-adapter
+  // handoff was scoped to `platform === 'web'`. On node, the freshly-built
+  // factory adapter has no `selectedDevice` (only the scan callback in
+  // node.ts populates it), so `adapter.connect(deviceId)` would throw
+  // "No device selected. Call scan() first." every time. Removing the
+  // platform gate restores the working semantics: reuse scanAdapter for
+  // the first post-scan connect on every platform.
+  describe('node-platform scan-adapter reuse (regression: 0.4.2 -> 0.6.1)', () => {
+    it('scan + connect on node reuses scanAdapter (factory called once)', async () => {
+      // `manager` from the outer beforeEach is configured with platform='node'.
+      await flushAndAwait(manager.scan({ timeout: 100, filterVoltra: false }));
+      expect(createdAdapters.length).toBe(1);
+
+      const client = await flushAndAwait(manager.connect(deviceA));
+
+      // Factory still called exactly once — the scanAdapter was reused.
+      expect(createdAdapters.length).toBe(1);
+      expect(client.getAdapter()).toBe(createdAdapters[0]);
+      // After handoff scanAdapter is nulled.
+      expect(manager.getAdapter()).toBeNull();
+    });
+
+    it('second connect without a fresh scan builds a new adapter', async () => {
+      await flushAndAwait(manager.scan({ timeout: 100, filterVoltra: false }));
+      await flushAndAwait(manager.connect(deviceA));
+      expect(createdAdapters.length).toBe(1);
+
+      // No re-scan: connecting to a different device must allocate a new adapter.
+      const clientB = await flushAndAwait(manager.connect(deviceB));
+
+      expect(createdAdapters.length).toBe(2);
+      expect(clientB.getAdapter()).toBe(createdAdapters[1]);
+    });
+
+    it('scan + connect + scan + connect calls factory exactly twice', async () => {
+      await flushAndAwait(manager.scan({ timeout: 100, filterVoltra: false }));
+      await flushAndAwait(manager.connect(deviceA));
+      // First scan adapter consumed by the first connect.
+      expect(createdAdapters.length).toBe(1);
+
+      // Second scan rebuilds scanAdapter (factory call #2)…
+      await flushAndAwait(manager.scan({ timeout: 100, filterVoltra: false }));
+      expect(createdAdapters.length).toBe(2);
+
+      // …and the next connect reuses it instead of allocating a third adapter.
+      const clientB = await flushAndAwait(manager.connect(deviceB));
+      expect(createdAdapters.length).toBe(2);
+      expect(clientB.getAdapter()).toBe(createdAdapters[1]);
     });
   });
 });
