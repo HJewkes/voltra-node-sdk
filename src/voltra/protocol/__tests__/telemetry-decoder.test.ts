@@ -134,20 +134,36 @@ describe('identifyMessageType', () => {
     expect(result).toBe('telemetry_stream');
   });
 
-  it('identifies rep summary messages (perRep vendor sub-type)', () => {
+  it('identifies perRep vendor sub-type messages', () => {
     const buffer = createVendorSubTypeBuffer(VendorMessages.subTypes.perRep);
 
     const result = identifyMessageType(buffer);
 
-    expect(result).toBe('rep_summary');
+    expect(result).toBe('vendor_per_rep');
   });
 
-  it('identifies set summary messages (inProgress vendor sub-type)', () => {
+  it('identifies inProgress vendor sub-type messages', () => {
     const buffer = createVendorSubTypeBuffer(VendorMessages.subTypes.inProgress);
 
     const result = identifyMessageType(buffer);
 
-    expect(result).toBe('set_summary');
+    expect(result).toBe('vendor_in_progress');
+  });
+
+  it('identifies summary vendor sub-type messages', () => {
+    const buffer = createVendorSubTypeBuffer(VendorMessages.subTypes.summary);
+
+    const result = identifyMessageType(buffer);
+
+    expect(result).toBe('vendor_summary');
+  });
+
+  it('identifies preSummary vendor sub-type messages', () => {
+    const buffer = createVendorSubTypeBuffer(VendorMessages.subTypes.preSummary);
+
+    const result = identifyMessageType(buffer);
+
+    expect(result).toBe('vendor_pre_summary');
   });
 
   it('identifies status update messages (statusBattery 2-byte header)', () => {
@@ -369,19 +385,43 @@ describe('decodeNotification', () => {
     }
   });
 
-  it('decodes rep summary to rep_boundary result', () => {
+  it('decodes perRep vendor frames to typed perRep result', () => {
     const buffer = createVendorSubTypeBuffer(VendorMessages.subTypes.perRep);
 
     const result = decodeNotification(buffer);
 
     expect(result).not.toBeNull();
-    expect(result!.type).toBe('rep_boundary');
+    expect(result!.type).toBe('perRep');
   });
 
-  it('decodes set summary to set_boundary result', () => {
+  it('decodes inProgress vendor frames to typed inProgress result', () => {
     const buffer = createVendorSubTypeBuffer(VendorMessages.subTypes.inProgress);
 
     const result = decodeNotification(buffer);
+
+    expect(result).not.toBeNull();
+    expect(result!.type).toBe('inProgress');
+  });
+
+  it('falls back to rep_boundary for truncated perRep frames (decode fails)', () => {
+    // Build a buffer that matches the perRep sub-type but is too short for
+    // typed decoding — verifies the decoder still emits the legacy
+    // rep_boundary fallback so 0.5.0 onRepBoundary listeners keep firing.
+    const buffer = createVendorSubTypeBuffer(VendorMessages.subTypes.perRep, 14);
+    // Truncate below frameLength.
+    const short = buffer.slice(0, 14);
+
+    const result = decodeNotification(short);
+
+    expect(result).not.toBeNull();
+    expect(result!.type).toBe('rep_boundary');
+  });
+
+  it('falls back to set_boundary for truncated inProgress frames (decode fails)', () => {
+    const buffer = createVendorSubTypeBuffer(VendorMessages.subTypes.inProgress, 14);
+    const short = buffer.slice(0, 14);
+
+    const result = decodeNotification(short);
 
     expect(result).not.toBeNull();
     expect(result!.type).toBe('set_boundary');
@@ -612,14 +652,14 @@ describe('practical scenarios', () => {
       { buffer: createTelemetryBuffer({ sequence: 2 }), expectedType: 'telemetry_stream' },
       {
         buffer: createVendorSubTypeBuffer(VendorMessages.subTypes.perRep),
-        expectedType: 'rep_summary',
+        expectedType: 'vendor_per_rep',
       },
       { buffer: createTelemetryBuffer({ sequence: 3 }), expectedType: 'telemetry_stream' },
       { buffer: createStatusUpdateBuffer(), expectedType: 'status_update' },
       { buffer: createTelemetryBuffer({ sequence: 4 }), expectedType: 'telemetry_stream' },
       {
         buffer: createVendorSubTypeBuffer(VendorMessages.subTypes.inProgress),
-        expectedType: 'set_summary',
+        expectedType: 'vendor_in_progress',
       },
     ];
 

@@ -52,6 +52,14 @@ export {
   type ConnectByNameOptions,
   type AdapterFactory,
   type FrameListener,
+  type PerRepEvent,
+  type SummaryEvent,
+  type PreSummaryEvent,
+  type InProgressEvent,
+  type PerRepListener,
+  type SummaryListener,
+  type PreSummaryListener,
+  type InProgressListener,
   type ScanOptions,
 } from './sdk';
 
@@ -129,6 +137,10 @@ export {
   decodeNotification,
   encodeTelemetryFrame,
   identifyMessageType,
+  decodeVendorPerRep,
+  decodeVendorSummary,
+  decodeVendorPreSummary,
+  decodeVendorInProgress,
   type DecodeResult,
   type MessageType,
 } from './voltra/protocol/telemetry-decoder';
@@ -137,12 +149,15 @@ export {
   MovementPhase,
   PhaseNames,
   MessageTypes,
+  VendorMessages,
+  matchesVendorSubType,
   TelemetryOffsets,
   ParameterId,
   ParameterNames,
   TrainingMode,
   TrainingModeNames,
   VALID_TRAINING_MODES,
+  VendorSchemaVersion,
 } from './voltra/protocol/constants';
 
 // =============================================================================

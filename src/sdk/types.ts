@@ -9,7 +9,7 @@ import type { DiscoveredDevice } from '../bluetooth/models/device';
 import type { TelemetryFrame } from '../voltra/models/telemetry';
 import type { VoltraConnectionState } from '../voltra/models/connection';
 import type { VoltraDeviceSettings, VoltraRecordingState } from '../voltra/models/device';
-import type { TrainingMode } from '../voltra/protocol/constants';
+import type { TrainingMode, VendorSchemaVersion } from '../voltra/protocol/constants';
 import type { DeviceSettings } from '../voltra/protocol/types';
 
 /**
@@ -71,9 +71,14 @@ export type VoltraClientEvent =
   | { type: 'recordingStateChanged'; state: VoltraRecordingState }
   // Telemetry events
   | { type: 'frame'; frame: TelemetryFrame }
-  // Workout boundary events
+  // Workout boundary events (legacy, payload-less; prefer typed vendor events below)
   | { type: 'repBoundary' }
   | { type: 'setBoundary' }
+  // Typed vendor-frame events (0.6.0+)
+  | { type: 'perRep'; event: PerRepEvent }
+  | { type: 'summary'; event: SummaryEvent }
+  | { type: 'preSummary'; event: PreSummaryEvent }
+  | { type: 'inProgress'; event: InProgressEvent }
   // Device notification events
   | { type: 'modeConfirmed'; mode: TrainingMode }
   | { type: 'settingsUpdate'; settings: DeviceSettings }
@@ -115,6 +120,105 @@ export type SettingsUpdateListener = (settings: DeviceSettings) => void;
  * Battery update listener (called when device reports battery level).
  */
 export type BatteryUpdateListener = (battery: number) => void;
+
+// =============================================================================
+// Typed vendor-frame events (0.6.0+)
+//
+// Field offsets validated 2026-05-06 on VTR-212006 (voltra-private phase-5
+// captures). Backward-compatible with 0.5.0: existing onRepBoundary /
+// onSetBoundary callbacks keep firing alongside the typed perRep / inProgress
+// events.
+// =============================================================================
+
+/**
+ * Payload of a vendor `perRep` frame (74 B). Fires twice per rep —
+ * pull start (motionPhase 1) and return start (motionPhase 2).
+ */
+export interface PerRepEvent {
+  /** 'pull' = motionPhase 1 (concentric start); 'return' = motionPhase 2 (eccentric start). */
+  phase: 'pull' | 'return';
+  /** Cumulative frame counter within the set (frame[14], uint8). */
+  frameCounter: number;
+  /** Set counter (frame[15], uint8). */
+  setCounter: number;
+  /** Cumulative rep counter within the set (frame[17], uint8). */
+  repCount: number;
+  /**
+   * Target weight in tenths of pounds (frame[19..20], uint16 LE).
+   * baseWeight × 10 in weight mode; 0 in band/damper/isokinetic.
+   */
+  targetWeightTenths: number;
+}
+
+/**
+ * Payload of a vendor `summary` frame (140 B, end-of-set).
+ *
+ * Each `schemaVersion` (1=weight, 2=band, 3=damper, 4=isokinetic) carries a
+ * different mode-specific aggregate field map at frame offset 18+. Only the
+ * universal `setCounter` / `repCount` fields are decoded — consume `raw` for
+ * mode-specific fields.
+ */
+export interface SummaryEvent {
+  /** Schema version: 1=weight, 2=band, 3=damper, 4=isokinetic. */
+  schemaVersion: VendorSchemaVersion;
+  /** Set counter (frame[14], uint8). */
+  setCounter: number;
+  /** Rep count (frame[16..17], uint16 LE). */
+  repCount: number;
+  /** Raw frame bytes for downstream decoding of mode-specific aggregate fields. */
+  raw: Uint8Array;
+}
+
+/**
+ * Payload of a vendor `preSummary` frame (110 B). Fires ~3s before the final
+ * rep with early access to `repDurationMs` and `repCount` before the device
+ * emits the formal `summary` frame.
+ */
+export interface PreSummaryEvent {
+  /** Schema version: 1=weight, 2=band, 3=damper, 4=isokinetic. */
+  schemaVersion: VendorSchemaVersion;
+  /** Target weight in tenths of pounds (frame[16..17], uint16 LE). */
+  targetWeightTenths: number;
+  /** Rep count (frame[26..27], uint16 LE). */
+  repCount: number;
+  /** Duration of the final rep in milliseconds (frame[96..99], uint32 LE). */
+  repDurationMs: number;
+  /** Raw frame bytes for downstream decoding. */
+  raw: Uint8Array;
+}
+
+/**
+ * Payload of a vendor `inProgress` frame (79 B, ~1 Hz heartbeat during
+ * active sets).
+ *
+ * Field offsets validated empirically (handoff 2026-05-06) but not yet
+ * baked into voltra-private's telemetry-config. Hardcoded in the decoder
+ * pending a future regen sync.
+ */
+export interface InProgressEvent {
+  /** Peak force during current rep, tenths of pounds (frame[17..18], uint16 LE). */
+  peakForceTenths: number;
+  /** Average / current force, tenths of pounds (frame[25..26], uint16 LE). */
+  currentForceTenths: number;
+  /** Velocity in cm/s — magnitude only (frame[28..29], uint16 LE). */
+  velocityCmPerSec: number;
+  /** Target weight in tenths of pounds (frame[49..52], uint32 LE). */
+  targetWeightTenths: number;
+  /** Raw frame bytes. */
+  raw: Uint8Array;
+}
+
+/** PerRep listener (called twice per rep — pull start + return start). */
+export type PerRepListener = (event: PerRepEvent) => void;
+
+/** Summary listener (called once at end-of-set). */
+export type SummaryListener = (event: SummaryEvent) => void;
+
+/** PreSummary listener (called ~3s before the final rep). */
+export type PreSummaryListener = (event: PreSummaryEvent) => void;
+
+/** InProgress listener (called ~1 Hz during active sets). */
+export type InProgressListener = (event: InProgressEvent) => void;
 
 /**
  * State snapshot of the client.

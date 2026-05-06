@@ -92,6 +92,10 @@ import type {
   ModeConfirmedListener,
   SettingsUpdateListener,
   BatteryUpdateListener,
+  PerRepListener,
+  SummaryListener,
+  PreSummaryListener,
+  InProgressListener,
   ScanOptions,
 } from './types';
 import type { DeviceSettings } from '../voltra/protocol/types';
@@ -134,6 +138,10 @@ export class VoltraClient {
   private frameListeners: Set<FrameListener> = new Set();
   private repBoundaryListeners: Set<RepBoundaryListener> = new Set();
   private setBoundaryListeners: Set<SetBoundaryListener> = new Set();
+  private perRepListeners: Set<PerRepListener> = new Set();
+  private summaryListeners: Set<SummaryListener> = new Set();
+  private preSummaryListeners: Set<PreSummaryListener> = new Set();
+  private inProgressListeners: Set<InProgressListener> = new Set();
   private modeConfirmedListeners: Set<ModeConfirmedListener> = new Set();
   private settingsUpdateListeners: Set<SettingsUpdateListener> = new Set();
   private batteryUpdateListeners: Set<BatteryUpdateListener> = new Set();
@@ -959,7 +967,10 @@ export class VoltraClient {
 
   /**
    * Subscribe to set boundary events.
-   * Called when the device signals set completion.
+   *
+   * @deprecated Fires on every `inProgress` heartbeat (~1 Hz) — same payload-less
+   * semantics as 0.5.0. Prefer {@link onInProgress} for typed payload access.
+   * Removal deferred to 0.7.0.
    *
    * @param listener Set boundary listener
    * @returns Unsubscribe function
@@ -967,6 +978,66 @@ export class VoltraClient {
   onSetBoundary(listener: SetBoundaryListener): () => void {
     this.setBoundaryListeners.add(listener);
     return () => this.setBoundaryListeners.delete(listener);
+  }
+
+  /**
+   * Subscribe to typed `perRep` frame events. Fires twice per rep —
+   * pull start (motionPhase 1) and return start (motionPhase 2).
+   *
+   * The legacy {@link onRepBoundary} callback continues to fire alongside
+   * this typed callback for backward compatibility.
+   *
+   * @param listener perRep listener
+   * @returns Unsubscribe function
+   */
+  onPerRep(listener: PerRepListener): () => void {
+    this.perRepListeners.add(listener);
+    return () => this.perRepListeners.delete(listener);
+  }
+
+  /**
+   * Subscribe to typed end-of-set `summary` frame events. Fires once at
+   * end-of-set.
+   *
+   * Each `schemaVersion` (1=weight, 2=band, 3=damper, 4=isokinetic) carries
+   * a different mode-specific aggregate field map at frame offset 18+ — only
+   * the universal `setCounter` / `repCount` fields are decoded. Consume
+   * `event.raw` for fields beyond those two.
+   *
+   * @param listener summary listener
+   * @returns Unsubscribe function
+   */
+  onSummary(listener: SummaryListener): () => void {
+    this.summaryListeners.add(listener);
+    return () => this.summaryListeners.delete(listener);
+  }
+
+  /**
+   * Subscribe to typed `preSummary` frame events. Fires ~3s before the final
+   * rep, providing early access to `repDurationMs` and `repCount` before the
+   * device emits the formal `summary` frame.
+   *
+   * @param listener preSummary listener
+   * @returns Unsubscribe function
+   */
+  onPreSummary(listener: PreSummaryListener): () => void {
+    this.preSummaryListeners.add(listener);
+    return () => this.preSummaryListeners.delete(listener);
+  }
+
+  /**
+   * Subscribe to typed `inProgress` heartbeat events. Fires ~1 Hz during
+   * active sets — use sparingly in latency-sensitive code paths.
+   *
+   * The legacy {@link onSetBoundary} callback continues to fire alongside
+   * this typed callback for backward compatibility.
+   *
+   * @param listener inProgress listener
+   * @returns Unsubscribe function
+   */
+  onInProgress(listener: InProgressListener): () => void {
+    this.inProgressListeners.add(listener);
+    return () => this.inProgressListeners.delete(listener);
   }
 
   /**
@@ -1030,6 +1101,10 @@ export class VoltraClient {
     this.frameListeners.clear();
     this.repBoundaryListeners.clear();
     this.setBoundaryListeners.clear();
+    this.perRepListeners.clear();
+    this.summaryListeners.clear();
+    this.preSummaryListeners.clear();
+    this.inProgressListeners.clear();
     this.modeConfirmedListeners.clear();
     this.settingsUpdateListeners.clear();
     this.batteryUpdateListeners.clear();
@@ -1077,6 +1152,22 @@ export class VoltraClient {
       onSetBoundary: () => {
         this.emit({ type: 'setBoundary' });
         this.setBoundaryListeners.forEach((listener) => listener());
+      },
+      onPerRep: (event) => {
+        this.emit({ type: 'perRep', event });
+        this.perRepListeners.forEach((listener) => listener(event));
+      },
+      onSummary: (event) => {
+        this.emit({ type: 'summary', event });
+        this.summaryListeners.forEach((listener) => listener(event));
+      },
+      onPreSummary: (event) => {
+        this.emit({ type: 'preSummary', event });
+        this.preSummaryListeners.forEach((listener) => listener(event));
+      },
+      onInProgress: (event) => {
+        this.emit({ type: 'inProgress', event });
+        this.inProgressListeners.forEach((listener) => listener(event));
       },
       onModeConfirmed: (mode) => {
         this.emit({ type: 'modeConfirmed', mode });

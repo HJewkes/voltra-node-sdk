@@ -17,10 +17,12 @@ import {
   Uint16ParamIds,
   TrainingMode,
   VALID_TRAINING_MODES,
+  VendorSchemaVersion,
 } from './constants';
 import { createFrame, type TelemetryFrame } from '../models/telemetry/frame';
 import { bytesEqual, bytesToHex } from '../../shared/utils';
 import type { DeviceSettings } from './types';
+import type { PerRepEvent, SummaryEvent, PreSummaryEvent, InProgressEvent } from '../../sdk/types';
 
 // =============================================================================
 // Byte Parsing Helpers
@@ -31,6 +33,20 @@ import type { DeviceSettings } from './types';
  */
 function readUint16LE(data: Uint8Array, offset: number): number {
   return data[offset] | (data[offset + 1] << 8);
+}
+
+/**
+ * Read a little-endian uint32 from a Uint8Array.
+ */
+function readUint32LE(data: Uint8Array, offset: number): number {
+  // `>>> 0` keeps the result an unsigned 32-bit integer.
+  return (
+    (data[offset] |
+      (data[offset + 1] << 8) |
+      (data[offset + 2] << 16) |
+      (data[offset + 3] << 24)) >>>
+    0
+  );
 }
 
 /**
@@ -65,11 +81,19 @@ function writeInt16LE(data: Uint8Array, offset: number, value: number): void {
 
 /**
  * Types of messages that can be decoded.
+ *
+ * The 0.6.0 release renamed the legacy `'rep_summary'` / `'set_summary'`
+ * aliases (left over from the pre-vendor-sub-type era) to clearer
+ * `'vendor_per_rep'` / `'vendor_in_progress'` strings, and added
+ * `'vendor_summary'` / `'vendor_pre_summary'` for the two end-of-set
+ * vendor frames the SDK now decodes.
  */
 export type MessageType =
   | 'telemetry_stream'
-  | 'rep_summary'
-  | 'set_summary'
+  | 'vendor_per_rep'
+  | 'vendor_in_progress'
+  | 'vendor_summary'
+  | 'vendor_pre_summary'
   | 'status_update'
   | 'mode_confirmation'
   | 'multi_param'
@@ -93,11 +117,16 @@ export function identifyMessageType(data: Uint8Array): MessageType {
   // Vendor sub-type classification. Phase A on-device validation
   // (2026-05-05, 1369 frames) confirmed that perRep frames alias the
   // legacy 4-byte repSummary header and inProgress frames alias the
-  // legacy 4-byte setSummary header.
+  // legacy 4-byte setSummary header. 2026-05-06 expanded coverage to
+  // `summary` and `preSummary`.
   if (matchesVendorSubType(data, VendorMessages.subTypes.perRep)) {
-    return 'rep_summary';
+    return 'vendor_per_rep';
   } else if (matchesVendorSubType(data, VendorMessages.subTypes.inProgress)) {
-    return 'set_summary';
+    return 'vendor_in_progress';
+  } else if (matchesVendorSubType(data, VendorMessages.subTypes.summary)) {
+    return 'vendor_summary';
+  } else if (matchesVendorSubType(data, VendorMessages.subTypes.preSummary)) {
+    return 'vendor_pre_summary';
   }
 
   // Check 2-byte headers for other notification types
@@ -129,8 +158,12 @@ export function identifyMessageType(data: Uint8Array): MessageType {
  */
 export type DecodeResult =
   | { type: 'frame'; frame: TelemetryFrame }
-  | { type: 'rep_boundary' } // Device signals rep completion
-  | { type: 'set_boundary' } // Device signals set completion
+  | { type: 'rep_boundary' } // Legacy payload-less rep boundary
+  | { type: 'set_boundary' } // Legacy payload-less set boundary (inProgress alias)
+  | { type: 'perRep'; event: PerRepEvent } // Typed perRep frame (0.6.0+)
+  | { type: 'summary'; event: SummaryEvent } // Typed end-of-set summary (0.6.0+)
+  | { type: 'preSummary'; event: PreSummaryEvent } // Typed pre-summary (0.6.0+)
+  | { type: 'inProgress'; event: InProgressEvent } // Typed in-progress heartbeat (0.6.0+)
   | { type: 'mode_confirmation'; mode: TrainingMode } // Mode change confirmed
   | { type: 'settings_update'; settings: DeviceSettings } // Device settings
   | { type: 'device_status'; battery: number } // Battery/status update
@@ -169,6 +202,127 @@ export function decodeTelemetryFrame(data: Uint8Array): TelemetryFrame | null {
   const velocity = readInt16LE(data, TelemetryOffsets.VELOCITY);
 
   return createFrame(sequence, phase, position, force, velocity);
+}
+
+// =============================================================================
+// Vendor frame decoders (0.6.0+)
+//
+// Field offsets validated 2026-05-06 on VTR-212006 (voltra-private phase-5
+// captures). For perRep / summary / preSummary we read offsets from the
+// regen's `fields` block — keeping the SDK in sync with voltra-private's
+// validation work without recompiling.
+// =============================================================================
+
+/**
+ * Frame offset = `cmdByteOffset + 1 + payloadOffset` (the cmd marker byte
+ * itself sits at `cmdByteOffset`; payload offsets are 0-indexed AFTER it).
+ */
+function frameOffsetOf(payloadOffset: number): number {
+  return VendorMessages.cmdByteOffset + 1 + payloadOffset;
+}
+
+/**
+ * Decode a vendor `perRep` frame (74 B, fires 2× per rep).
+ *
+ * Returns `null` if the buffer does not match the perRep sub-type or is
+ * shorter than the configured `frameLength`.
+ */
+export function decodeVendorPerRep(data: Uint8Array): PerRepEvent | null {
+  const cfg = VendorMessages.subTypes.perRep;
+  if (!matchesVendorSubType(data, cfg)) return null;
+  if (cfg.frameLength != null && data.length < cfg.frameLength) return null;
+  if (!cfg.fields) return null;
+
+  const motionPhaseByte = data[frameOffsetOf(cfg.fields.motionPhase.payloadOffset)];
+  // Anything other than the documented `pull` (1) / `return` (2) values would
+  // be an unexpected device state — fall back to 'pull' rather than throwing.
+  const phase: 'pull' | 'return' = motionPhaseByte === 2 ? 'return' : 'pull';
+
+  return {
+    phase,
+    frameCounter: data[frameOffsetOf(cfg.fields.frameCounter.payloadOffset)],
+    setCounter: data[frameOffsetOf(cfg.fields.setCounter.payloadOffset)],
+    repCount: data[frameOffsetOf(cfg.fields.repCount.payloadOffset)],
+    targetWeightTenths: readUint16LE(
+      data,
+      frameOffsetOf(cfg.fields.targetWeightTenths.payloadOffset)
+    ),
+  };
+}
+
+/**
+ * Decode a vendor `summary` frame (140 B, end-of-set).
+ *
+ * Mode-specific aggregate fields beyond `setCounter` / `repCount` are not
+ * decoded — consumers needing those should read from `event.raw`.
+ */
+export function decodeVendorSummary(data: Uint8Array): SummaryEvent | null {
+  const cfg = VendorMessages.subTypes.summary;
+  if (!matchesVendorSubType(data, cfg)) return null;
+  if (cfg.frameLength != null && data.length < cfg.frameLength) return null;
+  if (!cfg.fields || cfg.schemaVersionByteOffset === undefined) return null;
+
+  const schemaVersionByte = data[frameOffsetOf(cfg.schemaVersionByteOffset)];
+
+  return {
+    schemaVersion: schemaVersionByte as VendorSchemaVersion,
+    setCounter: data[frameOffsetOf(cfg.fields.setCounter.payloadOffset)],
+    repCount: readUint16LE(data, frameOffsetOf(cfg.fields.repCount.payloadOffset)),
+    raw: data.slice(),
+  };
+}
+
+/**
+ * Decode a vendor `preSummary` frame (110 B, fires ~3s before final rep).
+ */
+export function decodeVendorPreSummary(data: Uint8Array): PreSummaryEvent | null {
+  const cfg = VendorMessages.subTypes.preSummary;
+  if (!matchesVendorSubType(data, cfg)) return null;
+  if (cfg.frameLength != null && data.length < cfg.frameLength) return null;
+  if (!cfg.fields || cfg.schemaVersionByteOffset === undefined) return null;
+
+  const schemaVersionByte = data[frameOffsetOf(cfg.schemaVersionByteOffset)];
+
+  return {
+    schemaVersion: schemaVersionByte as VendorSchemaVersion,
+    targetWeightTenths: readUint16LE(
+      data,
+      frameOffsetOf(cfg.fields.targetWeightTenths.payloadOffset)
+    ),
+    repCount: readUint16LE(data, frameOffsetOf(cfg.fields.repCount.payloadOffset)),
+    repDurationMs: readUint32LE(data, frameOffsetOf(cfg.fields.repDurationMs.payloadOffset)),
+    raw: data.slice(),
+  };
+}
+
+// inProgress field offsets are validated empirically (handoff 2026-05-06)
+// but not yet baked into voltra-private's telemetry-config; hardcoded here
+// pending a future regen sync.
+const IN_PROGRESS_PEAK_FORCE_OFFSET = 17;
+const IN_PROGRESS_CURRENT_FORCE_OFFSET = 25;
+const IN_PROGRESS_VELOCITY_OFFSET = 28;
+const IN_PROGRESS_TARGET_WEIGHT_OFFSET = 49;
+const IN_PROGRESS_FRAME_LENGTH = 79;
+
+/**
+ * Decode a vendor `inProgress` frame (79 B, ~1 Hz heartbeat).
+ *
+ * Field offsets are hardcoded — the regen's `fields` block is empty for
+ * inProgress (`fieldsValidated: false`).
+ */
+export function decodeVendorInProgress(data: Uint8Array): InProgressEvent | null {
+  const cfg = VendorMessages.subTypes.inProgress;
+  if (!matchesVendorSubType(data, cfg)) return null;
+  const minLength = cfg.frameLength ?? IN_PROGRESS_FRAME_LENGTH;
+  if (data.length < minLength) return null;
+
+  return {
+    peakForceTenths: readUint16LE(data, IN_PROGRESS_PEAK_FORCE_OFFSET),
+    currentForceTenths: readUint16LE(data, IN_PROGRESS_CURRENT_FORCE_OFFSET),
+    velocityCmPerSec: readUint16LE(data, IN_PROGRESS_VELOCITY_OFFSET),
+    targetWeightTenths: readUint32LE(data, IN_PROGRESS_TARGET_WEIGHT_OFFSET),
+    raw: data.slice(),
+  };
 }
 
 /**
@@ -287,13 +441,28 @@ export function decodeNotification(data: Uint8Array): DecodeResult {
       return frame ? { type: 'frame', frame } : null;
     }
 
-    case 'rep_summary':
-      // Device is signaling a rep boundary (end of concentric or eccentric)
-      return { type: 'rep_boundary' };
+    case 'vendor_per_rep': {
+      // Decoder remains pure; the dispatcher fans out to legacy onRepBoundary
+      // for backward-compat with 0.5.0 consumers. If decode fails, fall back
+      // to the payload-less rep_boundary so legacy listeners still fire.
+      const event = decodeVendorPerRep(data);
+      return event ? { type: 'perRep', event } : { type: 'rep_boundary' };
+    }
 
-    case 'set_summary':
-      // Device is signaling set completion
-      return { type: 'set_boundary' };
+    case 'vendor_in_progress': {
+      const event = decodeVendorInProgress(data);
+      return event ? { type: 'inProgress', event } : { type: 'set_boundary' };
+    }
+
+    case 'vendor_summary': {
+      const event = decodeVendorSummary(data);
+      return event ? { type: 'summary', event } : { type: 'unknown', data };
+    }
+
+    case 'vendor_pre_summary': {
+      const event = decodeVendorPreSummary(data);
+      return event ? { type: 'preSummary', event } : { type: 'unknown', data };
+    }
 
     case 'mode_confirmation':
       return decodeModeConfirmation(data);

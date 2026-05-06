@@ -118,3 +118,19 @@ export const VALID_TRAINING_MODES: readonly TrainingMode[] = [
   TrainingMode.Isokinetic,
   TrainingMode.Isometric,
 ] as const;
+
+// =============================================================================
+// Vendor Schema Versions
+// =============================================================================
+
+/**
+ * Per-mode schema version carried as the 4th sub-type byte of vendor
+ * `summary` and `preSummary` frames (cmd `0xAA` + 2-byte fixed identifier
+ * + this byte). Synced from voltra-private validation 2026-05-06.
+ */
+export enum VendorSchemaVersion {
+  Weight = 0x01,
+  Band = 0x02,
+  Damper = 0x03,
+  Isokinetic = 0x04,
+}
