@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-05-06
+
+### Fixed
+
+- `VoltraManager.connect()` always threw "No device selected. Call scan()
+  first." on the `node` platform. The 0.4.2 per-client adapter refactor
+  gated scanAdapter reuse behind `platform === 'web'`, so on node a fresh
+  adapter (with no `selectedDevice` populated) was built for every connect
+  and the underlying `NodeBLEAdapter.connect()` rejected immediately. The
+  reuse semantics are platform-agnostic — scanAdapter holds the
+  scan-discovered device state on every platform — so the platform gate
+  has been removed. Multi-device fan-out is preserved: a connect without
+  a fresh scan still allocates a new adapter.
+
 ## [0.6.0] - UNRELEASED
 
 ### Added
