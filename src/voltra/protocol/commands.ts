@@ -154,3 +154,169 @@ export function getModeCommand(mode: TrainingMode): Uint8Array | null {
 export function getAvailableModes(): TrainingMode[] {
   return [...VALID_TRAINING_MODES];
 }
+
+// =============================================================================
+// Mode-Config Setter Commands (added in 0.6.0)
+// =============================================================================
+
+/** Damper level commands (0-9; UI displays N+1) */
+const damperLevelCommands: Record<number, Uint8Array> = {};
+for (const [level, hex] of Object.entries(protocol.commands.damperLevel)) {
+  damperLevelCommands[Number(level)] = hexToBytes(hex);
+}
+
+/** Assist mode commands ('off' | 'on') */
+const assistModeCommands: Record<string, Uint8Array> = {};
+for (const [mode, hex] of Object.entries(protocol.commands.assistMode)) {
+  assistModeCommands[mode] = hexToBytes(hex);
+}
+
+/** Resistance band max force commands (lbs) */
+const bandMaxForceCommands: Record<number, Uint8Array> = {};
+for (const [lbs, hex] of Object.entries(protocol.commands.bandMaxForce)) {
+  bandMaxForceCommands[Number(lbs)] = hexToBytes(hex);
+}
+
+/** Isokinetic target speed commands (mm/s) */
+const isokineticTargetSpeedCommands: Record<number, Uint8Array> = {};
+for (const [mmps, hex] of Object.entries(protocol.commands.isokineticTargetSpeed)) {
+  isokineticTargetSpeedCommands[Number(mmps)] = hexToBytes(hex);
+}
+
+/** Isokinetic eccentric mode commands ('isokinetic' | 'constant') */
+const isokineticEccModeCommands: Record<string, Uint8Array> = {};
+for (const [mode, hex] of Object.entries(protocol.commands.isokineticEccMode)) {
+  isokineticEccModeCommands[mode] = hexToBytes(hex);
+}
+
+/** Isokinetic eccentric speed limit commands (mm/s; 0 = auto) */
+const isokineticEccSpeedLimitCommands: Record<number, Uint8Array> = {};
+for (const [mmps, hex] of Object.entries(protocol.commands.isokineticEccSpeedLimit)) {
+  isokineticEccSpeedLimitCommands[Number(mmps)] = hexToBytes(hex);
+}
+
+/** Isokinetic eccentric constant-mode weight commands (lbs) */
+const isokineticEccConstWeightCommands: Record<number, Uint8Array> = {};
+for (const [lbs, hex] of Object.entries(protocol.commands.isokineticEccConstWeight)) {
+  isokineticEccConstWeightCommands[Number(lbs)] = hexToBytes(hex);
+}
+
+/** Isokinetic eccentric overload-mode weight commands (lbs) */
+const isokineticEccOverloadWeightCommands: Record<number, Uint8Array> = {};
+for (const [lbs, hex] of Object.entries(protocol.commands.isokineticEccOverloadWeight)) {
+  isokineticEccOverloadWeightCommands[Number(lbs)] = hexToBytes(hex);
+}
+
+/**
+ * Get damper level command.
+ * @param level Damper level (0-9; UI displays N+1)
+ * @returns Command bytes, or null if not available
+ */
+export function getDamperLevelCommand(level: number): Uint8Array | null {
+  return damperLevelCommands[level] || null;
+}
+
+/** Get available damper levels. */
+export function getAvailableDamperLevels(): number[] {
+  return Object.keys(damperLevelCommands)
+    .map(Number)
+    .sort((a, b) => a - b);
+}
+
+/**
+ * Get assist mode command.
+ * @param mode 'off' or 'on'
+ * @returns Command bytes, or null if not available
+ */
+export function getAssistModeCommand(mode: 'off' | 'on'): Uint8Array | null {
+  return assistModeCommands[mode] || null;
+}
+
+/**
+ * Get resistance band max force command.
+ * @param lbs Max force in pounds
+ * @returns Command bytes, or null if not available
+ */
+export function getBandMaxForceCommand(lbs: number): Uint8Array | null {
+  return bandMaxForceCommands[lbs] || null;
+}
+
+/** Get available band max force values. */
+export function getAvailableBandMaxForce(): number[] {
+  return Object.keys(bandMaxForceCommands)
+    .map(Number)
+    .sort((a, b) => a - b);
+}
+
+/**
+ * Get isokinetic target speed command.
+ * @param mmPerSec Target speed in mm/s (0..2000, step 10). UI shows ÷1000 m/s.
+ * @returns Command bytes, or null if not available
+ */
+export function getIsokineticTargetSpeedCommand(mmPerSec: number): Uint8Array | null {
+  return isokineticTargetSpeedCommands[mmPerSec] || null;
+}
+
+/** Get available isokinetic target speeds (mm/s). */
+export function getAvailableIsokineticTargetSpeeds(): number[] {
+  return Object.keys(isokineticTargetSpeedCommands)
+    .map(Number)
+    .sort((a, b) => a - b);
+}
+
+/**
+ * Get isokinetic eccentric mode command.
+ * @param mode 'isokinetic' or 'constant'
+ * @returns Command bytes, or null if not available
+ */
+export function getIsokineticEccModeCommand(mode: 'isokinetic' | 'constant'): Uint8Array | null {
+  return isokineticEccModeCommands[mode] || null;
+}
+
+/**
+ * Get isokinetic eccentric speed limit command.
+ * @param mmPerSec Speed limit in mm/s; 0 = auto
+ * @returns Command bytes, or null if not available
+ */
+export function getIsokineticEccSpeedLimitCommand(mmPerSec: number): Uint8Array | null {
+  return isokineticEccSpeedLimitCommands[mmPerSec] || null;
+}
+
+/** Get available isokinetic eccentric speed limits (mm/s). */
+export function getAvailableIsokineticEccSpeedLimits(): number[] {
+  return Object.keys(isokineticEccSpeedLimitCommands)
+    .map(Number)
+    .sort((a, b) => a - b);
+}
+
+/**
+ * Get isokinetic eccentric constant-mode weight command.
+ * @param lbs Weight in pounds (0..200)
+ * @returns Command bytes, or null if not available
+ */
+export function getIsokineticEccConstWeightCommand(lbs: number): Uint8Array | null {
+  return isokineticEccConstWeightCommands[lbs] || null;
+}
+
+/** Get available isokinetic eccentric constant-mode weights. */
+export function getAvailableIsokineticEccConstWeights(): number[] {
+  return Object.keys(isokineticEccConstWeightCommands)
+    .map(Number)
+    .sort((a, b) => a - b);
+}
+
+/**
+ * Get isokinetic eccentric overload-mode weight command.
+ * @param lbs Weight in pounds (0..200)
+ * @returns Command bytes, or null if not available
+ */
+export function getIsokineticEccOverloadWeightCommand(lbs: number): Uint8Array | null {
+  return isokineticEccOverloadWeightCommands[lbs] || null;
+}
+
+/** Get available isokinetic eccentric overload-mode weights. */
+export function getAvailableIsokineticEccOverloadWeights(): number[] {
+  return Object.keys(isokineticEccOverloadWeightCommands)
+    .map(Number)
+    .sort((a, b) => a - b);
+}

@@ -160,6 +160,20 @@ export {
   getAvailableEccentric,
   getAvailableInverseChains,
   getAvailableModes,
+  getDamperLevelCommand,
+  getAssistModeCommand,
+  getBandMaxForceCommand,
+  getIsokineticTargetSpeedCommand,
+  getIsokineticEccModeCommand,
+  getIsokineticEccSpeedLimitCommand,
+  getIsokineticEccConstWeightCommand,
+  getIsokineticEccOverloadWeightCommand,
+  getAvailableDamperLevels,
+  getAvailableBandMaxForce,
+  getAvailableIsokineticTargetSpeeds,
+  getAvailableIsokineticEccSpeedLimits,
+  getAvailableIsokineticEccConstWeights,
+  getAvailableIsokineticEccOverloadWeights,
 } from './voltra/protocol/commands';
 
 // =============================================================================

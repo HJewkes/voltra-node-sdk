@@ -67,6 +67,30 @@ export interface CommandConfig {
   eccentric: Record<string, string>;
   /** Inverse chains commands (lbs -> hex string) */
   inverseChains: Record<string, string>;
+  /** Damper level commands (0-9 -> hex string; UI displays N+1) */
+  damperLevel: Record<string, string>;
+  /** Assist mode commands (off/on -> hex string) */
+  assistMode: Record<'off' | 'on', string>;
+  /** Resistance band max force commands (lbs -> hex string) */
+  bandMaxForce: Record<string, string>;
+  /** Isokinetic target speed commands (mm/s -> hex string; UI shows ÷1000 m/s) */
+  isokineticTargetSpeed: Record<string, string>;
+  /** Isokinetic eccentric mode commands (isokinetic/constant -> hex string) */
+  isokineticEccMode: Record<'isokinetic' | 'constant', string>;
+  /** Isokinetic eccentric speed limit commands (mm/s -> hex string; 0 = auto) */
+  isokineticEccSpeedLimit: Record<string, string>;
+  /** Isokinetic eccentric constant-mode weight commands (lbs -> hex string) */
+  isokineticEccConstWeight: Record<string, string>;
+  /** Isokinetic eccentric overload-mode weight commands (lbs -> hex string) */
+  isokineticEccOverloadWeight: Record<string, string>;
+  /** Telemetry rate commands (Hz -> hex string) */
+  telemetryRate: Record<string, string>;
+  /** Telemetry subscribe commands (none/all -> hex string) */
+  telemetrySubscribe: Record<'none' | 'all', string>;
+  /** Cable trigger commands (open/close -> hex string) */
+  cableTrigger: Record<'open' | 'close', string>;
+  /** Resistance experience commands (intense/standard -> hex string) */
+  resistanceExperience: Record<'intense' | 'standard', string>;
 }
 
 /**

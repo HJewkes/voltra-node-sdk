@@ -53,6 +53,20 @@ import {
   getAvailableEccentric as getAvailableEccentricValues,
   getAvailableInverseChains as getAvailableInverseChainsValues,
   getAvailableModes,
+  getDamperLevelCommand,
+  getAssistModeCommand,
+  getBandMaxForceCommand,
+  getIsokineticTargetSpeedCommand,
+  getIsokineticEccModeCommand,
+  getIsokineticEccSpeedLimitCommand,
+  getIsokineticEccConstWeightCommand,
+  getIsokineticEccOverloadWeightCommand,
+  getAvailableDamperLevels,
+  getAvailableBandMaxForce,
+  getAvailableIsokineticTargetSpeeds,
+  getAvailableIsokineticEccSpeedLimits,
+  getAvailableIsokineticEccConstWeights,
+  getAvailableIsokineticEccOverloadWeights,
 } from '../voltra/protocol/commands';
 import { TrainingMode } from '../voltra/protocol/constants';
 import { delay } from '../shared/utils';
@@ -492,6 +506,316 @@ export class VoltraClient {
    */
   getAvailableModes(): TrainingMode[] {
     return getAvailableModes();
+  }
+
+  // ===========================================================================
+  // Mode-Config Setters (added in 0.6.0)
+  // ===========================================================================
+  //
+  // Settings persist GLOBALLY across mode switches. Resolves on adapter.write
+  // completion; no modeConfirmation notification is emitted for opcode 0xa9 /
+  // 0xc7 setters. `client.settings` does not currently reflect these values;
+  // the device does not echo them in settings-update notifications as of
+  // protocol v0.5.0.
+
+  /**
+   * Set damper level.
+   *
+   * Settings persist GLOBALLY across mode switches. Resolves on adapter.write
+   * completion; no modeConfirmation notification is emitted for opcode 0xa9 /
+   * 0xc7 setters.
+   *
+   * Note: the underlying value is 0-9; the Voltra UI displays this as N+1
+   * (i.e. level 0 -> "1" in the app).
+   *
+   * Note: `client.settings` does not currently reflect this value; the device
+   * does not echo it in settings-update notifications as of protocol v0.5.0.
+   *
+   * @param level Damper level (0-9)
+   */
+  async setDamperLevel(level: number): Promise<void> {
+    this.ensureConnected();
+
+    const cmd = getDamperLevelCommand(level);
+    if (!cmd) {
+      throw new InvalidSettingError('damperLevel', level, getAvailableDamperLevels());
+    }
+
+    try {
+      await this.adapter!.write(cmd);
+    } catch (e) {
+      throw new CommandError(
+        `Failed to set damper level: ${this.getErrorMessage(e)}`,
+        'setDamperLevel'
+      );
+    }
+  }
+
+  /**
+   * Set assist mode (off / on).
+   *
+   * Settings persist GLOBALLY across mode switches. Resolves on adapter.write
+   * completion; no modeConfirmation notification is emitted for opcode 0xa9 /
+   * 0xc7 setters.
+   *
+   * Note: `client.settings` does not currently reflect this value; the device
+   * does not echo it in settings-update notifications as of protocol v0.5.0.
+   *
+   * @param mode 'off' or 'on'
+   */
+  async setAssistMode(mode: 'off' | 'on'): Promise<void> {
+    this.ensureConnected();
+
+    const cmd = getAssistModeCommand(mode);
+    if (!cmd) {
+      throw new InvalidSettingError('assistMode', mode, ['off', 'on']);
+    }
+
+    try {
+      await this.adapter!.write(cmd);
+    } catch (e) {
+      throw new CommandError(
+        `Failed to set assist mode: ${this.getErrorMessage(e)}`,
+        'setAssistMode'
+      );
+    }
+  }
+
+  /**
+   * Set resistance band max force.
+   *
+   * Settings persist GLOBALLY across mode switches. Resolves on adapter.write
+   * completion; no modeConfirmation notification is emitted for opcode 0xa9 /
+   * 0xc7 setters.
+   *
+   * Note: `client.settings` does not currently reflect this value; the device
+   * does not echo it in settings-update notifications as of protocol v0.5.0.
+   *
+   * @param lbs Max force in pounds (15-70)
+   */
+  async setBandMaxForce(lbs: number): Promise<void> {
+    this.ensureConnected();
+
+    const cmd = getBandMaxForceCommand(lbs);
+    if (!cmd) {
+      throw new InvalidSettingError('bandMaxForce', lbs, getAvailableBandMaxForce());
+    }
+
+    try {
+      await this.adapter!.write(cmd);
+    } catch (e) {
+      throw new CommandError(
+        `Failed to set band max force: ${this.getErrorMessage(e)}`,
+        'setBandMaxForce'
+      );
+    }
+  }
+
+  /**
+   * Set isokinetic target speed.
+   *
+   * Settings persist GLOBALLY across mode switches. Resolves on adapter.write
+   * completion; no modeConfirmation notification is emitted for opcode 0xa9 /
+   * 0xc7 setters.
+   *
+   * Unit conversion: input is mm/s. The Voltra UI shows the same value
+   * divided by 1000 (m/s) — e.g. 1500 mm/s renders as "1.5 m/s".
+   *
+   * Note: `client.settings` does not currently reflect this value; the device
+   * does not echo it in settings-update notifications as of protocol v0.5.0.
+   *
+   * @param mmPerSec Target speed in mm/s (0-2000, step 10)
+   */
+  async setIsokineticTargetSpeed(mmPerSec: number): Promise<void> {
+    this.ensureConnected();
+
+    const cmd = getIsokineticTargetSpeedCommand(mmPerSec);
+    if (!cmd) {
+      throw new InvalidSettingError(
+        'isokineticTargetSpeed',
+        mmPerSec,
+        getAvailableIsokineticTargetSpeeds()
+      );
+    }
+
+    try {
+      await this.adapter!.write(cmd);
+    } catch (e) {
+      throw new CommandError(
+        `Failed to set isokinetic target speed: ${this.getErrorMessage(e)}`,
+        'setIsokineticTargetSpeed'
+      );
+    }
+  }
+
+  /**
+   * Set isokinetic eccentric mode.
+   *
+   * Settings persist GLOBALLY across mode switches. Resolves on adapter.write
+   * completion; no modeConfirmation notification is emitted for opcode 0xa9 /
+   * 0xc7 setters.
+   *
+   * Note: `client.settings` does not currently reflect this value; the device
+   * does not echo it in settings-update notifications as of protocol v0.5.0.
+   *
+   * @param mode 'isokinetic' or 'constant'
+   */
+  async setIsokineticEccMode(mode: 'isokinetic' | 'constant'): Promise<void> {
+    this.ensureConnected();
+
+    const cmd = getIsokineticEccModeCommand(mode);
+    if (!cmd) {
+      throw new InvalidSettingError('isokineticEccMode', mode, ['isokinetic', 'constant']);
+    }
+
+    try {
+      await this.adapter!.write(cmd);
+    } catch (e) {
+      throw new CommandError(
+        `Failed to set isokinetic eccentric mode: ${this.getErrorMessage(e)}`,
+        'setIsokineticEccMode'
+      );
+    }
+  }
+
+  /**
+   * Set isokinetic eccentric speed limit.
+   *
+   * Settings persist GLOBALLY across mode switches. Resolves on adapter.write
+   * completion; no modeConfirmation notification is emitted for opcode 0xa9 /
+   * 0xc7 setters.
+   *
+   * Note: `client.settings` does not currently reflect this value; the device
+   * does not echo it in settings-update notifications as of protocol v0.5.0.
+   *
+   * @param mmPerSec Speed limit in mm/s; 0 = auto
+   */
+  async setIsokineticEccSpeedLimit(mmPerSec: number): Promise<void> {
+    this.ensureConnected();
+
+    const cmd = getIsokineticEccSpeedLimitCommand(mmPerSec);
+    if (!cmd) {
+      throw new InvalidSettingError(
+        'isokineticEccSpeedLimit',
+        mmPerSec,
+        getAvailableIsokineticEccSpeedLimits()
+      );
+    }
+
+    try {
+      await this.adapter!.write(cmd);
+    } catch (e) {
+      throw new CommandError(
+        `Failed to set isokinetic eccentric speed limit: ${this.getErrorMessage(e)}`,
+        'setIsokineticEccSpeedLimit'
+      );
+    }
+  }
+
+  /**
+   * Set isokinetic eccentric constant-mode weight.
+   *
+   * Settings persist GLOBALLY across mode switches. Resolves on adapter.write
+   * completion; no modeConfirmation notification is emitted for opcode 0xa9 /
+   * 0xc7 setters.
+   *
+   * Warning: when set on a connected device, this command causes an audible
+   * beep on the unit — possibly a safety/range cue from the firmware. The
+   * command itself succeeds and the value is applied.
+   *
+   * Note: `client.settings` does not currently reflect this value; the device
+   * does not echo it in settings-update notifications as of protocol v0.5.0.
+   *
+   * @param lbs Weight in pounds (0-200)
+   */
+  async setIsokineticEccConstWeight(lbs: number): Promise<void> {
+    this.ensureConnected();
+
+    const cmd = getIsokineticEccConstWeightCommand(lbs);
+    if (!cmd) {
+      throw new InvalidSettingError(
+        'isokineticEccConstWeight',
+        lbs,
+        getAvailableIsokineticEccConstWeights()
+      );
+    }
+
+    try {
+      await this.adapter!.write(cmd);
+    } catch (e) {
+      throw new CommandError(
+        `Failed to set isokinetic eccentric constant weight: ${this.getErrorMessage(e)}`,
+        'setIsokineticEccConstWeight'
+      );
+    }
+  }
+
+  /**
+   * Set isokinetic eccentric overload-mode weight.
+   *
+   * Settings persist GLOBALLY across mode switches. Resolves on adapter.write
+   * completion; no modeConfirmation notification is emitted for opcode 0xa9 /
+   * 0xc7 setters.
+   *
+   * Warning: when set on a connected device, this command causes an audible
+   * beep on the unit — possibly a safety/range cue from the firmware. The
+   * command itself succeeds and the value is applied.
+   *
+   * Note: `client.settings` does not currently reflect this value; the device
+   * does not echo it in settings-update notifications as of protocol v0.5.0.
+   *
+   * @param lbs Weight in pounds (0-200)
+   */
+  async setIsokineticEccOverloadWeight(lbs: number): Promise<void> {
+    this.ensureConnected();
+
+    const cmd = getIsokineticEccOverloadWeightCommand(lbs);
+    if (!cmd) {
+      throw new InvalidSettingError(
+        'isokineticEccOverloadWeight',
+        lbs,
+        getAvailableIsokineticEccOverloadWeights()
+      );
+    }
+
+    try {
+      await this.adapter!.write(cmd);
+    } catch (e) {
+      throw new CommandError(
+        `Failed to set isokinetic eccentric overload weight: ${this.getErrorMessage(e)}`,
+        'setIsokineticEccOverloadWeight'
+      );
+    }
+  }
+
+  /** Get available damper levels (0-9). */
+  getAvailableDamperLevels(): number[] {
+    return getAvailableDamperLevels();
+  }
+
+  /** Get available resistance band max-force values (lbs). */
+  getAvailableBandMaxForce(): number[] {
+    return getAvailableBandMaxForce();
+  }
+
+  /** Get available isokinetic target speeds (mm/s). */
+  getAvailableIsokineticTargetSpeeds(): number[] {
+    return getAvailableIsokineticTargetSpeeds();
+  }
+
+  /** Get available isokinetic eccentric speed limits (mm/s; 0 = auto). */
+  getAvailableIsokineticEccSpeedLimits(): number[] {
+    return getAvailableIsokineticEccSpeedLimits();
+  }
+
+  /** Get available isokinetic eccentric constant-mode weights (lbs). */
+  getAvailableIsokineticEccConstWeights(): number[] {
+    return getAvailableIsokineticEccConstWeights();
+  }
+
+  /** Get available isokinetic eccentric overload-mode weights (lbs). */
+  getAvailableIsokineticEccOverloadWeights(): number[] {
+    return getAvailableIsokineticEccOverloadWeights();
   }
 
   // ===========================================================================
