@@ -5,6 +5,11 @@
  * Test utilities that produce well-formed protocol frames (correct CRC,
  * correct envelope, correct sub-type bytes) for any documented frame type.
  *
+ * History:
+ *   - `buildVendorRepSetFrame` was removed in favor of `buildVendorPerRepFrame`
+ *     and `buildVendorSummaryFrame` after offline archaeology (2026-05-05) showed
+ *     the original `repSet` metadata was incorrect.
+ *
  * Used by:
  *   - voltra-private's own tests (verifying factory output against metadata)
  *   - voltra-node-sdk's decoder tests (synthesizing inbound frames the SDK
@@ -28,6 +33,16 @@
 
 import { calculateCRC8, calculateCRC16 } from './checksum.generated';
 import { TELEMETRY_CONFIG } from './telemetry-config-source.generated';
+// Inlined from voltra-private/src/protocol/enums.ts.
+// Per-mode schema version for the 4th sub-type byte of vendor summary /
+// preSummary frames (cmd 0xAA + 2-byte fixed identifier + this byte).
+export enum VendorSchemaVersion {
+  Weight = 0x01,
+  Band = 0x02,
+  Damper = 0x03,
+  Isokinetic = 0x04,
+}
+
 // Inlined from voltra-private/src/protocol/enums.ts (type-only, no runtime impact).
 type ValueType = 'uint8' | 'uint16' | 'int16' | 'uint32' | 'int32';
 interface ParamDefinition {
@@ -95,7 +110,7 @@ export interface FrameOpts {
 export function buildEnvelopedFrame(
   cmdId: number,
   payload: Uint8Array,
-  opts: FrameOpts = {}
+  opts: FrameOpts = {},
 ): Uint8Array {
   const sequence = opts.sequence ?? 0x2000;
   const senderReceiver = opts.senderReceiver ?? APP_TO_DEVICE;
@@ -104,12 +119,12 @@ export function buildEnvelopedFrame(
   const totalSize = opts.totalLength ?? minSize;
   if (totalSize < minSize) {
     throw new Error(
-      `frame-factories: totalLength=${totalSize} is smaller than required ${minSize} (envelope + payload)`
+      `frame-factories: totalLength=${totalSize} is smaller than required ${minSize} (envelope + payload)`,
     );
   }
   if (totalSize > 0xff) {
     throw new Error(
-      `frame-factories: totalLength=${totalSize} exceeds the 1-byte length field (max 255)`
+      `frame-factories: totalLength=${totalSize} exceeds the 1-byte length field (max 255)`,
     );
   }
 
@@ -146,7 +161,7 @@ export function buildEnvelopedFrame(
 export function buildParametricFrame(
   param: ParamDefinition,
   value: number,
-  opts: FrameOpts = {}
+  opts: FrameOpts = {},
 ): Uint8Array {
   // The existing builder already enforces the parametric envelope and CRCs.
   // We re-stamp sender/receiver and sequence afterwards if the caller wants
@@ -185,7 +200,7 @@ export type IdentityOpcodeKey =
 export function buildIdentityResponseFrame(
   opcode: IdentityOpcodeKey,
   payload: Uint8Array | string,
-  opts: FrameOpts = {}
+  opts: FrameOpts = {},
 ): Uint8Array {
   const cfg = RESPONSE_FRAMES.knownResponses[opcode];
   const payloadBytes = typeof payload === 'string' ? encodeAsciiNullTerminated(payload) : payload;
@@ -200,9 +215,7 @@ function encodeAsciiNullTerminated(s: string): Uint8Array {
   for (let i = 0; i < s.length; i++) {
     const c = s.charCodeAt(i);
     if (c > 0x7f) {
-      throw new Error(
-        `frame-factories: non-ASCII char ${JSON.stringify(s[i])} in identity payload`
-      );
+      throw new Error(`frame-factories: non-ASCII char ${JSON.stringify(s[i])} in identity payload`);
     }
     out[i] = c;
   }
@@ -229,7 +242,7 @@ export function buildVendorPerRepFrame(
     setCounter: number;
     repCount: number;
   },
-  opts: FrameOpts = {}
+  opts: FrameOpts = {},
 ): Uint8Array {
   const cfg = VENDOR_MESSAGES.subTypes.perRep;
   const payloadSize = cfg.frameLength - 13; // envelope = 11 header + 2 CRC
@@ -257,8 +270,11 @@ export function buildVendorPerRepFrame(
 }
 
 /**
- * Build a vendor end-of-workout summary frame (`0xAA 0x86 0x7D 0x01`, 140 bytes).
+ * Build a vendor end-of-workout summary frame
+ * (`0xAA 0x86 0x7D <schemaVersion>`, 140 bytes).
  *
+ * The 4-byte sub-type is composed of cmd `0xAA` + 2-byte fixed identifier
+ * `[0x86, 0x7D]` + 1-byte per-mode schema version (see `VendorSchemaVersion`).
  * Field positions follow `TELEMETRY_CONFIG.vendorMessages.subTypes.summary.fields`.
  * Sender/receiver defaults to `DEVICE_TO_APP`. Bytes after the documented fields
  * (frame offset 18+) are zero-padded — the device emits aggregate stats there
@@ -266,26 +282,28 @@ export function buildVendorPerRepFrame(
  */
 export function buildVendorSummaryFrame(
   fields: {
+    schemaVersion: VendorSchemaVersion;
     setCounter: number;
     repCount: number;
   },
-  opts: FrameOpts = {}
+  opts: FrameOpts = {},
 ): Uint8Array {
   const cfg = VENDOR_MESSAGES.subTypes.summary;
   const payloadSize = cfg.frameLength - 13;
   const payload = new Uint8Array(payloadSize);
 
-  // 3-byte sub-type identifier at payload offset 0–2.
+  // 2-byte fixed identifier at payload offsets 0–1.
   payload[0] = cfg.identifierBytes[0];
   payload[1] = cfg.identifierBytes[1];
-  payload[2] = cfg.identifierBytes[2];
+  // 1-byte schema version completes the 4-byte sub-type at payload offset 2.
+  payload[cfg.schemaVersionByteOffset] = fields.schemaVersion & 0xff;
 
   payload[cfg.fields.setCounter.payloadOffset] = fields.setCounter & 0xff;
 
-  // repCount is big-endian (consistent with the prior repSet convention).
+  // repCount is little-endian per offline-archaeology validation 2026-05-05.
   const off = cfg.fields.repCount.payloadOffset;
-  payload[off] = (fields.repCount >> 8) & 0xff;
-  payload[off + 1] = fields.repCount & 0xff;
+  payload[off] = fields.repCount & 0xff;
+  payload[off + 1] = (fields.repCount >> 8) & 0xff;
 
   return buildEnvelopedFrame(VENDOR_MESSAGES.cmdValue, payload, {
     senderReceiver: DEVICE_TO_APP,
@@ -311,7 +329,7 @@ export type RawVendorSubType = 'rowing' | 'isometricSummary' | 'isometricWavefor
 export function buildVendorRawFrame(
   subType: RawVendorSubType,
   payloadAfterIdentifier: Uint8Array,
-  opts: FrameOpts = {}
+  opts: FrameOpts = {},
 ): Uint8Array {
   const cfg = VENDOR_MESSAGES.subTypes[subType];
   const idLen = cfg.identifierBytes.length;

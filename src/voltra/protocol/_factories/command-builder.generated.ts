@@ -11,9 +11,7 @@
 import { calculateCRC8, calculateCRC16 } from './checksum.generated';
 // bytesToHex inlined from voltra-private/src/utils.ts:
 function bytesToHex(bytes: Uint8Array): string {
-  return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 // Inlined from voltra-private/src/protocol/enums.ts (type-only, no runtime impact).
 type ValueType = 'uint8' | 'uint16' | 'int16' | 'uint32' | 'int32';
@@ -22,6 +20,7 @@ interface ParamDefinition {
   readonly name: string;
   readonly valueType: ValueType;
 }
+
 
 // =============================================================================
 // Frame Constants
@@ -60,7 +59,7 @@ function buildFrame(
   value: number,
   sequence: number,
   cmdId: number,
-  reserved: readonly [number, number]
+  reserved: readonly [number, number],
 ): Uint8Array {
   const vs = valSize(param.valueType);
   const totalSize = 17 + vs;
@@ -109,7 +108,11 @@ function buildFrame(
  * @param sequence - Sequence number (bytes 6-7, LE uint16)
  * @returns Lowercase hex string of the complete command
  */
-export function buildCommand(param: ParamDefinition, value: number, sequence: number): string {
+export function buildCommand(
+  param: ParamDefinition,
+  value: number,
+  sequence: number,
+): string {
   return bytesToHex(buildFrame(param, value, sequence, CMD_ID, RESERVED));
 }
 
@@ -119,7 +122,7 @@ export function buildCommand(param: ParamDefinition, value: number, sequence: nu
 export function buildCommandBytes(
   param: ParamDefinition,
   value: number,
-  sequence: number
+  sequence: number,
 ): Uint8Array {
   return buildFrame(param, value, sequence, CMD_ID, RESERVED);
 }
@@ -138,7 +141,7 @@ export function buildCommandBytes(
 export function buildConfigCommand(
   param: ParamDefinition,
   value: number,
-  sequence: number
+  sequence: number,
 ): Uint8Array {
   return buildFrame(param, value, sequence, 0x0f, [0x02, 0x00]);
 }
