@@ -26,4 +26,5 @@ export {
   TrainingMode,
   TrainingModeNames,
   VALID_TRAINING_MODES,
+  VendorSchemaVersion,
 } from './enums';

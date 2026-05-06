@@ -229,6 +229,12 @@ export interface VendorSubTypeConfig {
   >;
   /** Optional motion-phase enum (perRep only) */
   motionPhases?: { pull: number; return: number };
+  /**
+   * Optional payload offset of the per-mode schema-version byte.
+   * Only present on `summary` and `preSummary` whose 4-byte sub-type is
+   * `cmd 0xAA + 2-byte fixed identifier + this byte`.
+   */
+  schemaVersionByteOffset?: number;
   /** Optional sample unit metadata (isometricWaveform only) */
   sampleUnit?: string;
   /** Optional notes from external research */

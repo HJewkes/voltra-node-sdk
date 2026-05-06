@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createNotificationHandler, type NotificationCallbacks } from '../notification-dispatcher';
-import { TrainingMode } from '../../voltra/protocol/constants';
+import { TrainingMode, VendorSchemaVersion } from '../../voltra/protocol/constants';
 import type { TelemetryFrame } from '../../voltra/models/telemetry';
 import type { DeviceSettings } from '../../voltra/protocol/types';
+import type { PerRepEvent, SummaryEvent, PreSummaryEvent, InProgressEvent } from '../types';
 
 // Mock the decoder so we can control exactly what DecodeResult comes back
 vi.mock('../../voltra/protocol/telemetry-decoder', () => ({
@@ -12,8 +13,9 @@ vi.mock('../../voltra/protocol/telemetry-decoder', () => ({
 import { decodeNotification } from '../../voltra/protocol/telemetry-decoder';
 const mockDecode = vi.mocked(decodeNotification);
 
-function makeCallbacks(): NotificationCallbacks & {
-  [K in keyof NotificationCallbacks]: ReturnType<typeof vi.fn>;
+type AllCallbacks = Required<NotificationCallbacks>;
+function makeCallbacks(): AllCallbacks & {
+  [K in keyof AllCallbacks]: ReturnType<typeof vi.fn>;
 } {
   return {
     onFrame: vi.fn(),
@@ -22,6 +24,10 @@ function makeCallbacks(): NotificationCallbacks & {
     onModeConfirmed: vi.fn(),
     onSettingsUpdate: vi.fn(),
     onBatteryUpdate: vi.fn(),
+    onPerRep: vi.fn(),
+    onSummary: vi.fn(),
+    onPreSummary: vi.fn(),
+    onInProgress: vi.fn(),
   };
 }
 
@@ -117,6 +123,10 @@ describe('notification-dispatcher', () => {
     expect(callbacks.onModeConfirmed).not.toHaveBeenCalled();
     expect(callbacks.onSettingsUpdate).not.toHaveBeenCalled();
     expect(callbacks.onBatteryUpdate).not.toHaveBeenCalled();
+    expect(callbacks.onPerRep).not.toHaveBeenCalled();
+    expect(callbacks.onSummary).not.toHaveBeenCalled();
+    expect(callbacks.onPreSummary).not.toHaveBeenCalled();
+    expect(callbacks.onInProgress).not.toHaveBeenCalled();
   });
 
   it('ignores null decode results', () => {
@@ -130,5 +140,112 @@ describe('notification-dispatcher', () => {
     expect(callbacks.onModeConfirmed).not.toHaveBeenCalled();
     expect(callbacks.onSettingsUpdate).not.toHaveBeenCalled();
     expect(callbacks.onBatteryUpdate).not.toHaveBeenCalled();
+    expect(callbacks.onPerRep).not.toHaveBeenCalled();
+    expect(callbacks.onSummary).not.toHaveBeenCalled();
+    expect(callbacks.onPreSummary).not.toHaveBeenCalled();
+    expect(callbacks.onInProgress).not.toHaveBeenCalled();
+  });
+
+  // ===========================================================================
+  // Typed vendor-frame events (0.6.0+)
+  // ===========================================================================
+
+  it('dispatches onPerRep AND legacy onRepBoundary for perRep results', () => {
+    const event: PerRepEvent = {
+      phase: 'pull',
+      frameCounter: 1,
+      setCounter: 1,
+      repCount: 1,
+      targetWeightTenths: 500,
+    };
+    mockDecode.mockReturnValue({ type: 'perRep', event });
+
+    handler(dummyData);
+
+    expect(callbacks.onPerRep).toHaveBeenCalledOnce();
+    expect(callbacks.onPerRep).toHaveBeenCalledWith(event);
+    // Backward-compat: legacy boundary callback still fires.
+    expect(callbacks.onRepBoundary).toHaveBeenCalledOnce();
+    expect(callbacks.onSetBoundary).not.toHaveBeenCalled();
+  });
+
+  it('dispatches onInProgress AND legacy onSetBoundary for inProgress results', () => {
+    const event: InProgressEvent = {
+      peakForceTenths: 1234,
+      currentForceTenths: 800,
+      velocityCmPerSec: 50,
+      targetWeightTenths: 500,
+      raw: new Uint8Array(79),
+    };
+    mockDecode.mockReturnValue({ type: 'inProgress', event });
+
+    handler(dummyData);
+
+    expect(callbacks.onInProgress).toHaveBeenCalledOnce();
+    expect(callbacks.onInProgress).toHaveBeenCalledWith(event);
+    // Backward-compat: legacy boundary callback still fires.
+    expect(callbacks.onSetBoundary).toHaveBeenCalledOnce();
+    expect(callbacks.onRepBoundary).not.toHaveBeenCalled();
+  });
+
+  it('dispatches onSummary for summary results (no legacy fan-out)', () => {
+    const event: SummaryEvent = {
+      schemaVersion: VendorSchemaVersion.Weight,
+      setCounter: 1,
+      repCount: 5,
+      raw: new Uint8Array(140),
+    };
+    mockDecode.mockReturnValue({ type: 'summary', event });
+
+    handler(dummyData);
+
+    expect(callbacks.onSummary).toHaveBeenCalledOnce();
+    expect(callbacks.onSummary).toHaveBeenCalledWith(event);
+    expect(callbacks.onRepBoundary).not.toHaveBeenCalled();
+    expect(callbacks.onSetBoundary).not.toHaveBeenCalled();
+  });
+
+  it('dispatches onPreSummary for preSummary results (no legacy fan-out)', () => {
+    const event: PreSummaryEvent = {
+      schemaVersion: VendorSchemaVersion.Damper,
+      trainingMode: VendorSchemaVersion.Damper,
+      targetWeightTenths: 0,
+      repCount: 5,
+      repDurationMs: 1234,
+      raw: new Uint8Array(110),
+    };
+    mockDecode.mockReturnValue({ type: 'preSummary', event });
+
+    handler(dummyData);
+
+    expect(callbacks.onPreSummary).toHaveBeenCalledOnce();
+    expect(callbacks.onPreSummary).toHaveBeenCalledWith(event);
+    expect(callbacks.onRepBoundary).not.toHaveBeenCalled();
+    expect(callbacks.onSetBoundary).not.toHaveBeenCalled();
+  });
+
+  it('still fires onRepBoundary even when onPerRep is not provided', () => {
+    // Drop the optional callback to simulate a 0.5.0 consumer.
+    const partial = {
+      onFrame: callbacks.onFrame,
+      onRepBoundary: callbacks.onRepBoundary,
+      onSetBoundary: callbacks.onSetBoundary,
+      onModeConfirmed: callbacks.onModeConfirmed,
+      onSettingsUpdate: callbacks.onSettingsUpdate,
+      onBatteryUpdate: callbacks.onBatteryUpdate,
+    };
+    const partialHandler = createNotificationHandler(partial);
+    const event: PerRepEvent = {
+      phase: 'return',
+      frameCounter: 0,
+      setCounter: 0,
+      repCount: 0,
+      targetWeightTenths: 0,
+    };
+    mockDecode.mockReturnValue({ type: 'perRep', event });
+
+    partialHandler(dummyData);
+
+    expect(callbacks.onRepBoundary).toHaveBeenCalledOnce();
   });
 });
