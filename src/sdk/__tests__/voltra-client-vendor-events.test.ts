@@ -7,8 +7,6 @@
  *   - Multiple listeners on the same event all fire
  *   - Unsubscribe handles actually unsubscribe
  *   - dispose() clears all listener sets (no callbacks fire after dispose)
- *   - Backward compat: legacy onRepBoundary / onSetBoundary still fire
- *     alongside the typed callbacks
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { BaseBLEAdapter } from '../../bluetooth/adapters/base';
@@ -148,18 +146,6 @@ describe('VoltraClient — typed vendor-frame events', () => {
 
       expect(a).toHaveBeenCalledOnce();
       expect(b).toHaveBeenCalledOnce();
-    });
-
-    it('legacy onRepBoundary still fires alongside onPerRep (backward compat)', () => {
-      const repCb = vi.fn();
-      const perRepCb = vi.fn();
-      client.onRepBoundary(repCb);
-      client.onPerRep(perRepCb);
-
-      adapter.inject(makePerRepFrame());
-
-      expect(perRepCb).toHaveBeenCalledOnce();
-      expect(repCb).toHaveBeenCalledOnce();
     });
   });
 

@@ -24,6 +24,11 @@ import {
   getAvailableIsokineticEccSpeedLimits,
   getAvailableIsokineticEccConstWeights,
   getAvailableIsokineticEccOverloadWeights,
+  getTelemetryRateCommand,
+  getAvailableTelemetryRates,
+  getTelemetrySubscribeCommand,
+  getCableTriggerCommand,
+  getResistanceExperienceCommand,
 } from '../commands';
 import { TrainingMode, VALID_TRAINING_MODES } from '../constants';
 import { hexToBytes } from '../../../shared/utils';
@@ -436,6 +441,66 @@ describe('commands', () => {
       expect(values[0]).toBe(0);
       expect(values[values.length - 1]).toBe(200);
       expect(values.length).toBe(201);
+    });
+  });
+
+  // ===========================================================================
+  // QoL Setters (added in 0.6.0, @experimental)
+  // ===========================================================================
+
+  describe('getTelemetryRateCommand', () => {
+    it('returns bytes for valid rate', () => {
+      expect(getTelemetryRateCommand(10)).toBeInstanceOf(Uint8Array);
+    });
+
+    it('returns null for out-of-range rate', () => {
+      expect(getTelemetryRateCommand(999)).toBeNull();
+      expect(getTelemetryRateCommand(-1)).toBeNull();
+    });
+  });
+
+  describe('getAvailableTelemetryRates', () => {
+    it('returns a sorted ascending array', () => {
+      const values = getAvailableTelemetryRates();
+      expect(values.length).toBeGreaterThan(0);
+      for (let i = 1; i < values.length; i++) {
+        expect(values[i]).toBeGreaterThan(values[i - 1]);
+      }
+    });
+  });
+
+  describe('getTelemetrySubscribeCommand', () => {
+    it('returns bytes for "none" and "all"', () => {
+      expect(getTelemetrySubscribeCommand('none')).toBeInstanceOf(Uint8Array);
+      expect(getTelemetrySubscribeCommand('all')).toBeInstanceOf(Uint8Array);
+    });
+
+    it('returns different bytes for "none" vs "all"', () => {
+      expect(getTelemetrySubscribeCommand('none')).not.toEqual(getTelemetrySubscribeCommand('all'));
+    });
+  });
+
+  describe('getCableTriggerCommand', () => {
+    it('returns bytes for "open" and "close"', () => {
+      expect(getCableTriggerCommand('open')).toBeInstanceOf(Uint8Array);
+      expect(getCableTriggerCommand('close')).toBeInstanceOf(Uint8Array);
+    });
+
+    it('returns different bytes for "open" vs "close"', () => {
+      expect(getCableTriggerCommand('open')).not.toEqual(getCableTriggerCommand('close'));
+    });
+  });
+
+  describe('getResistanceExperienceCommand', () => {
+    it('returns bytes for "intense" and "standard"', () => {
+      expect(getResistanceExperienceCommand('intense')).toBeInstanceOf(Uint8Array);
+      expect(getResistanceExperienceCommand('standard')).toBeInstanceOf(Uint8Array);
+    });
+
+    it('returns different bytes for "intense" vs "standard"', () => {
+      expect(getResistanceExperienceCommand('intense')).not.toEqual(
+        getResistanceExperienceCommand('standard')
+      );
     });
   });
 });

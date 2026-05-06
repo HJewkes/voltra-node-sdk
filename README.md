@@ -5,6 +5,21 @@ SDK for connecting to and controlling Voltra fitness devices.
 [![npm version](https://img.shields.io/npm/v/@voltras/node-sdk.svg)](https://www.npmjs.com/package/@voltras/node-sdk)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+## What's new in 0.6.0
+
+- **Typed vendor-frame events**: `onPerRep`, `onSummary`, `onPreSummary`,
+  `onInProgress` replace the payload-less `onRepBoundary` / `onSetBoundary`
+  callbacks (which were removed). Each fires with a structured event payload.
+- **Mode-config setters**: `setDamperLevel`, `setAssistMode`,
+  `setBandMaxForce`, `setIsokineticTargetSpeed`, `setIsokineticEccMode`,
+  `setIsokineticEccSpeedLimit`, `setIsokineticEccConstWeight`,
+  `setIsokineticEccOverloadWeight`. `damperLevel` is reflected in
+  `client.settings`.
+- **`@experimental` QoL setters**: `setTelemetryRate`, `setTelemetrySubscribe`,
+  `setCableTrigger`, `setResistanceExperience`. Validated at the protocol
+  level but not yet on-device.
+- **Breaking changes**: see [MIGRATION.md](./MIGRATION.md#migrating-from-05x-to-060).
+
 ## Features
 
 - **Device Control**: Configure weight (5-200 lbs, any integer), chains (0-100 lbs), inverse chains (0-100 lbs), and eccentric load (-195% to +195%)
@@ -188,12 +203,23 @@ client.subscribe((event) => {
       console.log('Telemetry:', event.frame);
       break;
 
-    // Workout boundary events (device-detected)
-    case 'repBoundary':
-      console.log('Rep completed!');
+    // Typed vendor-frame events (0.6.0+)
+    case 'perRep':
+      // Fires twice per rep — pull start (event.event.phase === 'pull')
+      // and return start (event.event.phase === 'return')
+      console.log('Per-rep frame:', event.event);
       break;
-    case 'setBoundary':
-      console.log('Set completed!');
+    case 'inProgress':
+      // ~1 Hz heartbeat with peak/current force, velocity, target weight
+      console.log('In-progress beat:', event.event);
+      break;
+    case 'summary':
+      // Fires once at end-of-set
+      console.log('Set complete:', event.event);
+      break;
+    case 'preSummary':
+      // Fires ~3s before the final rep
+      console.log('Pre-summary:', event.event);
       break;
 
     // Device notification events
@@ -224,15 +250,32 @@ const unsubFrame = client.onFrame((frame) => {
   updateUI(frame.position, frame.velocity, frame.force);
 });
 
-// Rep boundaries (device detects rep completion)
-const unsubRep = client.onRepBoundary(() => {
-  repCount++;
-  playRepSound();
+// Per-rep events (typed payload, fires twice per rep)
+const unsubPerRep = client.onPerRep((event) => {
+  // event.phase: 'pull' | 'return'
+  // event.repCount, event.setCounter, event.targetWeightTenths
+  if (event.phase === 'pull') {
+    repCount++;
+    playRepSound();
+  }
 });
 
-// Set boundaries (device detects set completion)
-const unsubSet = client.onSetBoundary(() => {
-  logSetComplete();
+// End-of-set summary (typed payload)
+const unsubSummary = client.onSummary((event) => {
+  // event.schemaVersion, event.setCounter, event.repCount, event.raw
+  logSetComplete(event.repCount);
+});
+
+// In-progress heartbeat (~1 Hz, typed payload — use sparingly)
+const unsubInProgress = client.onInProgress((event) => {
+  // event.peakForceTenths, event.currentForceTenths, event.velocityCmPerSec
+  updateForceGauge(event.currentForceTenths);
+});
+
+// Pre-summary (fires ~3s before final rep)
+const unsubPreSummary = client.onPreSummary((event) => {
+  // event.repDurationMs, event.repCount, event.targetWeightTenths
+  showPreSetSummary(event.repDurationMs);
 });
 
 // Mode confirmations (after setMode())
@@ -258,8 +301,35 @@ const unsubConnection = client.onConnectionStateChange((state) => {
 
 // Unsubscribe when done
 unsubFrame();
-unsubRep();
+unsubPerRep();
 // ... etc
+```
+
+### Mode-config setters (0.6.0)
+
+Beyond the four core resistance settings, 0.6.0 adds setters for the
+remaining mode-specific knobs the device exposes. All persist globally and
+resolve on the BLE write completing — they don't wait for a device echo.
+
+```typescript
+await client.setDamperLevel(5); // Damper mode (UI shows N+1 → "6")
+await client.setAssistMode('on'); // Assist on/off
+await client.setBandMaxForce(40); // Resistance band max force (15-70 lbs)
+await client.setIsokineticTargetSpeed(1500); // 1500 mm/s = 1.5 m/s
+await client.setIsokineticEccMode('isokinetic');
+await client.setIsokineticEccSpeedLimit(0); // 0 = auto
+await client.setIsokineticEccConstWeight(50);
+await client.setIsokineticEccOverloadWeight(75);
+
+// damperLevel is reflected back from the device's settingsUpdate
+// notifications and surfaced on client.settings:
+console.log(client.settings.damperLevel); // 5
+
+// @experimental — register-validated only
+await client.setTelemetryRate(10);
+await client.setTelemetrySubscribe('all');
+await client.setCableTrigger('open');
+await client.setResistanceExperience('intense');
 ```
 
 ## Platform-Specific Setup
@@ -462,8 +532,10 @@ Controls a single connected device.
 | `endSet()` | End set but stay prepared |
 | `subscribe(callback)` | Subscribe to all events |
 | `onFrame(callback)` | Subscribe to telemetry frames |
-| `onRepBoundary(callback)` | Subscribe to rep completion events |
-| `onSetBoundary(callback)` | Subscribe to set completion events |
+| `onPerRep(callback)` | Subscribe to typed per-rep events (0.6.0+) |
+| `onSummary(callback)` | Subscribe to end-of-set summary events (0.6.0+) |
+| `onPreSummary(callback)` | Subscribe to pre-summary events (0.6.0+) |
+| `onInProgress(callback)` | Subscribe to ~1 Hz in-progress heartbeats (0.6.0+) |
 | `onModeConfirmed(callback)` | Subscribe to mode confirmation events |
 | `onSettingsUpdate(callback)` | Subscribe to device settings updates |
 | `onBatteryUpdate(callback)` | Subscribe to battery level updates |

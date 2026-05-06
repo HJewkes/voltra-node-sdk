@@ -13,14 +13,11 @@ vi.mock('../../voltra/protocol/telemetry-decoder', () => ({
 import { decodeNotification } from '../../voltra/protocol/telemetry-decoder';
 const mockDecode = vi.mocked(decodeNotification);
 
-type AllCallbacks = Required<NotificationCallbacks>;
-function makeCallbacks(): AllCallbacks & {
-  [K in keyof AllCallbacks]: ReturnType<typeof vi.fn>;
+function makeCallbacks(): NotificationCallbacks & {
+  [K in keyof NotificationCallbacks]: ReturnType<typeof vi.fn>;
 } {
   return {
     onFrame: vi.fn(),
-    onRepBoundary: vi.fn(),
-    onSetBoundary: vi.fn(),
     onModeConfirmed: vi.fn(),
     onSettingsUpdate: vi.fn(),
     onBatteryUpdate: vi.fn(),
@@ -57,24 +54,7 @@ describe('notification-dispatcher', () => {
 
     expect(callbacks.onFrame).toHaveBeenCalledOnce();
     expect(callbacks.onFrame).toHaveBeenCalledWith(frame);
-    expect(callbacks.onRepBoundary).not.toHaveBeenCalled();
-  });
-
-  it('dispatches onRepBoundary for rep summaries', () => {
-    mockDecode.mockReturnValue({ type: 'rep_boundary' });
-
-    handler(dummyData);
-
-    expect(callbacks.onRepBoundary).toHaveBeenCalledOnce();
-    expect(callbacks.onFrame).not.toHaveBeenCalled();
-  });
-
-  it('dispatches onSetBoundary for set summaries', () => {
-    mockDecode.mockReturnValue({ type: 'set_boundary' });
-
-    handler(dummyData);
-
-    expect(callbacks.onSetBoundary).toHaveBeenCalledOnce();
+    expect(callbacks.onPerRep).not.toHaveBeenCalled();
   });
 
   it('dispatches onModeConfirmed with TrainingMode', () => {
@@ -118,8 +98,6 @@ describe('notification-dispatcher', () => {
     handler(dummyData);
 
     expect(callbacks.onFrame).not.toHaveBeenCalled();
-    expect(callbacks.onRepBoundary).not.toHaveBeenCalled();
-    expect(callbacks.onSetBoundary).not.toHaveBeenCalled();
     expect(callbacks.onModeConfirmed).not.toHaveBeenCalled();
     expect(callbacks.onSettingsUpdate).not.toHaveBeenCalled();
     expect(callbacks.onBatteryUpdate).not.toHaveBeenCalled();
@@ -135,8 +113,6 @@ describe('notification-dispatcher', () => {
     handler(dummyData);
 
     expect(callbacks.onFrame).not.toHaveBeenCalled();
-    expect(callbacks.onRepBoundary).not.toHaveBeenCalled();
-    expect(callbacks.onSetBoundary).not.toHaveBeenCalled();
     expect(callbacks.onModeConfirmed).not.toHaveBeenCalled();
     expect(callbacks.onSettingsUpdate).not.toHaveBeenCalled();
     expect(callbacks.onBatteryUpdate).not.toHaveBeenCalled();
@@ -150,7 +126,7 @@ describe('notification-dispatcher', () => {
   // Typed vendor-frame events (0.6.0+)
   // ===========================================================================
 
-  it('dispatches onPerRep AND legacy onRepBoundary for perRep results', () => {
+  it('dispatches onPerRep for perRep results', () => {
     const event: PerRepEvent = {
       phase: 'pull',
       frameCounter: 1,
@@ -164,12 +140,9 @@ describe('notification-dispatcher', () => {
 
     expect(callbacks.onPerRep).toHaveBeenCalledOnce();
     expect(callbacks.onPerRep).toHaveBeenCalledWith(event);
-    // Backward-compat: legacy boundary callback still fires.
-    expect(callbacks.onRepBoundary).toHaveBeenCalledOnce();
-    expect(callbacks.onSetBoundary).not.toHaveBeenCalled();
   });
 
-  it('dispatches onInProgress AND legacy onSetBoundary for inProgress results', () => {
+  it('dispatches onInProgress for inProgress results', () => {
     const event: InProgressEvent = {
       peakForceTenths: 1234,
       currentForceTenths: 800,
@@ -183,12 +156,9 @@ describe('notification-dispatcher', () => {
 
     expect(callbacks.onInProgress).toHaveBeenCalledOnce();
     expect(callbacks.onInProgress).toHaveBeenCalledWith(event);
-    // Backward-compat: legacy boundary callback still fires.
-    expect(callbacks.onSetBoundary).toHaveBeenCalledOnce();
-    expect(callbacks.onRepBoundary).not.toHaveBeenCalled();
   });
 
-  it('dispatches onSummary for summary results (no legacy fan-out)', () => {
+  it('dispatches onSummary for summary results', () => {
     const event: SummaryEvent = {
       schemaVersion: VendorSchemaVersion.Weight,
       setCounter: 1,
@@ -201,11 +171,9 @@ describe('notification-dispatcher', () => {
 
     expect(callbacks.onSummary).toHaveBeenCalledOnce();
     expect(callbacks.onSummary).toHaveBeenCalledWith(event);
-    expect(callbacks.onRepBoundary).not.toHaveBeenCalled();
-    expect(callbacks.onSetBoundary).not.toHaveBeenCalled();
   });
 
-  it('dispatches onPreSummary for preSummary results (no legacy fan-out)', () => {
+  it('dispatches onPreSummary for preSummary results', () => {
     const event: PreSummaryEvent = {
       schemaVersion: VendorSchemaVersion.Damper,
       targetWeightTenths: 0,
@@ -219,32 +187,5 @@ describe('notification-dispatcher', () => {
 
     expect(callbacks.onPreSummary).toHaveBeenCalledOnce();
     expect(callbacks.onPreSummary).toHaveBeenCalledWith(event);
-    expect(callbacks.onRepBoundary).not.toHaveBeenCalled();
-    expect(callbacks.onSetBoundary).not.toHaveBeenCalled();
-  });
-
-  it('still fires onRepBoundary even when onPerRep is not provided', () => {
-    // Drop the optional callback to simulate a 0.5.0 consumer.
-    const partial = {
-      onFrame: callbacks.onFrame,
-      onRepBoundary: callbacks.onRepBoundary,
-      onSetBoundary: callbacks.onSetBoundary,
-      onModeConfirmed: callbacks.onModeConfirmed,
-      onSettingsUpdate: callbacks.onSettingsUpdate,
-      onBatteryUpdate: callbacks.onBatteryUpdate,
-    };
-    const partialHandler = createNotificationHandler(partial);
-    const event: PerRepEvent = {
-      phase: 'return',
-      frameCounter: 0,
-      setCounter: 0,
-      repCount: 0,
-      targetWeightTenths: 0,
-    };
-    mockDecode.mockReturnValue({ type: 'perRep', event });
-
-    partialHandler(dummyData);
-
-    expect(callbacks.onRepBoundary).toHaveBeenCalledOnce();
   });
 });

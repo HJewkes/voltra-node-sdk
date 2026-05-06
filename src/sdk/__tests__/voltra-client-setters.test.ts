@@ -215,4 +215,76 @@ describe('VoltraClient — 0.6.0 mode-config setters', () => {
       expect(client.getAvailableIsokineticEccOverloadWeights().length).toBe(201);
     });
   });
+
+  // ===========================================================================
+  // QoL Setters (@experimental, added in 0.6.0)
+  // ===========================================================================
+
+  describe('setTelemetryRate', () => {
+    it('writes the expected bytes for a valid rate', async () => {
+      await client.setTelemetryRate(10);
+      const expected = hexToBytes(protocol.commands.telemetryRate['10']);
+      expect(lastMatchingWrite(adapter, expected)).not.toBeNull();
+    });
+
+    it('throws InvalidSettingError for an out-of-range rate', async () => {
+      await expect(client.setTelemetryRate(999)).rejects.toBeInstanceOf(InvalidSettingError);
+    });
+
+    it('throws NotConnectedError when the client is not connected', async () => {
+      const stand = new VoltraClient({ adapter: new RecordingAdapter() });
+      await expect(stand.setTelemetryRate(10)).rejects.toBeInstanceOf(NotConnectedError);
+    });
+  });
+
+  describe('setTelemetrySubscribe', () => {
+    it('writes the expected bytes for "all"', async () => {
+      await client.setTelemetrySubscribe('all');
+      const expected = hexToBytes(protocol.commands.telemetrySubscribe.all);
+      expect(lastMatchingWrite(adapter, expected)).not.toBeNull();
+    });
+
+    it('writes different bytes for "none" vs "all"', async () => {
+      await client.setTelemetrySubscribe('none');
+      const noneBytes = adapter.writes[adapter.writes.length - 1];
+      adapter.writes.length = 0;
+      await client.setTelemetrySubscribe('all');
+      const allBytes = adapter.writes[adapter.writes.length - 1];
+      expect(noneBytes).not.toEqual(allBytes);
+    });
+  });
+
+  describe('setCableTrigger', () => {
+    it('writes the expected bytes for "open"', async () => {
+      await client.setCableTrigger('open');
+      const expected = hexToBytes(protocol.commands.cableTrigger.open);
+      expect(lastMatchingWrite(adapter, expected)).not.toBeNull();
+    });
+
+    it('writes different bytes for "open" vs "close"', async () => {
+      await client.setCableTrigger('open');
+      const openBytes = adapter.writes[adapter.writes.length - 1];
+      adapter.writes.length = 0;
+      await client.setCableTrigger('close');
+      const closeBytes = adapter.writes[adapter.writes.length - 1];
+      expect(openBytes).not.toEqual(closeBytes);
+    });
+  });
+
+  describe('setResistanceExperience', () => {
+    it('writes the expected bytes for "intense"', async () => {
+      await client.setResistanceExperience('intense');
+      const expected = hexToBytes(protocol.commands.resistanceExperience.intense);
+      expect(lastMatchingWrite(adapter, expected)).not.toBeNull();
+    });
+
+    it('writes different bytes for "intense" vs "standard"', async () => {
+      await client.setResistanceExperience('intense');
+      const intenseBytes = adapter.writes[adapter.writes.length - 1];
+      adapter.writes.length = 0;
+      await client.setResistanceExperience('standard');
+      const standardBytes = adapter.writes[adapter.writes.length - 1];
+      expect(intenseBytes).not.toEqual(standardBytes);
+    });
+  });
 });

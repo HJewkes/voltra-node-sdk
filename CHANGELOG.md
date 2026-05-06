@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - UNRELEASED
+
+### Added
+
+- Eight mode-config setters on `VoltraClient`: `setDamperLevel`, `setAssistMode`,
+  `setBandMaxForce`, `setIsokineticTargetSpeed`, `setIsokineticEccMode`,
+  `setIsokineticEccSpeedLimit`, `setIsokineticEccConstWeight`,
+  `setIsokineticEccOverloadWeight`. Each ships with a matching `getAvailable*`
+  helper and underlying `get*Command` builder in
+  `voltra/protocol/commands.ts`.
+- Four `@experimental` QoL setters: `setTelemetryRate`, `setTelemetrySubscribe`,
+  `setCableTrigger`, `setResistanceExperience`. Underlying registers were
+  validated in voltra-private PR #11 but not yet validated end-to-end on-device.
+- Typed vendor-frame events on `VoltraClient`: `onPerRep`, `onSummary`,
+  `onPreSummary`, `onInProgress`. Each callback receives a typed event payload
+  (`PerRepEvent`, `SummaryEvent`, `PreSummaryEvent`, `InProgressEvent`) decoded
+  from the underlying vendor sub-type frame. New `'perRep'` / `'summary'` /
+  `'preSummary'` / `'inProgress'` variants on the `VoltraClientEvent`
+  discriminated union.
+- Pure decoder entry points: `decodeVendorPerRep`, `decodeVendorSummary`,
+  `decodeVendorPreSummary`, `decodeVendorInProgress`. Re-exported from the
+  package root.
+- `VendorMessages`, `matchesVendorSubType`, and `VendorSchemaVersion` constants
+  exported from the package root.
+- `damperLevel?: number` field on `VoltraDeviceSettings` and
+  `DeviceSettings`. Reflected from device `settingsUpdate` notifications
+  (paramId `0x0351`, uint8) and surfaced on `client.settings.damperLevel`.
+
+### Changed
+
+- `MessageType` strings renamed for clarity: `'rep_summary'` →
+  `'vendor_per_rep'`, `'set_summary'` → `'vendor_in_progress'`. New
+  `'vendor_summary'` / `'vendor_pre_summary'` strings cover the two
+  end-of-set vendor frames the SDK now decodes. Only matters if you call
+  `identifyMessageType()` directly.
+- `decodeNotification()` returns `'unknown'` for vendor frames whose payload
+  fails to fully parse (truncation or sub-type mismatch). Previously these
+  downgraded to the legacy payload-less `'rep_boundary'` / `'set_boundary'`
+  results.
+
+### Removed
+
+- **Breaking:** `VoltraClient.onRepBoundary` and `VoltraClient.onSetBoundary`
+  payload-less listeners. Subscribe to `onPerRep` / `onInProgress` instead —
+  they receive typed payload events. See `MIGRATION.md`.
+- **Breaking:** `'repBoundary'` / `'setBoundary'` variants on the
+  `VoltraClientEvent` discriminated union.
+- **Breaking:** `'rep_boundary'` / `'set_boundary'` variants on the
+  `DecodeResult` union returned by `decodeNotification()`.
+- **Breaking:** `RepBoundaryListener` and `SetBoundaryListener` type aliases.
+
 ## [0.4.2] - 2026-05-05
 
 ### Fixed
