@@ -177,14 +177,6 @@ export interface SummaryEvent {
 export interface PreSummaryEvent {
   /** Schema version: 1=weight, 2=band, 3=damper, 4=isokinetic. */
   schemaVersion: VendorSchemaVersion;
-  /**
-   * Schema-version byte exposed as `trainingMode` for backward compatibility
-   * with earlier API drafts. Numerically identical to `schemaVersion` and
-   * does NOT match the {@link TrainingMode} enum in all modes — voltra-private's
-   * 2026-05-06 validation refuted the prior trainingMode hypothesis. Prefer
-   * `schemaVersion` for new code.
-   */
-  trainingMode: number;
   /** Target weight in tenths of pounds (frame[16..17], uint16 LE). */
   targetWeightTenths: number;
   /** Rep count (frame[26..27], uint16 LE). */

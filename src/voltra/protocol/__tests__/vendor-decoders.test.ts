@@ -333,7 +333,6 @@ describe('decodeVendorPreSummary', () => {
 
     expect(event).not.toBeNull();
     expect(event!.schemaVersion).toBe(VendorSchemaVersion.Damper);
-    expect(event!.trainingMode).toBe(VendorSchemaVersion.Damper);
     expect(event!.targetWeightTenths).toBe(0);
     expect(event!.repCount).toBe(5);
     expect(event!.repDurationMs).toBe(4321);

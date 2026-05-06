@@ -285,9 +285,6 @@ export function decodeVendorPreSummary(data: Uint8Array): PreSummaryEvent | null
 
   return {
     schemaVersion: schemaVersionByte as VendorSchemaVersion,
-    // Exposed for backward-compat with earlier API drafts; numerically the
-    // same byte as `schemaVersion`. See PreSummaryEvent jsdoc.
-    trainingMode: schemaVersionByte,
     targetWeightTenths: readUint16LE(
       data,
       frameOffsetOf(cfg.fields.targetWeightTenths.payloadOffset)

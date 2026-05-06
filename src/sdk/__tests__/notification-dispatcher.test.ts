@@ -208,7 +208,6 @@ describe('notification-dispatcher', () => {
   it('dispatches onPreSummary for preSummary results (no legacy fan-out)', () => {
     const event: PreSummaryEvent = {
       schemaVersion: VendorSchemaVersion.Damper,
-      trainingMode: VendorSchemaVersion.Damper,
       targetWeightTenths: 0,
       repCount: 5,
       repDurationMs: 1234,
