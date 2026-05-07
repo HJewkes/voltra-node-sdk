@@ -193,7 +193,9 @@ describe('VoltraClient — Rowing two-stage entry (Bug 22)', () => {
       await client.enterRowMode();
       const expected = hexToBytes(protocol.commands.modes.rowing);
       // Each call writes the workout-state command once.
-      expect(adapter.writes.filter((w) => w.length === expected.length).length).toBeGreaterThanOrEqual(2);
+      expect(
+        adapter.writes.filter((w) => w.length === expected.length).length
+      ).toBeGreaterThanOrEqual(2);
     });
   });
 
@@ -224,7 +226,9 @@ describe('VoltraClient — Rowing two-stage entry (Bug 22)', () => {
     });
 
     it('uses a different action code per distance preset', async () => {
-      const cases: Array<['JustRow' | 'M50' | 'M100' | 'M500' | 'M1000' | 'M2000' | 'M5000', number]> = [
+      const cases: Array<
+        ['JustRow' | 'M50' | 'M100' | 'M500' | 'M1000' | 'M2000' | 'M5000', number]
+      > = [
         ['JustRow', 0x03],
         ['M50', 0x06],
         ['M100', 0x07],

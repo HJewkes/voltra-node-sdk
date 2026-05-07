@@ -602,10 +602,7 @@ export class VoltraClient {
 
     const cmd = getModeCommand(TrainingMode.Rowing);
     if (!cmd) {
-      throw new CommandError(
-        'Rowing mode command not available in protocol data',
-        'enterRowMode',
-      );
+      throw new CommandError('Rowing mode command not available in protocol data', 'enterRowMode');
     }
 
     try {
@@ -615,7 +612,7 @@ export class VoltraClient {
     } catch (e) {
       throw new CommandError(
         `Failed to enter row mode: ${this.getErrorMessage(e)}`,
-        'enterRowMode',
+        'enterRowMode'
       );
     }
   }
@@ -654,7 +651,7 @@ export class VoltraClient {
       throw new CommandError(
         'startRow() requires enterRowMode() first. Call client.enterRowMode() ' +
           'before client.startRow().',
-        'startRow',
+        'startRow'
       );
     }
 
@@ -663,7 +660,7 @@ export class VoltraClient {
       throw new InvalidSettingError(
         'rowingDistance',
         distance,
-        Object.keys(ROW_START_ACTION_CODES),
+        Object.keys(ROW_START_ACTION_CODES)
       );
     }
 

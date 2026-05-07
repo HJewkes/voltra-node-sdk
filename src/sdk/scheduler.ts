@@ -54,7 +54,7 @@ export class ReassertScheduler {
         // Re-check: a later cancel() / arm() may have raced this fire.
         if (myAttempt !== this.attemptId) return;
         void tick(myAttempt, index);
-      }, delay),
+      }, delay)
     );
     return myAttempt;
   }

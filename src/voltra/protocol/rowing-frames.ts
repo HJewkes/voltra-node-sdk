@@ -84,7 +84,7 @@ function buildRowScrSwitchPayload(action: number): Uint8Array {
  */
 export function buildRowScrSwitchFrame(
   actionCode: number,
-  opts: { sequence?: number } = {},
+  opts: { sequence?: number } = {}
 ): Uint8Array {
   return buildEnvelopedFrame(CMD_PARAM_WRITE, buildRowScrSwitchPayload(actionCode), {
     sequence: opts.sequence,
