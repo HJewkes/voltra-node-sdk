@@ -379,3 +379,24 @@ export interface DeviceSettings {
    */
   damperLevel?: number;
 }
+
+// <Bug-17> Begin — cmd=0x0F bulk-read response payload (additive, do not modify).
+/**
+ * Parsed cmd=0x0F bulk-read response.
+ *
+ * The device returns one of these in response to bootstrap step 10 (the
+ * 18-param mode-feature-state query) and to any other multi-paramID read.
+ * The payload structure is `[count(u16 LE), ...(paramId(u16 LE) + value)]`
+ * where the value width depends on the paramId — currently the SDK decodes
+ * the same fields as `settings_update` (`baseWeight`, `chains`, `eccentric`,
+ * `trainingMode`, `inverseChains`, `damperLevel`) and ignores params with
+ * unknown widths. See `voltra-private/research/data-port-2026-05-07-android-deep.md`
+ * § 4 for the open question on per-paramId value-width tables.
+ */
+export interface Cmd0x0FBulkResponse {
+  /** Number of paramId+value pairs successfully parsed */
+  paramCount: number;
+  /** Decoded device settings extracted from the response */
+  settings: DeviceSettings;
+}
+// <Bug-17> End

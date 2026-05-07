@@ -324,7 +324,13 @@ export class VoltraClient {
       // Success
       this._connectedDeviceId = device.id;
       this._connectedDeviceName = device.name ?? null;
-      this._settings = { ...DEFAULT_SETTINGS };
+      // Bug 17 fix: do NOT blanket-reset `_settings` here. The bootstrap
+      // step-10 query (`MODE_FEATURE_STATE_18PARAM_QUERY_HEX`) sent inside
+      // `initialize()` triggers a `cmd=0x0F` response that populates
+      // `_settings` via `syncSettingsFromDevice`. Resetting _settings here
+      // would wipe whatever step-10 just populated. On the disconnect side,
+      // `cleanup()` also no longer resets, so last-known settings persist
+      // across reconnect until step-10 refreshes them.
       this.setConnectionState('connected');
 
       this.emit({ type: 'connected', deviceId: device.id, deviceName: device.name ?? null });
@@ -1341,7 +1347,14 @@ export class VoltraClient {
     this.notificationUnsubscribe = null;
     this._connectedDeviceId = null;
     this._connectedDeviceName = null;
-    this._settings = { ...DEFAULT_SETTINGS };
+    // Bug 17 fix: do NOT blanket-reset `_settings` to defaults on cleanup.
+    // The previous reset (`this._settings = { ...DEFAULT_SETTINGS };`) was
+    // the proximate cause of post-reconnect SDK reading defaults — the
+    // 3-packet init produced no settings cascade, leaving `_settings`
+    // stuck at `DEFAULT_SETTINGS` until a write triggered an async cmd=0x10
+    // update. The bootstrap step-10 query now refreshes `_settings` on
+    // every connect; keeping last-known settings here gives `getState()`
+    // callers stable values across the brief reconnect window.
     this._recordingState = 'idle';
   }
 

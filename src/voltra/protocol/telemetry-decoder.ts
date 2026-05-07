@@ -21,7 +21,7 @@ import {
 } from './constants';
 import { createFrame, type TelemetryFrame } from '../models/telemetry/frame';
 import { bytesEqual, bytesToHex } from '../../shared/utils';
-import type { DeviceSettings } from './types';
+import type { Cmd0x0FBulkResponse, DeviceSettings } from './types';
 import type { PerRepEvent, SummaryEvent, PreSummaryEvent, InProgressEvent } from '../../sdk/types';
 
 // =============================================================================
@@ -36,6 +36,56 @@ import type { PerRepEvent, SummaryEvent, PreSummaryEvent, InProgressEvent } from
  * a future regen sync that promotes it into `protocol.telemetry.paramIds`.
  */
 const DAMPER_LEVEL_PARAM_ID_HEX = '5103';
+
+// <Bug-17> Begin — cmd=0x0F bulk-read response framing constants.
+/** Frame-type byte for device-originated response frames (`0x08`). */
+const RESPONSE_FRAME_TYPE = 0x08;
+/** Extended-length variant of {@link RESPONSE_FRAME_TYPE} (`0x09`). */
+const RESPONSE_FRAME_TYPE_EXTENDED = 0x09;
+/** Frame offset of the cmd byte in a `0x55`-framed response. */
+const CMD_BYTE_OFFSET = 10;
+/** cmd byte for the multi-paramID read response (`0x0F`). */
+const CMD_PARAM_READ = 0x0f;
+/** Frame offset of the param-count u16 LE in a cmd=0x0F response. */
+const CMD_0F_COUNT_OFFSET = 12;
+/** Frame offset of the first param pair in a cmd=0x0F response. */
+const CMD_0F_FIRST_PARAM_OFFSET = 14;
+
+/**
+ * Per-paramId value width (bytes) for params decoded from cmd=0x0F bulk
+ * responses. Only the params surfaced through `DeviceSettings` are listed —
+ * the decoder uses {@link Uint16ParamIds} for everything else, falling back
+ * to abort decoding if neither table covers the paramId. Bootstrap step 10
+ * (18-param query) covers all of these plus QUICK_CABLE_ADJUSTMENT (`bc54`)
+ * whose width is not yet documented; see
+ * `voltra-private/research/data-port-2026-05-07-android-deep.md` § 4 #11.
+ *
+ * Param IDs are stored as little-endian hex strings to match `ParamIdHex`.
+ */
+const CMD_0F_KNOWN_PARAM_WIDTHS: Readonly<Record<string, number>> = {
+  // Step-10 response carries these as uint16 LE (lb / index / state).
+  '863e': 2, // BP_BASE_WEIGHT
+  '873e': 2, // BP_CHAINS_WEIGHT
+  '883e': 2, // BP_ECCENTRIC_WEIGHT (signed; readCmd0x0FValue handles sign)
+  '893e': 2, // BP_SET_FITNESS_MODE (also covered by Uint16ParamIds)
+  '823e': 2, // BP_RUNTIME_POSITION_CM
+  '6a50': 2, // MC_DEFAULT_OFFLEN_CM
+  '6253': 2, // RESISTANCE_BAND_MAX_FORCE
+  b753: 2, // RESISTANCE_BAND_LEN
+  '3154': 2, // ISOMETRIC_MAX_FORCE
+  d253: 2, // ISOMETRIC_MAX_DURATION
+  // Step-10 response carries these as uint8 flags / enums.
+  '6153': 1, // RESISTANCE_BAND_ALGORITHM
+  b653: 1, // RESISTANCE_BAND_LEN_BY_ROM
+  e352: 1, // EP_RESISTANCE_BAND_INVERSE
+  '0651': 1, // FITNESS_ASSIST_MODE
+  b053: 1, // FITNESS_INVERSE_CHAIN
+  c653: 1, // WEIGHT_TRAINING_EXTRA_MODE
+  b04f: 1, // FITNESS_WORKOUT_STATE (training mode)
+  // damperLevel
+  '5103': 1, // FITNESS_DAMPER_RATIO_IDX
+};
+// <Bug-17> End
 
 // =============================================================================
 // Byte Parsing Helpers
@@ -111,6 +161,8 @@ export type MessageType =
   | 'mode_confirmation'
   | 'multi_param'
   | 'settings_update'
+  // <Bug-17> cmd=0x0F bulk-read response (e.g. bootstrap step 10).
+  | 'cmd_0f_bulk_response'
   | 'device_init'
   | 'unknown';
 
@@ -140,6 +192,15 @@ export function identifyMessageType(data: Uint8Array): MessageType {
     return 'vendor_summary';
   } else if (matchesVendorSubType(data, VendorMessages.subTypes.preSummary)) {
     return 'vendor_pre_summary';
+  }
+
+  // <Bug-17> cmd=0x0F bulk-read response: matched on frame-type byte
+  // (0x08 or extended 0x09) AND cmd byte (0x0f). Tested before the 2-byte
+  // header dispatch because cmd=0x0F response length varies (depends on
+  // param count + value widths) and therefore cannot use a fixed-length
+  // 2-byte header match.
+  if (isCmd0x0FResponse(data)) {
+    return 'cmd_0f_bulk_response';
   }
 
   // Check 2-byte headers for other notification types
@@ -411,6 +472,122 @@ function decodeSettingsUpdate(data: Uint8Array): DecodeResult {
   return { type: 'settings_update', settings };
 }
 
+// <Bug-17> Begin — cmd=0x0F bulk-read response classification + decode.
+/**
+ * Returns true when `data` looks like a cmd=0x0F bulk-read response. Matches
+ * the frame-type byte (0x08 / 0x09) and the cmd byte (0x0F) at their
+ * documented offsets. Bootstrap step 10's response is the canonical instance.
+ */
+function isCmd0x0FResponse(data: Uint8Array): boolean {
+  if (data.length <= CMD_BYTE_OFFSET) return false;
+  if (data[0] !== 0x55) return false;
+  const frameType = data[2];
+  if (frameType !== RESPONSE_FRAME_TYPE && frameType !== RESPONSE_FRAME_TYPE_EXTENDED) {
+    return false;
+  }
+  return data[CMD_BYTE_OFFSET] === CMD_PARAM_READ;
+}
+
+/**
+ * Resolve the wire width (in bytes) of a paramId's value field in a cmd=0x0F
+ * response, or `null` if the SDK does not model this paramId yet. Falls back
+ * to {@link Uint16ParamIds} for params present in `protocol.json`.
+ */
+function resolveCmd0x0FValueWidth(paramIdHex: string): number | null {
+  const known = CMD_0F_KNOWN_PARAM_WIDTHS[paramIdHex];
+  if (known !== undefined) return known;
+  if (Uint16ParamIds.has(paramIdHex)) return 2;
+  return null;
+}
+
+/** Read a value of the given width and apply paramId-specific signedness. */
+function readCmd0x0FValue(
+  data: Uint8Array,
+  offset: number,
+  width: number,
+  paramIdHex: string
+): number {
+  if (width === 1) return data[offset];
+  if (width === 2) {
+    // BP_ECCENTRIC_WEIGHT (0x3e88, LE `883e`) is signed lb on the wire.
+    if (paramIdHex === ParamIdHex.ECCENTRIC) return readInt16LE(data, offset);
+    return readUint16LE(data, offset);
+  }
+  // Width 4 / other widths are not currently resolved by
+  // resolveCmd0x0FValueWidth, so this branch is unreachable today. Kept as
+  // a defensive default to avoid misreporting partial values.
+  return readUint32LE(data, offset);
+}
+
+/**
+ * Mutate `settings` to reflect the given paramId+value, mirroring
+ * {@link decodeSettingsUpdate}'s curated subset (baseWeight / chains /
+ * eccentric / trainingMode / inverseChains / damperLevel). Unmapped params
+ * are intentionally ignored.
+ */
+function applyCmd0x0FParamToSettings(
+  settings: DeviceSettings,
+  paramIdHex: string,
+  value: number
+): void {
+  if (paramIdHex === ParamIdHex.BASE_WEIGHT) {
+    settings.baseWeight = value;
+  } else if (paramIdHex === ParamIdHex.CHAINS) {
+    settings.chains = value;
+  } else if (paramIdHex === ParamIdHex.ECCENTRIC) {
+    settings.eccentric = value;
+  } else if (paramIdHex === ParamIdHex.TRAINING_MODE) {
+    settings.trainingMode = VALID_TRAINING_MODES.includes(value as TrainingMode)
+      ? (value as TrainingMode)
+      : undefined;
+  } else if (paramIdHex === ParamIdHex.INVERSE_CHAINS) {
+    settings.inverseChains = value;
+  } else if (paramIdHex === DAMPER_LEVEL_PARAM_ID_HEX) {
+    settings.damperLevel = value;
+  }
+}
+
+/**
+ * Decode a cmd=0x0F bulk-read response into a {@link Cmd0x0FBulkResponse}.
+ *
+ * Walks the `[count, ...(paramId + value)]` payload using
+ * {@link CMD_0F_KNOWN_PARAM_WIDTHS} to size each value. Stops gracefully
+ * (returning whatever has been decoded so far) on the first param whose
+ * width is not in the known-widths table — this keeps mis-aligned reads
+ * from corrupting downstream offsets when the device echoes a register the
+ * SDK does not yet model.
+ *
+ * Returns `null` only if the buffer fails the frame-type / cmd-byte gate.
+ */
+export function decodeCmd0x0FResponse(data: Uint8Array): Cmd0x0FBulkResponse | null {
+  if (!isCmd0x0FResponse(data)) return null;
+  if (data.length < CMD_0F_FIRST_PARAM_OFFSET) return null;
+
+  const declaredCount = readUint16LE(data, CMD_0F_COUNT_OFFSET);
+  const settings: DeviceSettings = {};
+  let offset = CMD_0F_FIRST_PARAM_OFFSET;
+  let decoded = 0;
+
+  for (let i = 0; i < declaredCount; i++) {
+    if (offset + 2 > data.length) break;
+    const paramIdHex = bytesToHex(data.slice(offset, offset + 2));
+    offset += 2;
+
+    const width = resolveCmd0x0FValueWidth(paramIdHex);
+    if (width === null) break;
+    if (offset + width > data.length) break;
+
+    const value = readCmd0x0FValue(data, offset, width, paramIdHex);
+    offset += width;
+    decoded++;
+
+    applyCmd0x0FParamToSettings(settings, paramIdHex, value);
+  }
+
+  return { paramCount: decoded, settings };
+}
+// <Bug-17> End
+
 /**
  * Decode a device status notification.
  * Extracts battery level.
@@ -490,6 +667,15 @@ export function decodeNotification(data: Uint8Array): DecodeResult {
     case 'settings_update':
     case 'multi_param':
       return decodeSettingsUpdate(data);
+
+    case 'cmd_0f_bulk_response': {
+      // <Bug-17> Reuse the `settings_update` dispatch path so existing
+      // `onSettingsUpdate` listeners (and `syncSettingsFromDevice`) populate
+      // `_settings` automatically — the bulk response carries the same
+      // DeviceSettings shape as an async cmd=0x10 update.
+      const decoded = decodeCmd0x0FResponse(data);
+      return decoded ? { type: 'settings_update', settings: decoded.settings } : null;
+    }
 
     case 'device_init':
     case 'status_update':
