@@ -378,6 +378,164 @@ export interface DeviceSettings {
    * Reflected when paramId 0x0351 is present in a settings_update notification.
    */
   damperLevel?: number;
+  // <Decoder-cmd07-cmd10> Phase 1a additions: assist mode + chains-active flag,
+  // both reflected by the cmd=0x07 (52-byte aa80-25 envelope) state dump.
+  /**
+   * Fitness-assist toggle observed in the state-dump frame at payload offset 1
+   * (post `aa 80 25`). 0 = OFF, 0x02 = ON; see Campaign 3 (validation
+   * 2026-05-06T21-38-19) for byte layout discovery. Other values pass through
+   * verbatim.
+   */
+  assistMode?: number;
+  /**
+   * Chains-active flag from the state-dump frame at payload offset 0
+   * (post `aa 80 25`). 0 = chains not engaged, 0x01 = chains engaged. Other
+   * values pass through verbatim.
+   */
+  chainsActive?: number;
+  /**
+   * Chain target weight in tenths of pounds (uint16 LE) decoded from the
+   * state-dump frame. Only meaningful when `chainsActive` is non-zero.
+   */
+  chainTargetTenths?: number;
+}
+
+// <Decoder-cmd07-cmd10> ==========================================================
+// State-dump (cmd=0x07 / 52-byte aa80-25 envelope) parsed payload.
+//
+// The 52-byte vendor frame `aa 80 25 ...` is currently mis-classified by the
+// `statusBattery` 4-byte header path (which yields nonsense battery values
+// pulled from the sub-type length marker byte). Voltra-private's Campaign 3
+// recon (notes-2026-05-06T21-38-19.md) located byte offsets for assist mode
+// and chains-active flag inside this frame; the layout below mirrors what is
+// independently confirmable from those captures.
+//
+// Note: detailed byte tables for the rest of the 37-byte payload remain
+// uncertain across the runbook narrative ("byte [4]/[37]") and the AA-subtype
+// catalog (`aa-subtype-catalog-2026-05-07-android-deep.md` §7.1, gated on
+// payload[2]=0x06 for the Custom-Curve variant — NOT seen in our captures).
+// Decoder exposes only fields that are stable across the captured frames.
+// CRC trailer occupies frame[encodedLength-2 .. encodedLength-1], i.e. the
+// last 2 bytes of the 52-byte frame, not inside the decoded payload.
+// ==========================================================
+/**
+ * Parsed state-dump frame (52-byte `0xAA 0x80 0x25` envelope).
+ */
+export interface StateDumpEvent {
+  /** Chains-active flag at payload offset 0 (0 or 0x01). */
+  chainsActive: number;
+  /** Fitness-assist toggle at payload offset 1 (0 or 0x02). */
+  assistMode: number;
+  /**
+   * Chain target weight in tenths of pounds (uint16 LE) at payload offset 3.
+   * Mirrored at payload offset 5 in observed captures (likely current/target
+   * pair); only the offset-3 value is exposed.
+   */
+  chainTargetTenths: number;
+  /** Raw 37-byte payload after the `aa 80 25` sub-type prefix (excludes CRC). */
+  raw: Uint8Array;
+}
+
+// <Decoder-cmd07-cmd10> ==========================================================
+// Rowing telemetry payload types. Field offsets follow the Android-deep-dive
+// audit (`rowing-protocol-2026-05-06-android-deep.md` §4 + `aa-subtype-catalog
+// -2026-05-07-android-deep.md` §7.7 / §7.9). All fields are HYPOTHESIS until
+// on-device validation in a future Rowing-mode session — the prior on-device
+// session (Bug 22) was unable to engage Rowing mode successfully.
+// ==========================================================
+/**
+ * Decoded rowing summary frame (`0xAA 0x95 0x25`).
+ *
+ * Pace is stored on-wire as **tenths of seconds per 500 m** (uint32 LE);
+ * multiply by 100 to convert to milliseconds. Distance is in **meters**.
+ */
+export interface RowingSummaryEvent {
+  /** Stroke rate (strokes per minute) at payload offset 2. */
+  strokeRateSpm: number;
+  /** Current 500 m pace in milliseconds (decoded from tenths-of-seconds). */
+  currentPaceMs: number;
+  /** Average 500 m pace in milliseconds (decoded from tenths-of-seconds). */
+  averagePaceMs: number;
+  /** Stroke count (Android stores ×100; reported here as whole strokes). */
+  strokeCount: number;
+  /** Distance in meters (uint32 LE at payload offset 35..38). */
+  distanceMeters: number;
+  /** Raw payload following the `aa 95 25` sub-type prefix (excludes CRC). */
+  raw: Uint8Array;
+}
+
+/**
+ * Decoded rowing status frame (`0xAA 0x92 ...`).
+ *
+ * Distance is stored on-wire in **centimeters** (uint32 LE); decoder converts
+ * to meters. Different unit from `0xAA 0x95 0x25` distance.
+ */
+export interface RowingStatusEvent {
+  /** Stroke-rate fallback (uint8 SPM) at payload offset 2. */
+  strokeRateSpm: number;
+  /** Distance in meters (decoded from centimeters at payload offset 11..14). */
+  distanceMeters: number;
+  /** Raw payload following the `aa 92` sub-type byte (excludes CRC). */
+  raw: Uint8Array;
+}
+
+/**
+ * Decoded rowing/isometric waveform chunk (`0xAA 0x93 <variant>`).
+ *
+ * In rowing mode each sample is a force value in **tenths of pounds** (NOT
+ * Newtons — the isometric-mode parser scales tenths-lb by `LB_TO_NEWTONS`,
+ * but rowing samples are reported as tenths-lb directly).
+ *
+ * `chunkIndex` lets the consumer reassemble multi-chunk waveforms; reset rule
+ * follows Android (`chunkIndex <= 1 || chunkIndex <= lastChunkIndex` resets
+ * the buffer).
+ */
+export interface WaveformChunkEvent {
+  /** Variant marker byte (`0xCC`, `0x82`, or `0xA8`) at payload offset 1. */
+  variant: number;
+  /** Chunk index (uint8) at payload offset 2. */
+  chunkIndex: number;
+  /** Number of declared samples (uint16 LE at payload offset 4..5). */
+  declaredSampleCount: number;
+  /** Decoded samples (uint16 LE) starting at payload offset 6. */
+  samples: Uint16Array;
+  /** Sample unit (informational). */
+  sampleUnit: 'tenths-of-pounds';
+  /** Raw payload following the `aa 93` sub-type byte (excludes CRC). */
+  raw: Uint8Array;
+}
+
+/**
+ * Single decoded parameter from a `cmd=0x10` async-state cascade frame.
+ */
+export interface Cmd10Param {
+  /** Parameter ID as a 4-char hex string (little-endian on the wire). */
+  paramIdHex: string;
+  /** Decoded value (uint8 or uint16 depending on `paramIdHex`). */
+  value: number;
+  /** Width of the value field in bytes (1 or 2). */
+  byteLength: 1 | 2;
+}
+
+/**
+ * Decoded `cmd=0x10` async-state cascade frame.
+ *
+ * `frame[10]` = `0x10` (async-state cmd byte).
+ * `frame[11]` = paramCount (= inner-cmd discriminator from the runbook):
+ *   - `0x01` = single-param update (frame length 18 for uint8 value, 19 for
+ *     uint16 value).
+ *   - `0x02` = structural / mode-switch update (typically two params; e.g.,
+ *     `0x3e89` + `0x4fb0` together).
+ *   - `0x09` = full-state cascade (9 params, frame length 46 = canonical
+ *     `settingsUpdate`).
+ * `frame[12]` = 0x00 (reserved).
+ * `frame[13..]` = `<paramID-LE><value>` repeated `paramCount` times.
+ */
+export interface Cmd10AsyncState {
+  /** Paramater count (frame[11]); also serves as the inner-cmd discriminator. */
+  paramCount: number;
+  /** Decoded parameters in wire order. */
+  params: Cmd10Param[];
 }
 
 // <Bug-17> Begin — cmd=0x0F bulk-read response payload (additive, do not modify).

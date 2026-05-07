@@ -906,11 +906,14 @@ describe('decodeNotification – settings_update', () => {
     }
   });
 
-  it('decodes damperLevel from settings_update (paramId 0x0351, uint8)', () => {
-    // 0x0351 stored little-endian = '5103'. uint8 value path (not in
-    // Uint16ParamIds), opcode 0xc7 per phase-5 Block F.
+  it('decodes damperLevel from settings_update (paramId 0x5103, uint8)', () => {
+    // Wire byte order is `[0x03, 0x51]` = `'0351'` hex string. paramID
+    // 0x5103 (LE on wire). uint8 value path (not in Uint16ParamIds),
+    // opcode 0xc7 per phase-5 Block F. Pre-fix this test passed `'5103'`
+    // — which writes bytes `[0x51, 0x03]`, i.e., the WRONG endianness for
+    // what the device actually sends.
     const buffer = createSettingsUpdateBuffer([
-      { paramIdHex: '5103', value: 7 }, // damper level 7 (UI displays "8")
+      { paramIdHex: '0351', value: 7 }, // damper level 7 (UI displays "8")
     ]);
 
     const result = decodeNotification(buffer);
@@ -925,7 +928,7 @@ describe('decodeNotification – settings_update', () => {
   it('decodes damperLevel alongside other params', () => {
     const buffer = createSettingsUpdateBuffer([
       { paramIdHex: ParamIdHex.BASE_WEIGHT, value: 100 },
-      { paramIdHex: '5103', value: 0 }, // damper level 0 (UI displays "1")
+      { paramIdHex: '0351', value: 0 }, // damper level 0 (UI displays "1")
       { paramIdHex: ParamIdHex.CHAINS, value: 25 },
     ]);
 
