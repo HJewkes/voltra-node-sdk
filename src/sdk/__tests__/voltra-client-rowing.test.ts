@@ -2,8 +2,8 @@
  * Unit tests for the two-stage Rowing entry on VoltraClient (Bug 22).
  *
  * Verifies that:
- *   - `setMode(TrainingMode.Rowing)` is rejected with a CommandError that
- *     directs callers to the new two-stage tools
+ *   - `setMode(TrainingMode.Rowing)` auto-routes to enterRowMode + startRow
+ *     and NEVER writes the strength-arm primitive (`0x3E89=5`)
  *   - `enterRowMode()` writes the existing rowing workout-state command
  *   - `startRow()` writes EP_SCR_SWITCH + vendor refresh and then schedules
  *     reasserts at +750 / +1750 / +3000 ms
@@ -122,27 +122,54 @@ describe('VoltraClient — Rowing two-stage entry (Bug 22)', () => {
     vi.useRealTimers();
   });
 
-  describe('setMode(Rowing) rejection', () => {
-    it('throws CommandError directing callers to enterRowMode/startRow', async () => {
-      await expect(client.setMode(TrainingMode.Rowing)).rejects.toBeInstanceOf(CommandError);
-    });
+  describe('setMode(Rowing) auto-route', () => {
+    it('routes through EP_SCR_SWITCH, never via 0x3E89=5 (strength-arm)', async () => {
+      await client.setMode(TrainingMode.Rowing);
 
-    it('does NOT write any frames when rejecting Rowing', async () => {
-      await client.setMode(TrainingMode.Rowing).catch(() => {});
-      expect(adapter.writes).toHaveLength(0);
-    });
+      // EP_SCR_SWITCH commit for Just Row (action 0x03) MUST appear.
+      expect(findRowScrSwitchWrite(adapter, 0x03)).not.toBe(-1);
 
-    it('error message references the two-stage tools', async () => {
-      try {
-        await client.setMode(TrainingMode.Rowing);
-        throw new Error('should have thrown');
-      } catch (e) {
-        expect((e as Error).message).toMatch(/enterRowMode\(\)/);
-        expect((e as Error).message).toMatch(/startRow\(/);
+      // The strength-arm primitive (BP_SET_FITNESS_MODE wire bytes
+      // `89 3E` followed by value `05 00`) MUST NOT appear in any frame.
+      // This is the Bug 22 invariant: writing 0x3E89=5 while in
+      // FITNESS_WORKOUT_STATE=3 (Rowing) is silently reinterpreted by
+      // firmware as strength behavior despite the rowing screen still
+      // being visible.
+      for (const frame of adapter.writes) {
+        for (let j = 0; j + 5 < frame.length; j++) {
+          if (
+            frame[j] === 0x01 &&
+            frame[j + 1] === 0x00 &&
+            frame[j + 2] === 0x89 &&
+            frame[j + 3] === 0x3e &&
+            frame[j + 4] === 0x05 &&
+            frame[j + 5] === 0x00
+          ) {
+            throw new Error('setMode(Rowing) emitted strength-arm 0x3E89=5 — Bug 22 regression');
+          }
+        }
       }
     });
 
-    it('still accepts other training modes', async () => {
+    it('marks the client as rowing-active afterward', async () => {
+      await client.setMode(TrainingMode.Rowing);
+      expect(client.isRowingActive).toBe(true);
+    });
+
+    it('writes the rowing workout-state frame followed by EP_SCR_SWITCH + vendor refresh', async () => {
+      await client.setMode(TrainingMode.Rowing);
+
+      const enterRow = hexToBytes(protocol.commands.modes.rowing);
+      const enterIdx = findWrite(adapter, enterRow);
+      const scrIdx = findRowScrSwitchWrite(adapter, 0x03);
+      const refreshIdx = findVendorRefreshWrite(adapter);
+
+      expect(enterIdx).not.toBe(-1);
+      expect(scrIdx).toBeGreaterThan(enterIdx);
+      expect(refreshIdx).toBeGreaterThan(scrIdx);
+    });
+
+    it('still accepts other training modes via the legacy single-shot path', async () => {
       await client.setMode(TrainingMode.WeightTraining);
       const expected = hexToBytes(protocol.commands.modes.weightTraining);
       expect(findWrite(adapter, expected)).not.toBe(-1);

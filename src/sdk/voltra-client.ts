@@ -518,28 +518,31 @@ export class VoltraClient {
   /**
    * Set training mode.
    *
-   * Note: Rowing requires a two-stage entry sequence and is no longer
-   * accepted via this method (Bug 22, 0.7.x). Call {@link enterRowMode}
-   * followed by {@link startRow} instead — see those methods for the
-   * rationale and the protocol-level wire sequence.
+   * **Rowing is special**: it auto-routes to the two-stage
+   * {@link enterRowMode} + {@link startRow} (Just Row, no preset)
+   * sequence. Advanced callers who need a distance preset should call
+   * the two primitives directly.
+   *
+   * Bug 22 rationale: Rowing is the only `FITNESS_WORKOUT_STATE`
+   * (`0x4FB0 = 3`) that does not respond to the strength-arm primitive
+   * (`BP_SET_FITNESS_MODE = 5`). Writing the strength-arm while the
+   * device is on the rowing screen is silently reinterpreted as a
+   * strength session, reverting the rowing flow — HIGH safety severity.
+   * The two-stage path commits via `EP_SCR_SWITCH` action codes, which
+   * is the only correct primitive for Rowing.
    *
    * @param mode Training mode to set
-   * @throws InvalidSettingError if `mode === TrainingMode.Rowing`
    */
   async setMode(mode: TrainingMode): Promise<void> {
     this.ensureConnected();
 
-    // <Bug-22> Rowing's GO is EP_SCR_SWITCH, not BP_SET_FITNESS_MODE←5; the
-    // legacy single-shot setMode(Rowing) silently set up the device for the
-    // strength-mode GO (HIGH safety severity). Refuse and direct callers to
-    // the new two-stage tools.
+    // <Bug-22> Auto-route Rowing to the two-stage entry — never the
+    // strength-arm. Default to Just Row; advanced callers that need a
+    // distance preset must use enterRowMode() + startRow(distance) directly.
     if (mode === TrainingMode.Rowing) {
-      throw new CommandError(
-        'setMode(TrainingMode.Rowing) is not supported. Rowing uses a two-stage entry: ' +
-          'call enterRowMode() to open the rowing sub-menu, then startRow(distance?) to ' +
-          'commit. See voltra-private/research/rowing-protocol-2026-05-06-android-deep.md.',
-        'setMode',
-      );
+      await this.enterRowMode();
+      await this.startRow();
+      return;
     }
 
     // Reset rowing state if user is moving to a non-Rowing mode.
