@@ -1,13 +1,23 @@
 /**
- * Bug 17 — Bootstrap step 10 + post-reconnect settings preservation tests.
+ * Bootstrap step 10 — historical regression tests.
  *
- * Verifies:
- * 1. Init.SEQUENCE includes the 18-param mode-feature-state query packet, so
- *    the device produces a settings cascade on every connect.
- * 2. A simulated cmd=0x0F response received during connect populates
- *    `client.settings` via `syncSettingsFromDevice`.
- * 3. `cleanup()` no longer blanket-resets `_settings` to defaults — last-known
- *    settings persist across disconnect (the proximate cause of Bug 17).
+ * The cmd=0x0F bulk-read packet was appended to `Init.SEQUENCE` in 0.7.0 as
+ * the Bug 17 fix (post-reconnect settings cascade). On real hardware
+ * (VTR-097082, 2026-05-07) this packet caused the firmware to drop the GATT
+ * link mid-bootstrap, producing the `_connectionState='connected'` /
+ * `writeChar=null` state split documented in Bug 30. The 0.7.2 hotfix
+ * reverts that append.
+ *
+ * These tests now lock in:
+ * 1. `Init.SEQUENCE` does NOT include the step-10 query packet (regression
+ *    guard — re-introducing it would re-open Bug 30 unless the underlying
+ *    firmware behavior is understood).
+ * 2. The `cmd=0x0F` response decoder still works when invoked directly,
+ *    populating `client.settings` from a simulated device frame. This
+ *    keeps the decoder live for a future safer invocation path.
+ * 3. `cleanup()` still does NOT blanket-reset `_settings` to defaults —
+ *    last-known settings persist across disconnect, which is a net
+ *    improvement over pre-0.7.0 behavior even without step 10 in flight.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -43,8 +53,7 @@ class MockAdapter extends BaseBLEAdapter {
 
   /**
    * Push a notification frame from the simulated device into the client's
-   * decode pipeline. Used to inject the cmd=0x0F response that step 10 would
-   * normally trigger.
+   * decode pipeline. Used to inject a cmd=0x0F response directly.
    */
   pushNotification(data: Uint8Array): void {
     this.emitNotification(data);
@@ -109,17 +118,15 @@ function buildCmd0x0FResponse(
   return new Uint8Array(all);
 }
 
-describe('Bug 17 — Init.SEQUENCE includes the bootstrap step-10 query', () => {
-  it('appends the 18-param mode-feature-state query packet', () => {
-    const last = Init.SEQUENCE[Init.SEQUENCE.length - 1];
-    const hex = bytesToHexLower(last);
-    // Step-10 envelope from voltra-private/research/data-port-2026-05-07-android-deep.md § 9.
-    expect(hex).toBe(
-      '553304c2aa10060020000f1200863e62536153b753b653e3520651873e883eb053c653893eb04f3154d253823e6a50bc54985a'
-    );
+describe('Bug 30 regression — Init.SEQUENCE does NOT include step-10 query', () => {
+  it('contains only the connect-request + handshake-finish packets', () => {
+    const sequenceHexes = Init.SEQUENCE.map(bytesToHexLower);
+    for (const hex of sequenceHexes) {
+      expect(hex.startsWith(STEP_10_QUERY_HEX_MARKER)).toBe(false);
+    }
   });
 
-  it('writes the step-10 packet during connect (verifies the runtime sends it)', async () => {
+  it('does not write the step-10 packet during connect', async () => {
     vi.useFakeTimers();
     const adapter = new MockAdapter();
     const client = new VoltraClient({ adapter });
@@ -129,7 +136,7 @@ describe('Bug 17 — Init.SEQUENCE includes the bootstrap step-10 query', () => 
       const sentStep10 = adapter.writes.some((w) =>
         bytesToHexLower(w).startsWith(STEP_10_QUERY_HEX_MARKER)
       );
-      expect(sentStep10).toBe(true);
+      expect(sentStep10).toBe(false);
     } finally {
       client.dispose();
       vi.useRealTimers();
@@ -137,7 +144,7 @@ describe('Bug 17 — Init.SEQUENCE includes the bootstrap step-10 query', () => 
   });
 });
 
-describe('Bug 17 — cmd=0x0F response populates client.settings', () => {
+describe('cmd=0x0F decoder still wired — direct injection populates client.settings', () => {
   let adapter: MockAdapter;
   let client: VoltraClient;
 
@@ -170,7 +177,7 @@ describe('Bug 17 — cmd=0x0F response populates client.settings', () => {
   });
 });
 
-describe('Bug 17 — disconnect/reconnect preserves last-known settings', () => {
+describe('disconnect/reconnect preserves last-known settings (PR #40 behavior retained)', () => {
   it('keeps populated settings across disconnect (no blanket reset on cleanup)', async () => {
     vi.useFakeTimers();
     const adapter = new MockAdapter();
@@ -178,7 +185,8 @@ describe('Bug 17 — disconnect/reconnect preserves last-known settings', () => 
     try {
       await flushAndAwait(client.connect(device));
 
-      // Simulate the device pushing a settings cascade.
+      // Simulate the device pushing a settings cascade (e.g., from a future
+      // safer invocation path or from a write that triggers cmd=0x10).
       adapter.pushNotification(
         buildCmd0x0FResponse([
           { paramIdHex: ParamIdHex.BASE_WEIGHT, valueBytes: [80, 0] },
@@ -188,9 +196,9 @@ describe('Bug 17 — disconnect/reconnect preserves last-known settings', () => 
       expect(client.settings.weight).toBe(80);
       expect(client.settings.mode).toBe(TrainingMode.WeightTraining);
 
-      // Disconnect — pre-fix code would have wiped these to DEFAULT_SETTINGS
-      // here, leaving consumers reading defaults until a write triggered an
-      // async cmd=0x10 update.
+      // Disconnect — pre-PR-40 code would have wiped these to DEFAULT_SETTINGS
+      // here. The 0.7.2 revert only undoes the Init.SEQUENCE append; it keeps
+      // the no-blanket-reset behavior.
       await flushAndAwait(client.disconnect());
 
       expect(client.settings.weight).toBe(80);

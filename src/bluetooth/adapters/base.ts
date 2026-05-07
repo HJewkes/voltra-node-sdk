@@ -58,6 +58,18 @@ export abstract class BaseBLEAdapter implements BLEAdapter {
   }
 
   /**
+   * Default link-liveness check.
+   *
+   * The base implementation only knows about the tracked connection state.
+   * Subclasses with a separate write-channel handle (Web/Node Bluetooth's
+   * `writeChar`, native's `device`) should override this to return `false`
+   * when that handle is null even if `connectionState === 'connected'`.
+   */
+  isLinkAlive(): boolean {
+    return this.connectionState === 'connected';
+  }
+
+  /**
    * Register a callback for notifications from the device.
    * @param callback Function called with notification data
    * @returns Unsubscribe function

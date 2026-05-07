@@ -113,4 +113,20 @@ export interface BLEAdapter {
    * Check if currently connected to a device.
    */
   isConnected(): boolean;
+
+  /**
+   * Check if the underlying BLE link is alive end-to-end.
+   *
+   * Distinct from `isConnected()` (which reports the adapter's tracked
+   * connection-state machine). `isLinkAlive()` reports the live state of
+   * the write channel — for Web/Node Bluetooth this means `writeChar !==
+   * null`; for native (react-native-ble-plx) this means the underlying
+   * device handle is still connected.
+   *
+   * Used by `VoltraClient.ensureConnected()` to detect adapter-level
+   * disconnects (e.g., `gattserverdisconnected` racing the connect path)
+   * that the client-layer connection state may not yet reflect. See Bug 30
+   * (`voltra-private/captures/sessions/2026-05-07T10-12-37/`).
+   */
+  isLinkAlive(): boolean;
 }

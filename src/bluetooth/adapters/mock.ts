@@ -83,6 +83,12 @@ export class MockBLEAdapter extends BaseBLEAdapter {
   private resting = false;
   private restStart = 0;
   private readonly errorInjector: ErrorInjector;
+  /**
+   * Simulates the W3C Web Bluetooth `writeChar` handle. `simulateLinkLoss()`
+   * nulls this to model `gattserverdisconnected` firing without the tracked
+   * connection state being updated (Bug 30 reproducer).
+   */
+  private linkAlive = false;
 
   private readonly sessionConfig: MockSessionConfig | null;
   private currentSet = 0;
@@ -133,6 +139,7 @@ export class MockBLEAdapter extends BaseBLEAdapter {
 
     this.setConnectionState('connecting');
     await delay(this.config.connectDelayMs);
+    this.linkAlive = true;
     this.setConnectionState('connected');
     this._startTelemetry();
 
@@ -143,6 +150,9 @@ export class MockBLEAdapter extends BaseBLEAdapter {
   }
 
   async write(data: Uint8Array): Promise<void> {
+    if (!this.linkAlive) {
+      throw new Error('Not connected to device');
+    }
     const detectedMode = detectModeCommand(data);
     if (detectedMode !== null) {
       this.setTrainingMode(detectedMode);
@@ -152,7 +162,26 @@ export class MockBLEAdapter extends BaseBLEAdapter {
   async disconnect(): Promise<void> {
     this.errorInjector.clearTimers();
     this._stopTelemetry();
+    this.linkAlive = false;
     this.setConnectionState('disconnected');
+  }
+
+  /**
+   * Report whether the simulated BLE link is alive end-to-end. Mirrors the
+   * Web Bluetooth `writeChar !== null` check.
+   */
+  override isLinkAlive(): boolean {
+    return this.linkAlive;
+  }
+
+  /**
+   * Test helper: simulate the W3C `gattserverdisconnected` event firing
+   * without the tracked connection state being updated. Reproduces the
+   * state split documented in Bug 30 — `connectionState='connected'` while
+   * the underlying write channel is gone. Used by regression tests.
+   */
+  simulateLinkLoss(): void {
+    this.linkAlive = false;
   }
 
   /**
@@ -488,11 +517,13 @@ export class MockBLEAdapter extends BaseBLEAdapter {
 
   private _triggerDisconnect(): void {
     this._stopTelemetry();
+    this.linkAlive = false;
     this.setConnectionState('disconnected');
   }
 
   private _triggerReconnect(): void {
     this.setConnectionState('connecting');
+    this.linkAlive = true;
     this.setConnectionState('connected');
     this._startTelemetry();
   }

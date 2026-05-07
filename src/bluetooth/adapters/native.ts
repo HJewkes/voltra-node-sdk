@@ -520,6 +520,16 @@ export class NativeBLEAdapter extends BaseBLEAdapter {
   }
 
   /**
+   * Report whether the native BLE link is alive end-to-end. The device
+   * handle is null after `onDisconnected` fires and the disconnect handler
+   * clears it, even if the adapter's tracked connection state has not yet
+   * been updated.
+   */
+  override isLinkAlive(): boolean {
+    return this.device !== null && this.connectionState === 'connected';
+  }
+
+  /**
    * Get info about the currently connected device.
    */
   getConnectedDevice(): Device | null {
