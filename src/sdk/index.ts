@@ -16,6 +16,7 @@ export type {
   FrameListener,
   ModeConfirmedListener,
   SettingsUpdateListener,
+  StateDumpListener,
   BatteryUpdateListener,
   PerRepEvent,
   SummaryEvent,
@@ -34,8 +35,8 @@ export type {
   GuidedLoadStateListener,
 } from './types';
 
-// Re-export DeviceSettings for typing event listeners
-export type { DeviceSettings } from '../voltra/protocol/types';
+// Re-export DeviceSettings + StateDumpEvent for typing event listeners
+export type { DeviceSettings, StateDumpEvent } from '../voltra/protocol/types';
 
 export type {
   Platform,

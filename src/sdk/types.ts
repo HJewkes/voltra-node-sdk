@@ -10,7 +10,7 @@ import type { TelemetryFrame } from '../voltra/models/telemetry';
 import type { VoltraConnectionState } from '../voltra/models/connection';
 import type { VoltraDeviceSettings, VoltraRecordingState } from '../voltra/models/device';
 import type { TrainingMode, VendorSchemaVersion } from '../voltra/protocol/constants';
-import type { DeviceSettings } from '../voltra/protocol/types';
+import type { DeviceSettings, StateDumpEvent } from '../voltra/protocol/types';
 
 /**
  * Options for creating a VoltraClient.
@@ -83,6 +83,7 @@ export type VoltraClientEvent =
   // Device notification events
   | { type: 'modeConfirmed'; mode: TrainingMode }
   | { type: 'settingsUpdate'; settings: DeviceSettings }
+  | { type: 'stateDump'; event: StateDumpEvent }
   | { type: 'batteryUpdate'; battery: number }
   // Guided-load (Phase 1g, 0.6.3+ @experimental)
   | { type: 'guidedLoadState'; state: GuidedLoadState }
@@ -113,6 +114,18 @@ export type SettingsUpdateListener = (settings: DeviceSettings) => void;
  * Battery update listener (called when device reports battery level).
  */
 export type BatteryUpdateListener = (battery: number) => void;
+
+/**
+ * State-dump listener (called when device emits a `cmd=0x07` 52-byte
+ * `aa 80 25` envelope carrying chains-active flag, fitness-assist toggle, and
+ * chain target weight).
+ *
+ * Unlike `SettingsUpdateListener`, the payload preserves the raw
+ * `assistMode` byte — consumers should be aware of the asymmetric-off
+ * semantics for `FITNESS_ASSIST_MODE` (idle reads as `8`, on as `1`; any
+ * value other than `1` should be treated as off).
+ */
+export type StateDumpListener = (event: StateDumpEvent) => void;
 
 // =============================================================================
 // Typed vendor-frame events (0.6.0+)

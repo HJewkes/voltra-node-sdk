@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createNotificationHandler, type NotificationCallbacks } from '../notification-dispatcher';
 import { TrainingMode, VendorSchemaVersion } from '../../voltra/protocol/constants';
 import type { TelemetryFrame } from '../../voltra/models/telemetry';
-import type { DeviceSettings } from '../../voltra/protocol/types';
+import type { DeviceSettings, StateDumpEvent } from '../../voltra/protocol/types';
 import type { PerRepEvent, SummaryEvent, PreSummaryEvent, InProgressEvent } from '../types';
 
 // Mock the decoder so we can control exactly what DecodeResult comes back
@@ -20,6 +20,7 @@ function makeCallbacks(): NotificationCallbacks & {
     onFrame: vi.fn(),
     onModeConfirmed: vi.fn(),
     onSettingsUpdate: vi.fn(),
+    onStateDump: vi.fn(),
     onBatteryUpdate: vi.fn(),
     onPerRep: vi.fn(),
     onSummary: vi.fn(),
@@ -100,6 +101,7 @@ describe('notification-dispatcher', () => {
     expect(callbacks.onFrame).not.toHaveBeenCalled();
     expect(callbacks.onModeConfirmed).not.toHaveBeenCalled();
     expect(callbacks.onSettingsUpdate).not.toHaveBeenCalled();
+    expect(callbacks.onStateDump).not.toHaveBeenCalled();
     expect(callbacks.onBatteryUpdate).not.toHaveBeenCalled();
     expect(callbacks.onPerRep).not.toHaveBeenCalled();
     expect(callbacks.onSummary).not.toHaveBeenCalled();
@@ -115,11 +117,36 @@ describe('notification-dispatcher', () => {
     expect(callbacks.onFrame).not.toHaveBeenCalled();
     expect(callbacks.onModeConfirmed).not.toHaveBeenCalled();
     expect(callbacks.onSettingsUpdate).not.toHaveBeenCalled();
+    expect(callbacks.onStateDump).not.toHaveBeenCalled();
     expect(callbacks.onBatteryUpdate).not.toHaveBeenCalled();
     expect(callbacks.onPerRep).not.toHaveBeenCalled();
     expect(callbacks.onSummary).not.toHaveBeenCalled();
     expect(callbacks.onPreSummary).not.toHaveBeenCalled();
     expect(callbacks.onInProgress).not.toHaveBeenCalled();
+  });
+
+  it('dispatches onStateDump for cmd=0x07 state-dump frames', () => {
+    // Synthesize a state-dump payload mirroring the cmd=0x07 (aa 80 25)
+    // envelope contract documented in StateDumpEvent: chains-active flag at
+    // offset 0, fitness-assist toggle at offset 1, chain target tenths at
+    // offset 3 (uint16 LE). Raw `assistMode = 8` is the asymmetric idle
+    // sentinel — consumers MUST receive it unmodified so they can apply
+    // the off-when-not-1 rule themselves.
+    const event: StateDumpEvent = {
+      chainsActive: 1,
+      assistMode: 8, // idle; not 0 — see voltra-private A10/A11 research notes
+      chainTargetTenths: 250,
+      raw: new Uint8Array(37),
+    };
+    mockDecode.mockReturnValue({ type: 'state_dump', event });
+
+    handler(dummyData);
+
+    expect(callbacks.onStateDump).toHaveBeenCalledOnce();
+    expect(callbacks.onStateDump).toHaveBeenCalledWith(event);
+    // Make sure we didn't accidentally fan out to the legacy settings
+    // listener — assistMode/chainsActive lives only on stateDump.
+    expect(callbacks.onSettingsUpdate).not.toHaveBeenCalled();
   });
 
   // ===========================================================================

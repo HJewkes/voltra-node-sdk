@@ -158,7 +158,7 @@ describe('Bug 17 — cmd=0x0F response populates client.settings', () => {
       { paramIdHex: ParamIdHex.BASE_WEIGHT, valueBytes: [60, 0] },
       { paramIdHex: ParamIdHex.CHAINS, valueBytes: [10, 0] },
       { paramIdHex: ParamIdHex.TRAINING_MODE, valueBytes: [TrainingMode.Damper] },
-      { paramIdHex: '5103', valueBytes: [5] }, // damperLevel
+      { paramIdHex: '0351', valueBytes: [5] }, // damperLevel (wire byte order — corrected per B4)
     ]);
 
     adapter.pushNotification(response);

@@ -8,7 +8,7 @@
 import type { NotificationCallback } from '../bluetooth/adapters/types';
 import type { TelemetryFrame } from '../voltra/models/telemetry';
 import type { TrainingMode } from '../voltra/protocol/constants';
-import type { DeviceSettings } from '../voltra/protocol/types';
+import type { DeviceSettings, StateDumpEvent } from '../voltra/protocol/types';
 import { decodeNotification } from '../voltra/protocol/telemetry-decoder';
 import type { PerRepEvent, SummaryEvent, PreSummaryEvent, InProgressEvent } from './types';
 
@@ -23,6 +23,7 @@ export interface NotificationCallbacks {
   onFrame: (frame: TelemetryFrame) => void;
   onModeConfirmed: (mode: TrainingMode) => void;
   onSettingsUpdate: (settings: DeviceSettings) => void;
+  onStateDump: (event: StateDumpEvent) => void;
   onBatteryUpdate: (battery: number) => void;
   onPerRep: (event: PerRepEvent) => void;
   onSummary: (event: SummaryEvent) => void;
@@ -68,6 +69,10 @@ export function createNotificationHandler(callbacks: NotificationCallbacks): Not
 
       case 'settings_update':
         callbacks.onSettingsUpdate(result.settings);
+        break;
+
+      case 'state_dump':
+        callbacks.onStateDump(result.event);
         break;
 
       case 'device_status':
