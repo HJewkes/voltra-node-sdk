@@ -125,8 +125,9 @@ describe('decodeCmd0x0FResponse', () => {
       { paramIdHex: ParamIdHex.TRAINING_MODE, valueBytes: [TrainingMode.WeightTraining] },
       // 0xb053 = inverseChains (uint8)
       { paramIdHex: ParamIdHex.INVERSE_CHAINS, valueBytes: [15] },
-      // 0x0351 = damperLevel (uint8)
-      { paramIdHex: '5103', valueBytes: [3] },
+      // damperLevel (uint8): wire byte order [0x03, 0x51] -> hex '0351'
+      // (paramID hex string corrected per B4 — was inverted '5103')
+      { paramIdHex: '0351', valueBytes: [3] },
     ]);
     const result = decodeCmd0x0FResponse(data);
     expect(result).not.toBeNull();

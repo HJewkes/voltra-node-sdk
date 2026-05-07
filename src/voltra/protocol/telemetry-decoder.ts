@@ -96,8 +96,6 @@ const WAVEFORM_VARIANT_MARKERS: ReadonlySet<number> = new Set([0xcc, 0x82, 0xa8]
 const RESPONSE_FRAME_TYPE = 0x08;
 /** Extended-length variant of {@link RESPONSE_FRAME_TYPE} (`0x09`). */
 const RESPONSE_FRAME_TYPE_EXTENDED = 0x09;
-/** Frame offset of the cmd byte in a `0x55`-framed response. */
-const CMD_BYTE_OFFSET = 10;
 /** cmd byte for the multi-paramID read response (`0x0F`). */
 const CMD_PARAM_READ = 0x0f;
 /** Frame offset of the param-count u16 LE in a cmd=0x0F response. */
@@ -136,8 +134,9 @@ const CMD_0F_KNOWN_PARAM_WIDTHS: Readonly<Record<string, number>> = {
   b053: 1, // FITNESS_INVERSE_CHAIN
   c653: 1, // WEIGHT_TRAINING_EXTRA_MODE
   b04f: 1, // FITNESS_WORKOUT_STATE (training mode)
-  // damperLevel
-  '5103': 1, // FITNESS_DAMPER_RATIO_IDX
+  // damperLevel — wire byte order [0x03, 0x51] -> hex '0351' (paramID 0x5103)
+  // Corrected per B4 — was inverted '5103'.
+  '0351': 1, // FITNESS_DAMPER_RATIO_IDX
 };
 // <Bug-17> End
 
