@@ -17,6 +17,7 @@ function makeCallbacks(): NotificationCallbacks & {
   [K in keyof NotificationCallbacks]: ReturnType<typeof vi.fn>;
 } {
   return {
+    onRawFrame: vi.fn(),
     onFrame: vi.fn(),
     onModeConfirmed: vi.fn(),
     onSettingsUpdate: vi.fn(),
@@ -187,5 +188,47 @@ describe('notification-dispatcher', () => {
 
     expect(callbacks.onPreSummary).toHaveBeenCalledOnce();
     expect(callbacks.onPreSummary).toHaveBeenCalledWith(event);
+  });
+
+  // ===========================================================================
+  // Raw-frame callback (0.6.2+)
+  // ===========================================================================
+
+  it('fires onRawFrame for every notification, before decode', () => {
+    const frame: TelemetryFrame = {
+      sequence: 1,
+      timestamp: 100,
+      phase: 1 as never,
+      position: 0,
+      velocity: 0,
+      force: 0,
+    };
+    mockDecode.mockReturnValue({ type: 'frame', frame });
+
+    handler(dummyData);
+
+    expect(callbacks.onRawFrame).toHaveBeenCalledOnce();
+    expect(callbacks.onRawFrame).toHaveBeenCalledWith(dummyData);
+    // Typed callback also fires
+    expect(callbacks.onFrame).toHaveBeenCalledOnce();
+  });
+
+  it('fires onRawFrame even when decoder returns unknown', () => {
+    mockDecode.mockReturnValue({ type: 'unknown', data: dummyData });
+
+    handler(dummyData);
+
+    expect(callbacks.onRawFrame).toHaveBeenCalledOnce();
+    expect(callbacks.onRawFrame).toHaveBeenCalledWith(dummyData);
+    expect(callbacks.onFrame).not.toHaveBeenCalled();
+  });
+
+  it('fires onRawFrame even when decoder returns null', () => {
+    mockDecode.mockReturnValue(null);
+
+    handler(dummyData);
+
+    expect(callbacks.onRawFrame).toHaveBeenCalledOnce();
+    expect(callbacks.onRawFrame).toHaveBeenCalledWith(dummyData);
   });
 });

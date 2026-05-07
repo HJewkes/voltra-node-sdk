@@ -52,6 +52,7 @@ export {
   type ConnectByNameOptions,
   type AdapterFactory,
   type FrameListener,
+  type RawFrameListener,
   type PerRepEvent,
   type SummaryEvent,
   type PreSummaryEvent,
