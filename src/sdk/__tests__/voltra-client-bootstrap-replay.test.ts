@@ -167,8 +167,18 @@ describe('VoltraClient — onSettingsUpdate bootstrap replay (0.6.2)', () => {
   });
 
   it('replays the LATEST cascade if multiple arrived pre-attach', () => {
-    const first: DeviceSettings = { baseWeight: 20, chains: 0, eccentric: 0, trainingMode: TrainingMode.Idle };
-    const second: DeviceSettings = { baseWeight: 30, chains: 5, eccentric: 0, trainingMode: TrainingMode.WeightTraining };
+    const first: DeviceSettings = {
+      baseWeight: 20,
+      chains: 0,
+      eccentric: 0,
+      trainingMode: TrainingMode.Idle,
+    };
+    const second: DeviceSettings = {
+      baseWeight: 30,
+      chains: 5,
+      eccentric: 0,
+      trainingMode: TrainingMode.WeightTraining,
+    };
 
     mockDecode.mockReturnValueOnce({ type: 'settings_update', settings: first });
     adapter.inject(new Uint8Array([0x01]));
@@ -184,8 +194,18 @@ describe('VoltraClient — onSettingsUpdate bootstrap replay (0.6.2)', () => {
   });
 
   it('replays only once per attach (subsequent live cascades fire normally)', () => {
-    const first: DeviceSettings = { baseWeight: 20, chains: 0, eccentric: 0, trainingMode: TrainingMode.Idle };
-    const second: DeviceSettings = { baseWeight: 25, chains: 0, eccentric: 0, trainingMode: TrainingMode.Damper };
+    const first: DeviceSettings = {
+      baseWeight: 20,
+      chains: 0,
+      eccentric: 0,
+      trainingMode: TrainingMode.Idle,
+    };
+    const second: DeviceSettings = {
+      baseWeight: 25,
+      chains: 0,
+      eccentric: 0,
+      trainingMode: TrainingMode.Damper,
+    };
 
     mockDecode.mockReturnValueOnce({ type: 'settings_update', settings: first });
     adapter.inject(new Uint8Array([0x01]));
@@ -208,7 +228,12 @@ describe('VoltraClient — onSettingsUpdate bootstrap replay (0.6.2)', () => {
   });
 
   it('clears the replay cache on disconnect', async () => {
-    const settings: DeviceSettings = { baseWeight: 25, chains: 0, eccentric: 0, trainingMode: TrainingMode.Damper };
+    const settings: DeviceSettings = {
+      baseWeight: 25,
+      chains: 0,
+      eccentric: 0,
+      trainingMode: TrainingMode.Damper,
+    };
     mockDecode.mockReturnValue({ type: 'settings_update', settings });
 
     adapter.inject(new Uint8Array([0x01]));
