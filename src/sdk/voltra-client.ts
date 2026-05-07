@@ -100,6 +100,7 @@ import type {
   FrameListener,
   ModeConfirmedListener,
   SettingsUpdateListener,
+  StateDumpListener,
   BatteryUpdateListener,
   PerRepListener,
   SummaryListener,
@@ -164,6 +165,7 @@ export class VoltraClient {
   private inProgressListeners: Set<InProgressListener> = new Set();
   private modeConfirmedListeners: Set<ModeConfirmedListener> = new Set();
   private settingsUpdateListeners: Set<SettingsUpdateListener> = new Set();
+  private stateDumpListeners: Set<StateDumpListener> = new Set();
   private batteryUpdateListeners: Set<BatteryUpdateListener> = new Set();
   private guidedLoadStateListeners: Set<GuidedLoadStateListener> = new Set();
 
@@ -1536,6 +1538,26 @@ export class VoltraClient {
   }
 
   /**
+   * Subscribe to `cmd=0x07` state-dump events (52-byte `aa 80 25` envelope).
+   *
+   * The payload exposes fields that the legacy `settings_update` decode does
+   * NOT surface — chains-active flag, fitness-assist toggle, chain target
+   * weight in tenths of pounds. Use this listener to react to assist-mode
+   * transitions (Bug 26) and chain-engagement state changes.
+   *
+   * The raw `assistMode` byte is preserved (`1` = on, `8` = idle, anything
+   * else should be treated as off — see asymmetric-off semantics for
+   * `FITNESS_ASSIST_MODE` documented in voltra-private research notes A10/A11).
+   *
+   * @param listener State-dump listener
+   * @returns Unsubscribe function
+   */
+  onStateDump(listener: StateDumpListener): () => void {
+    this.stateDumpListeners.add(listener);
+    return () => this.stateDumpListeners.delete(listener);
+  }
+
+  /**
    * Subscribe to battery update events.
    * Called when the device reports its battery level.
    *
@@ -1576,6 +1598,7 @@ export class VoltraClient {
     this.inProgressListeners.clear();
     this.modeConfirmedListeners.clear();
     this.settingsUpdateListeners.clear();
+    this.stateDumpListeners.clear();
     this.batteryUpdateListeners.clear();
     this.guidedLoadStateListeners.clear();
 
@@ -1643,6 +1666,10 @@ export class VoltraClient {
         this.emit({ type: 'settingsUpdate', settings });
         this.settingsUpdateListeners.forEach((listener) => listener(settings));
         this.syncSettingsFromDevice(settings);
+      },
+      onStateDump: (event) => {
+        this.emit({ type: 'stateDump', event });
+        this.stateDumpListeners.forEach((listener) => listener(event));
       },
       onBatteryUpdate: (battery) => {
         this.emit({ type: 'batteryUpdate', battery });
