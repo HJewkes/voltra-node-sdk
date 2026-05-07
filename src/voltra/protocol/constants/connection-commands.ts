@@ -31,37 +31,38 @@ export const Auth = {
 /**
  * Bootstrap step 10 — 18-param mode-feature-state read (cmd=0x0F).
  *
- * Triggers the device to push current settings (base weight, chains, eccentric,
- * mode, assist, band, isometric, position, cable offset, etc.) so the SDK can
- * populate `_settings` after a fresh connect or reconnect. Without this query
- * the device only volunteers state asynchronously in response to writes,
- * which is why post-reconnect `_settings` was stuck at defaults (Bug 17).
+ * NOTE: This packet is NOT currently sent during `Init.SEQUENCE`. Sending it
+ * during cold bootstrap caused VTR-097082 firmware to drop the GATT link,
+ * leaving `VoltraClient._connectionState='connected'` while the adapter's
+ * write characteristic was already null (Bug 30, on-device 2026-05-07).
+ * The 0.7.2 hotfix reverts the `Init.SEQUENCE` append. The constant + the
+ * `decodeCmd0x0FResponse` decoder are kept in place for a future, safer
+ * invocation mechanism (likely an explicit `client.queryDeviceSettings()`
+ * call after connect stabilizes — see audit § 7 Alt A).
  *
- * Source: Android `VoltraOfficialReadOnlyBootstrap.kt` packet #10 (commit
- * `5be9a12`). The 18-param list and CRC values are documented in
- * `voltra-private/research/data-port-2026-05-07-android-deep.md` § 9; this
- * pre-CRC'd hex literal is reproduced verbatim from that source. Sequence
- * byte is fixed at 0x06 — this works as-is for both first-connect and
- * reconnect (the device does not enforce monotonic sequence numbers across
- * the bootstrap window).
+ * Original source: Android `VoltraOfficialReadOnlyBootstrap.kt` packet #10
+ * (commit `5be9a12`). The 18-param list and CRC values are documented in
+ * `voltra-private/research/data-port-2026-05-07-android-deep.md` § 9.
  */
 const MODE_FEATURE_STATE_18PARAM_QUERY_HEX =
   '553304c2aa10060020000f1200863e62536153b753b653e3520651873e883eb053c653893eb04f3154d253823e6a50bc54985a';
 
+// Re-export to keep the constant available for future callers without
+// requiring the file to flag it as "unused" under TS noUnusedLocals.
+export { MODE_FEATURE_STATE_18PARAM_QUERY_HEX };
+
 /**
  * Device initialization sequence.
  *
- * Appends the 18-param mode-feature-state query (bootstrap step 10) after
- * the existing connect-request + handshake-finish packets. Step 10 is a
- * read-only bulk query — it does NOT mutate device state, only requests a
- * settings cascade, which is decoded by the cmd=0x0F branch of
- * `decodeNotification` and merged into the client's `_settings`.
+ * Sends the 2-packet connect-request + handshake-finish pair documented in
+ * `protocol.commands.init`. The 18-param mode-feature-state query
+ * (`MODE_FEATURE_STATE_18PARAM_QUERY_HEX`, "bootstrap step 10") was appended
+ * here in 0.7.0 to fix Bug 17 (post-reconnect settings cascade) but caused a
+ * GATT-drop regression on real hardware (Bug 30); reverted in 0.7.2. Bug 17
+ * remains open and will be re-addressed via a safer mechanism.
  */
 export const Init = {
-  SEQUENCE: [
-    ...protocol.commands.init.map(hexToBytes),
-    hexToBytes(MODE_FEATURE_STATE_18PARAM_QUERY_HEX),
-  ],
+  SEQUENCE: protocol.commands.init.map(hexToBytes),
 } as const;
 
 // =============================================================================

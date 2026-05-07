@@ -139,9 +139,20 @@ describe('MockBLEAdapter', () => {
   });
 
   describe('write()', () => {
-    it('resolves without error', async () => {
-      const adapter = new MockBLEAdapter();
+    it('resolves without error when connected', async () => {
+      const adapter = new MockBLEAdapter({ connectDelayMs: 0 });
+      const connectPromise = adapter.connect('mock-voltra-001');
+      vi.advanceTimersByTime(0);
+      await connectPromise;
       await expect(adapter.write(new Uint8Array([1, 2, 3]))).resolves.toBeUndefined();
+      await adapter.disconnect();
+    });
+
+    it('rejects when the simulated link is dead', async () => {
+      const adapter = new MockBLEAdapter();
+      await expect(adapter.write(new Uint8Array([1, 2, 3]))).rejects.toThrow(
+        'Not connected to device'
+      );
     });
   });
 

@@ -235,6 +235,16 @@ export abstract class WebBluetoothBase extends BaseBLEAdapter {
     await this.writeChar.writeValueWithResponse(buffer);
   }
 
+  /**
+   * Report whether the BLE link is alive end-to-end (write characteristic
+   * non-null). Returns `false` after `gattserverdisconnected` has fired and
+   * `cleanup()` has nulled `writeChar`, even if `connectionState` is still
+   * `'connected'` due to an unsynchronized state-machine update.
+   */
+  override isLinkAlive(): boolean {
+    return this.writeChar !== null;
+  }
+
   // ===========================================================================
   // Extended methods
   // ===========================================================================

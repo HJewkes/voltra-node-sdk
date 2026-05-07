@@ -1979,6 +1979,22 @@ export class VoltraClient {
     if (!this.isConnected) {
       throw new NotConnectedError();
     }
+    // Bug 30: the client's tracked `_connectionState` and the adapter's
+    // write-channel handle are independent. After `gattserverdisconnected`
+    // (or equivalent on native), the adapter nulls its write characteristic
+    // but the client is unaware unless `autoReconnect=true`. Cross-check the
+    // adapter so a setter call against a half-dead link reports the correct
+    // disconnect rather than hanging on an opaque write rejection.
+    if (this.adapter && !this.adapter.isLinkAlive()) {
+      const deviceId = this._connectedDeviceId ?? 'unknown';
+      this.cleanup();
+      this.setConnectionState('disconnected');
+      this.emit({ type: 'disconnected', deviceId });
+      throw new ConnectionError(
+        'BLE link lost — adapter write channel is no longer alive',
+        ErrorCode.CONNECTION_LOST
+      );
+    }
   }
 
   private wrapError(e: unknown, context: string): Error {
