@@ -28,6 +28,10 @@ export type {
   ScanOptions,
   DeviceChooser,
   RowingDistancePreset,
+  GuidedLoadOptions,
+  GuidedLoadState,
+  GuidedLoadPhase,
+  GuidedLoadStateListener,
 } from './types';
 
 // Re-export DeviceSettings for typing event listeners

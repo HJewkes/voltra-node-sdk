@@ -62,6 +62,10 @@ export {
   type InProgressListener,
   type ScanOptions,
   type RowingDistancePreset,
+  type GuidedLoadOptions,
+  type GuidedLoadState,
+  type GuidedLoadPhase,
+  type GuidedLoadStateListener,
 } from './sdk';
 
 // =============================================================================
