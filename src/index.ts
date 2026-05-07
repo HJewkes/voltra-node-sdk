@@ -61,6 +61,7 @@ export {
   type PreSummaryListener,
   type InProgressListener,
   type ScanOptions,
+  type RowingDistancePreset,
 } from './sdk';
 
 // =============================================================================
