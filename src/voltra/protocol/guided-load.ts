@@ -104,9 +104,7 @@ export function buildGuidedLoadTriggerFrame(sequence: number = DEFAULT_SEQUENCE)
  *
  * The cmd byte is `0x0F` (CMD_PARAM_READ).
  */
-export function buildGuidedLoadStatusReadFrame(
-  sequence: number = DEFAULT_SEQUENCE,
-): Uint8Array {
+export function buildGuidedLoadStatusReadFrame(sequence: number = DEFAULT_SEQUENCE): Uint8Array {
   // Payload: count uint16 LE + 4 paramIDs uint16 LE = 2 + 4*2 = 10 bytes.
   const payload = new Uint8Array(2 + STATUS_PARAM_IDS_LE.length * 2);
   payload[0] = STATUS_PARAM_IDS_LE.length & 0xff;

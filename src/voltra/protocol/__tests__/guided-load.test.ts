@@ -119,12 +119,10 @@ describe('buildGuidedLoadExitFrame', () => {
  */
 function buildMultiParamPayload(
   params: Array<{ paramIdLeHex: string; value: number; uint16: boolean }>,
-  variant: 'multiParam' | 'settingsUpdate' = 'multiParam',
+  variant: 'multiParam' | 'settingsUpdate' = 'multiParam'
 ): Uint8Array {
   const cfg =
-    variant === 'multiParam'
-      ? NotificationConfigs.multiParam
-      : NotificationConfigs.settingsUpdate;
+    variant === 'multiParam' ? NotificationConfigs.multiParam : NotificationConfigs.settingsUpdate;
 
   // Compute total length: largest of (configured length, end of last param).
   let payloadLen = cfg.firstParamOffset!;
@@ -173,9 +171,7 @@ describe('decodeGuidedLoadStatus', () => {
   });
 
   it('decodes primaryStatus (0x538D, uint8)', () => {
-    const buf = buildMultiParamPayload([
-      { paramIdLeHex: '8d53', value: 1, uint16: false },
-    ]);
+    const buf = buildMultiParamPayload([{ paramIdLeHex: '8d53', value: 1, uint16: false }]);
     const out = decodeGuidedLoadStatus(buf);
     expect(out).not.toBeNull();
     expect(out!.primaryStatus).toBe(1);
@@ -183,9 +179,7 @@ describe('decodeGuidedLoadStatus', () => {
   });
 
   it('decodes countdownMs (0x53C8, uint16 LE) — 3000ms fits, 3 does not', () => {
-    const buf = buildMultiParamPayload([
-      { paramIdLeHex: 'c853', value: 3000, uint16: true },
-    ]);
+    const buf = buildMultiParamPayload([{ paramIdLeHex: 'c853', value: 3000, uint16: true }]);
     const out = decodeGuidedLoadStatus(buf);
     expect(out).not.toBeNull();
     expect(out!.countdownMs).toBe(3000);
@@ -212,7 +206,7 @@ describe('decodeGuidedLoadStatus', () => {
   it('decodes from the settings_update variant header (0x2e) too', () => {
     const buf = buildMultiParamPayload(
       [{ paramIdLeHex: '893e', value: 0x0027, uint16: true }],
-      'settingsUpdate',
+      'settingsUpdate'
     );
     const out = decodeGuidedLoadStatus(buf);
     expect(out).not.toBeNull();

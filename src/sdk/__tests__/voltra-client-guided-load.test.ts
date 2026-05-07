@@ -84,7 +84,7 @@ function findWrite(adapter: RecordingAdapter, expected: Uint8Array): number {
  * pairs. Same shape used by the protocol-level decoder tests.
  */
 function buildMultiParamNotification(
-  params: Array<{ paramIdLeHex: string; value: number; uint16: boolean }>,
+  params: Array<{ paramIdLeHex: string; value: number; uint16: boolean }>
 ): Uint8Array {
   const cfg = NotificationConfigs.multiParam;
   let payloadLen = cfg.firstParamOffset!;
@@ -134,7 +134,7 @@ describe('VoltraClient — startGuidedLoad', () => {
   it('throws NotConnectedError when called on a disconnected client', async () => {
     const stand = new VoltraClient({ adapter: new RecordingAdapter() });
     await expect(stand.startGuidedLoad({ targetWeightLbs: 50 })).rejects.toBeInstanceOf(
-      NotConnectedError,
+      NotConnectedError
     );
   });
 
@@ -167,7 +167,7 @@ describe('VoltraClient — startGuidedLoad', () => {
   it('rejects when called twice without an exit in between', async () => {
     await client.startGuidedLoad({ targetWeightLbs: 50 });
     await expect(client.startGuidedLoad({ targetWeightLbs: 60 })).rejects.toBeInstanceOf(
-      CommandError,
+      CommandError
     );
   });
 
@@ -211,7 +211,7 @@ describe('VoltraClient — startGuidedLoad', () => {
       buildMultiParamNotification([
         { paramIdLeHex: '893e', value: 0x0026, uint16: true }, // mode=READY
         { paramIdLeHex: 'c853', value: 2500, uint16: true }, // countdown=2500ms
-      ]),
+      ])
     );
 
     expect(seen.length).toBeGreaterThanOrEqual(1);
@@ -235,7 +235,7 @@ describe('VoltraClient — startGuidedLoad', () => {
     adapter.inject(
       buildMultiParamNotification([
         { paramIdLeHex: '893e', value: 0x0027, uint16: true }, // mode=ACTIVE
-      ]),
+      ])
     );
 
     const last = seen[seen.length - 1];

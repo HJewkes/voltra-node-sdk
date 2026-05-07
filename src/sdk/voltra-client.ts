@@ -1281,10 +1281,7 @@ export class VoltraClient {
       this.stopGuidedLoadPolling();
       // If we never reached ACTIVE, surface 'timeout' so callers can
       // distinguish a clean exit from a window-close-without-engage.
-      if (
-        this._guidedLoadState.phase !== 'active' &&
-        this._guidedLoadState.phase !== 'exited'
-      ) {
+      if (this._guidedLoadState.phase !== 'active' && this._guidedLoadState.phase !== 'exited') {
         this.updateGuidedLoadState({ phase: 'timeout' });
       }
       this._guidedLoadActive = false;
@@ -1753,10 +1750,7 @@ export class VoltraClient {
   }
 
   /** Update the cached state and notify listeners. */
-  private updateGuidedLoadState(
-    partial: Partial<GuidedLoadState>,
-    preserveDerived = false
-  ): void {
+  private updateGuidedLoadState(partial: Partial<GuidedLoadState>, preserveDerived = false): void {
     const next: GuidedLoadState = preserveDerived
       ? (partial as GuidedLoadState)
       : {
