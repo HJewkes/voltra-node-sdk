@@ -107,8 +107,20 @@ import type {
   InProgressListener,
   ScanOptions,
   RowingDistancePreset,
+  GuidedLoadOptions,
+  GuidedLoadState,
+  GuidedLoadStateListener,
 } from './types';
 import type { DeviceSettings } from '../voltra/protocol/types';
+import {
+  buildGuidedLoadTriggerFrame,
+  buildGuidedLoadStatusReadFrame,
+  buildGuidedLoadExitFrame,
+  decodeGuidedLoadStatus,
+  GUIDED_LOAD_MODE_ARMED,
+  GUIDED_LOAD_MODE_ACTIVE,
+  type GuidedLoadStatusFields,
+} from '../voltra/protocol/guided-load';
 
 /**
  * Default client options.
@@ -153,6 +165,17 @@ export class VoltraClient {
   private modeConfirmedListeners: Set<ModeConfirmedListener> = new Set();
   private settingsUpdateListeners: Set<SettingsUpdateListener> = new Set();
   private batteryUpdateListeners: Set<BatteryUpdateListener> = new Set();
+  private guidedLoadStateListeners: Set<GuidedLoadStateListener> = new Set();
+
+  // Guided-load state machine (Phase 1g, @experimental)
+  private _guidedLoadActive = false;
+  private _guidedLoadState: GuidedLoadState = {
+    phase: 'idle',
+    countdownRemainingMs: null,
+    fitnessModeRaw: null,
+  };
+  private guidedLoadPollTimer: ReturnType<typeof setInterval> | null = null;
+  private guidedLoadEndTimer: ReturnType<typeof setTimeout> | null = null;
 
   // <Bug-22> Rowing two-stage entry state
   /** Whether `enterRowMode()` has run since the last cleanup() / setMode(). */
@@ -1170,6 +1193,143 @@ export class VoltraClient {
   }
 
   // ===========================================================================
+  // Guided-load (direct-load, Phase 1g, 0.6.3+, @experimental)
+  // ===========================================================================
+  //
+  // The firmware "direct-load" flow ramps from a fixed start floor to the
+  // user's target weight after a single trigger byte. After we send the
+  // trigger, the device does NOT push any state-change frames — the SDK
+  // must poll the 4 status registers (`0x538D` / `0x53C7` / `0x53C8` /
+  // `0x53C9`) every 500ms to observe the READY → ACTIVE transition. This
+  // method drives that polling for you and surfaces a `GuidedLoadState`
+  // object via `onGuidedLoadState`. See voltra-private/research/direct-
+  // load-protocol-2026-05-06-android-deep.md for the protocol rationale.
+
+  /**
+   * Get current guided-load state snapshot.
+   *
+   * @experimental — see {@link startGuidedLoad}.
+   */
+  get guidedLoadState(): GuidedLoadState {
+    return { ...this._guidedLoadState };
+  }
+
+  /**
+   * Trigger the firmware direct-load flow at the supplied target weight.
+   *
+   * Performs (mirroring AndroidVoltraClient.directLoad):
+   *   1. setWeight(targetWeightLbs) — writes BP_BASE_WEIGHT (target)
+   *   2. write the `0xAA 0x12` direct-load trigger frame
+   *   3. start polling the 4 status registers every `pollIntervalMs`
+   *      (default 500ms) for `pollDurationMs` (default 18000ms)
+   *
+   * The promise resolves once the trigger has been written and the polling
+   * loop is armed; transitions are surfaced via `onGuidedLoadState`. Polling
+   * stops automatically after the duration elapses (`phase: 'timeout'` if
+   * the device never reached ACTIVE).
+   *
+   * @experimental — register IDs and state-machine semantics derive from an
+   * Android-repo deep-scrub (voltra-private/research/direct-load-protocol-
+   * 2026-05-06-android-deep.md). The 18s polling window and 500ms cadence
+   * mirror the Android client exactly. The `0x53C7` enum and `0x53C8`
+   * milliseconds-vs-seconds interpretation are not yet validated end-to-end.
+   *
+   * @param opts Guided-load options
+   */
+  async startGuidedLoad(opts: GuidedLoadOptions): Promise<void> {
+    this.ensureConnected();
+    if (this._guidedLoadActive) {
+      throw new CommandError(
+        'Guided-load already in progress; call exitGuidedLoad() before starting a new flow.',
+        'startGuidedLoad'
+      );
+    }
+
+    const pollIntervalMs = opts.pollIntervalMs ?? 500;
+    const pollDurationMs = opts.pollDurationMs ?? 18000;
+
+    // Step 1: write the target weight (BP_BASE_WEIGHT). `setWeight` already
+    // validates against the available-weights table; out-of-range values
+    // surface as `InvalidSettingError` before any trigger is written.
+    await this.setWeight(opts.targetWeightLbs);
+
+    // Step 2: write the direct-load trigger frame.
+    try {
+      await this.adapter!.write(buildGuidedLoadTriggerFrame());
+    } catch (e) {
+      throw new CommandError(
+        `Failed to write guided-load trigger: ${this.getErrorMessage(e)}`,
+        'startGuidedLoad'
+      );
+    }
+
+    // Transition out of 'idle' immediately so observers see the armed
+    // state even if the first poll response is delayed.
+    this._guidedLoadActive = true;
+    this.updateGuidedLoadState({ phase: 'armed' });
+
+    // Step 3: arm the polling loop. The first read fires after one
+    // interval — callers may also `await client.exitGuidedLoad()` to
+    // bail out before the window closes.
+    this.guidedLoadPollTimer = setInterval(() => {
+      this.pollGuidedLoadStatus().catch((e) => {
+        console.warn('[VoltraClient] guided-load poll error:', e);
+      });
+    }, pollIntervalMs);
+
+    this.guidedLoadEndTimer = setTimeout(() => {
+      this.stopGuidedLoadPolling();
+      // If we never reached ACTIVE, surface 'timeout' so callers can
+      // distinguish a clean exit from a window-close-without-engage.
+      if (
+        this._guidedLoadState.phase !== 'active' &&
+        this._guidedLoadState.phase !== 'exited'
+      ) {
+        this.updateGuidedLoadState({ phase: 'timeout' });
+      }
+      this._guidedLoadActive = false;
+    }, pollDurationMs);
+  }
+
+  /**
+   * Exit the guided-load flow cleanly by writing
+   * `BP_SET_FITNESS_MODE = 0x0004` (STRENGTH_READY). Stops the poll loop
+   * and transitions state to `'exited'`.
+   *
+   * @experimental — see {@link startGuidedLoad}.
+   */
+  async exitGuidedLoad(): Promise<void> {
+    this.ensureConnected();
+    this.stopGuidedLoadPolling();
+
+    try {
+      await this.adapter!.write(buildGuidedLoadExitFrame());
+    } catch (e) {
+      throw new CommandError(
+        `Failed to exit guided-load: ${this.getErrorMessage(e)}`,
+        'exitGuidedLoad'
+      );
+    }
+
+    this._guidedLoadActive = false;
+    this.updateGuidedLoadState({ phase: 'exited' });
+  }
+
+  /**
+   * Subscribe to guided-load state changes. The listener fires on every
+   * decoded poll response (with the latest known field values) AND on
+   * synthesized phase transitions (`'armed'`, `'timeout'`, `'exited'`).
+   *
+   * @experimental — see {@link startGuidedLoad}.
+   * @param listener Guided-load state listener
+   * @returns Unsubscribe function
+   */
+  onGuidedLoadState(listener: GuidedLoadStateListener): () => void {
+    this.guidedLoadStateListeners.add(listener);
+    return () => this.guidedLoadStateListeners.delete(listener);
+  }
+
+  // ===========================================================================
   // Recording
   // ===========================================================================
 
@@ -1420,6 +1580,11 @@ export class VoltraClient {
     this.modeConfirmedListeners.clear();
     this.settingsUpdateListeners.clear();
     this.batteryUpdateListeners.clear();
+    this.guidedLoadStateListeners.clear();
+
+    // Stop any in-flight guided-load polling
+    this.stopGuidedLoadPolling();
+    this._guidedLoadActive = false;
 
     // Cleanup
     this.cleanup();
@@ -1488,7 +1653,148 @@ export class VoltraClient {
       },
     });
 
-    this.notificationUnsubscribe = this.adapter.onNotification(handler);
+    const baseUnsub = this.adapter.onNotification(handler);
+
+    // Side-channel: the multi-param / settings_update notifications can
+    // carry guided-load status registers too. We hook a second listener so
+    // the main decoder remains untouched and guided-load decoding can be
+    // skipped entirely when the flow is inactive.
+    const guidedLoadUnsub = this.adapter.onNotification((data) => {
+      if (!this._guidedLoadActive) return;
+      const fields = decodeGuidedLoadStatus(data);
+      if (fields !== null) {
+        this.applyGuidedLoadStatusFields(fields);
+      }
+    });
+
+    this.notificationUnsubscribe = () => {
+      baseUnsub();
+      guidedLoadUnsub();
+    };
+  }
+
+  // ===========================================================================
+  // Guided-load private helpers
+  // ===========================================================================
+
+  /**
+   * Write the 4-paramID read frame so the device responds via a multi-param
+   * notification. The notification decoder fills in `_guidedLoadState`.
+   */
+  private async pollGuidedLoadStatus(): Promise<void> {
+    if (!this.adapter || !this._guidedLoadActive) return;
+    try {
+      await this.adapter.write(buildGuidedLoadStatusReadFrame());
+    } catch (e) {
+      // Swallow — the polling loop fires every 500ms; one failed write
+      // shouldn't terminate the flow. Log via console.warn (mirrors
+      // existing setter error policy).
+      console.warn('[VoltraClient] guided-load poll write failed:', e);
+    }
+  }
+
+  /**
+   * Apply a partial-fields update (any of the 4 status registers + the
+   * fitness-mode raw value) to the cached guided-load state. Phase is
+   * derived from `fitnessModeRaw` + `countdownMs` per the state machine
+   * documented in `types.ts`.
+   */
+  private applyGuidedLoadStatusFields(fields: GuidedLoadStatusFields): void {
+    const next: GuidedLoadState = { ...this._guidedLoadState };
+
+    if (fields.fitnessModeRaw !== undefined) {
+      next.fitnessModeRaw = fields.fitnessModeRaw;
+    }
+    if (fields.countdownMs !== undefined) {
+      next.countdownRemainingMs = fields.countdownMs;
+    }
+
+    // Phase resolution rules (mirrors §3-§5 of the design proposal):
+    //  * raw mode 0x0027 → 'active' (engaged at target). Stop polling.
+    //  * raw mode 0x0026 + countdownMs > 0 → 'countdown' (armed, ticking).
+    //  * raw mode 0x0026 + no countdown info → 'armed'.
+    //  * primaryStatus signals the arm bit; without a fitness-mode
+    //    register echo we fall back to it for state inference.
+    const mode = next.fitnessModeRaw;
+    const cd = next.countdownRemainingMs;
+
+    if (mode === GUIDED_LOAD_MODE_ACTIVE) {
+      next.phase = 'active';
+    } else if (mode === GUIDED_LOAD_MODE_ARMED) {
+      if (cd !== null && cd > 0) {
+        next.phase = 'countdown';
+      } else if (cd === 0) {
+        // Countdown elapsed but mode hasn't flipped yet — mid-engage
+        next.phase = 'engaging';
+      } else {
+        next.phase = 'armed';
+      }
+    } else if (cd !== null && cd > 0) {
+      // No mode echo yet but countdown is ticking → user must be pulling.
+      next.phase = 'countdown';
+    } else if (
+      fields.primaryStatus !== undefined &&
+      fields.primaryStatus !== 0 &&
+      this._guidedLoadState.phase === 'idle'
+    ) {
+      // Bootstrap case: status arrived before our local 'armed' synthesis.
+      next.phase = 'armed';
+    }
+
+    this.updateGuidedLoadState(next, /* preserveDerived */ true);
+
+    // Auto-stop polling once we observe ACTIVE — there are no further
+    // transitions to chase, and the device will continue rep telemetry
+    // until the user disengages.
+    if (next.phase === 'active') {
+      this.stopGuidedLoadPolling();
+      this._guidedLoadActive = false;
+    }
+  }
+
+  /** Update the cached state and notify listeners. */
+  private updateGuidedLoadState(
+    partial: Partial<GuidedLoadState>,
+    preserveDerived = false
+  ): void {
+    const next: GuidedLoadState = preserveDerived
+      ? (partial as GuidedLoadState)
+      : {
+          ...this._guidedLoadState,
+          ...partial,
+        };
+
+    // Reference-equality skip: if nothing changed, don't notify.
+    const prev = this._guidedLoadState;
+    if (
+      next.phase === prev.phase &&
+      next.countdownRemainingMs === prev.countdownRemainingMs &&
+      next.fitnessModeRaw === prev.fitnessModeRaw
+    ) {
+      return;
+    }
+
+    this._guidedLoadState = next;
+    this.emit({ type: 'guidedLoadState', state: { ...next } });
+    this.guidedLoadStateListeners.forEach((listener) => {
+      try {
+        listener({ ...next });
+      } catch (e) {
+        console.error('[VoltraClient] guided-load listener error:', e);
+      }
+    });
+  }
+
+  /** Cancel the guided-load poll + end timers. Idempotent. */
+  private stopGuidedLoadPolling(): void {
+    if (this.guidedLoadPollTimer !== null) {
+      clearInterval(this.guidedLoadPollTimer);
+      this.guidedLoadPollTimer = null;
+    }
+    if (this.guidedLoadEndTimer !== null) {
+      clearTimeout(this.guidedLoadEndTimer);
+      this.guidedLoadEndTimer = null;
+    }
   }
 
   private setupDisconnectHandler(): void {
@@ -1558,6 +1864,10 @@ export class VoltraClient {
     this._rowSubMenuOpen = false;
     this._rowStarted = false;
     // </Bug-22>
+    // Drop any in-flight guided-load polling on disconnect — the device
+    // is gone and the registers can no longer be read.
+    this.stopGuidedLoadPolling();
+    this._guidedLoadActive = false;
   }
 
   private setConnectionState(state: VoltraConnectionState): void {

@@ -84,6 +84,8 @@ export type VoltraClientEvent =
   | { type: 'modeConfirmed'; mode: TrainingMode }
   | { type: 'settingsUpdate'; settings: DeviceSettings }
   | { type: 'batteryUpdate'; battery: number }
+  // Guided-load (Phase 1g, 0.6.3+ @experimental)
+  | { type: 'guidedLoadState'; state: GuidedLoadState }
   // Error events
   | { type: 'error'; error: Error };
 
@@ -198,6 +200,81 @@ export interface InProgressEvent {
   /** Raw frame bytes. */
   raw: Uint8Array;
 }
+
+// =============================================================================
+// Guided-load (direct-load) — 0.6.3+ (@experimental)
+//
+// "Direct-load" / "guided-load" is the firmware-driven flow where the device
+// ramps from a fixed start floor to the user's target weight after a single
+// trigger byte. Phase 1g of the Voltras roadmap exposes the trigger + the
+// post-trigger state machine through the SDK so callers can observe READY
+// (armed) → countdown → ACTIVE (engaged) transitions without rolling their
+// own polling loop.
+//
+// State machine summary (from voltra-private/research/direct-load-protocol-
+// 2026-05-06-android-deep.md §3-§5):
+//   - 'idle'      — pre-trigger; no polling active
+//   - 'armed'     — trigger sent, BP_SET_FITNESS_MODE = 0x0026, awaiting pull
+//   - 'countdown' — user has pulled; safety countdown register `0x53C8` is
+//                   ticking down (3s nominal)
+//   - 'engaging'  — countdown reached zero, ramp in progress
+//   - 'active'    — BP_SET_FITNESS_MODE = 0x0027, engaged at target
+//   - 'exited'    — `exitGuidedLoad()` issued (write 0x0004 to 0x3E89)
+//   - 'timeout'   — 18s polling window closed without reaching ACTIVE
+//
+// Polling is mandatory — the device does not asynchronously push state
+// transitions for these registers, so without the 500ms read loop the SDK
+// sees no transitions.
+// =============================================================================
+
+/** Discrete guided-load lifecycle phases (see file-level state machine doc). */
+export type GuidedLoadPhase =
+  | 'idle'
+  | 'armed'
+  | 'countdown'
+  | 'engaging'
+  | 'active'
+  | 'exited'
+  | 'timeout';
+
+/**
+ * Snapshot of guided-load state surfaced by polling the 4 status registers.
+ *
+ * `countdownRemainingMs` carries the firmware's 3-second pre-engage safety
+ * countdown — the value decreases monotonically from ~3000 to 0 during the
+ * countdown phase and is `null` outside that phase.
+ *
+ * `fitnessModeRaw` is the raw value of the `BP_SET_FITNESS_MODE` register
+ * (`0x3E89`): `0x0026` while armed, `0x0027` while active, and `0x0004`
+ * after `exitGuidedLoad()`.
+ */
+export interface GuidedLoadState {
+  phase: GuidedLoadPhase;
+  countdownRemainingMs: number | null;
+  fitnessModeRaw: number | null;
+}
+
+/**
+ * Options for `VoltraClient.startGuidedLoad`.
+ *
+ * `targetWeightLbs` is the **target** for the guided ramp; the device-side
+ * start floor is fixed and cannot be controlled.
+ *
+ * `pollIntervalMs` / `pollDurationMs` defaults match the Android client
+ * (`ISOMETRIC_VENDOR_REFRESH_INTERVAL_MILLIS = 500ms`,
+ * `DIRECT_LOAD_VENDOR_REFRESH_BURST_MILLIS = 18000ms`).
+ */
+export interface GuidedLoadOptions {
+  /** Target weight in pounds (range follows `setWeight`'s validation). */
+  targetWeightLbs: number;
+  /** Poll interval (ms) for the 4 status registers. Default 500. */
+  pollIntervalMs?: number;
+  /** Total poll window (ms) starting at trigger time. Default 18000. */
+  pollDurationMs?: number;
+}
+
+/** Listener for guided-load state changes. */
+export type GuidedLoadStateListener = (state: GuidedLoadState) => void;
 
 /** PerRep listener (called twice per rep — pull start + return start). */
 export type PerRepListener = (event: PerRepEvent) => void;
