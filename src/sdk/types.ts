@@ -211,6 +211,32 @@ export type PreSummaryListener = (event: PreSummaryEvent) => void;
 /** InProgress listener (called ~1 Hz during active sets). */
 export type InProgressListener = (event: InProgressEvent) => void;
 
+// <Bug-22>
+/**
+ * Distance preset for {@link VoltraClient.startRow}. Pass `'JustRow'` for
+ * a free-row session with no preset distance.
+ *
+ * Wire-level mapping is documented in
+ * voltra-private/research/rowing-protocol-2026-05-06-android-deep.md §2.
+ * Only `JustRow` and `M50` are independently verified against iPad
+ * captures; the 100/500/1000/2000/5000 m codes are inferred by sequential
+ * numbering and pending on-device validation.
+ *
+ * Note: row distance presets are an iPad-side construct (`50m=10×5`,
+ * `5000m=1000×5`) — the device does not receive a native target-distance
+ * register. `EP_SCR_SWITCH` only selects the preset *screen*; the SDK
+ * does not currently emit a separate target-distance write.
+ */
+export type RowingDistancePreset =
+  | 'JustRow'
+  | 'M50'
+  | 'M100'
+  | 'M500'
+  | 'M1000'
+  | 'M2000'
+  | 'M5000';
+// </Bug-22>
+
 /**
  * State snapshot of the client.
  */

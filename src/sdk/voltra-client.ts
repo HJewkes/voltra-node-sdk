@@ -74,9 +74,15 @@ import {
   getResistanceExperienceCommand,
 } from '../voltra/protocol/commands';
 import { TrainingMode } from '../voltra/protocol/constants';
+import {
+  ROW_START_ACTION_CODES,
+  buildRowScrSwitchFrame,
+  buildVendorStateRefreshFrame,
+} from '../voltra/protocol/rowing-frames';
 import { delay } from '../shared/utils';
 import { createNotificationHandler } from './notification-dispatcher';
 import { setupDisconnectMonitor, attemptReconnect } from './reconnect-handler';
+import { ReassertScheduler } from './scheduler';
 import {
   ConnectionError,
   AuthenticationError,
@@ -100,6 +106,7 @@ import type {
   PreSummaryListener,
   InProgressListener,
   ScanOptions,
+  RowingDistancePreset,
 } from './types';
 import type { DeviceSettings } from '../voltra/protocol/types';
 
@@ -146,6 +153,18 @@ export class VoltraClient {
   private modeConfirmedListeners: Set<ModeConfirmedListener> = new Set();
   private settingsUpdateListeners: Set<SettingsUpdateListener> = new Set();
   private batteryUpdateListeners: Set<BatteryUpdateListener> = new Set();
+
+  // <Bug-22> Rowing two-stage entry state
+  /** Whether `enterRowMode()` has run since the last cleanup() / setMode(). */
+  private _rowSubMenuOpen = false;
+  /**
+   * Whether `startRow()` has run since the last cleanup() / setMode(). The
+   * SDK can't yet decode confirmation frames, so this flag reflects
+   * "command issued" rather than "device confirmed live."
+   */
+  private _rowStarted = false;
+  private readonly rowReassertScheduler = new ReassertScheduler();
+  // </Bug-22>
 
   // Disposed flag
   private disposed = false;
@@ -324,7 +343,13 @@ export class VoltraClient {
       // Success
       this._connectedDeviceId = device.id;
       this._connectedDeviceName = device.name ?? null;
-      this._settings = { ...DEFAULT_SETTINGS };
+      // Bug 17 fix: do NOT blanket-reset `_settings` here. The bootstrap
+      // step-10 query (`MODE_FEATURE_STATE_18PARAM_QUERY_HEX`) sent inside
+      // `initialize()` triggers a `cmd=0x0F` response that populates
+      // `_settings` via `syncSettingsFromDevice`. Resetting _settings here
+      // would wipe whatever step-10 just populated. On the disconnect side,
+      // `cleanup()` also no longer resets, so last-known settings persist
+      // across reconnect until step-10 refreshes them.
       this.setConnectionState('connected');
 
       this.emit({ type: 'connected', deviceId: device.id, deviceName: device.name ?? null });
@@ -493,10 +518,35 @@ export class VoltraClient {
   /**
    * Set training mode.
    *
+   * Note: Rowing requires a two-stage entry sequence and is no longer
+   * accepted via this method (Bug 22, 0.7.x). Call {@link enterRowMode}
+   * followed by {@link startRow} instead — see those methods for the
+   * rationale and the protocol-level wire sequence.
+   *
    * @param mode Training mode to set
+   * @throws InvalidSettingError if `mode === TrainingMode.Rowing`
    */
   async setMode(mode: TrainingMode): Promise<void> {
     this.ensureConnected();
+
+    // <Bug-22> Rowing's GO is EP_SCR_SWITCH, not BP_SET_FITNESS_MODE←5; the
+    // legacy single-shot setMode(Rowing) silently set up the device for the
+    // strength-mode GO (HIGH safety severity). Refuse and direct callers to
+    // the new two-stage tools.
+    if (mode === TrainingMode.Rowing) {
+      throw new CommandError(
+        'setMode(TrainingMode.Rowing) is not supported. Rowing uses a two-stage entry: ' +
+          'call enterRowMode() to open the rowing sub-menu, then startRow(distance?) to ' +
+          'commit. See voltra-private/research/rowing-protocol-2026-05-06-android-deep.md.',
+        'setMode',
+      );
+    }
+
+    // Reset rowing state if user is moving to a non-Rowing mode.
+    this.rowReassertScheduler.cancel();
+    this._rowSubMenuOpen = false;
+    this._rowStarted = false;
+    // </Bug-22>
 
     const cmd = getModeCommand(mode);
     if (!cmd) {
@@ -509,6 +559,159 @@ export class VoltraClient {
       throw new CommandError(`Failed to set mode: ${this.getErrorMessage(e)}`, 'setMode');
     }
   }
+
+  // <Bug-22>
+  // ===========================================================================
+  // Rowing Two-Stage Entry (Bug 22)
+  // ===========================================================================
+  //
+  // Rowing commits via `EP_SCR_SWITCH (0x5165)` followed by a vendor
+  // state-refresh pulse (`0xAA 0x13 0x01`), NOT via the strength-mode GO
+  // (`BP_SET_FITNESS_MODE ← 5`). The original SDK's `setMode(Rowing)` +
+  // `startRecording()` flow silently issued the strength-mode GO during
+  // session_start, which caused the device to revert out of rowing mid-
+  // session — Bug 22, HIGH safety severity.
+  //
+  // The new two-stage API is:
+  //
+  //   await client.enterRowMode();          // opens Just-Row / Distance menu
+  //   await client.startRow();              // commits Just-Row (no preset)
+  //   // -- or --
+  //   await client.startRow('M500');        // commits 500 m preset
+  //
+  // Wire-level rationale and the action-code table live in
+  // voltra-private/research/rowing-protocol-2026-05-06-android-deep.md.
+
+  /**
+   * Stage 1 of Rowing entry — open the rowing sub-menu (Just Row /
+   * Distance presets) without engaging resistance.
+   *
+   * Sends the existing `BP_SET_FITNESS_MODE ← 0x0003` (a.k.a.
+   * `FITNESS_WORKOUT_STATE = ROWING`) frame. After this returns
+   * successfully the device is on the rowing screen but `BP_SET_FITNESS_MODE`
+   * still reads `0x0004` (READY); the cable must NOT engage. Call
+   * {@link startRow} to commit into a live rowing session.
+   *
+   * Idempotent — calling repeatedly is safe.
+   */
+  async enterRowMode(): Promise<void> {
+    this.ensureConnected();
+
+    const cmd = getModeCommand(TrainingMode.Rowing);
+    if (!cmd) {
+      throw new CommandError(
+        'Rowing mode command not available in protocol data',
+        'enterRowMode',
+      );
+    }
+
+    try {
+      await this.adapter!.write(cmd);
+      this._rowSubMenuOpen = true;
+      this._rowStarted = false;
+    } catch (e) {
+      throw new CommandError(
+        `Failed to enter row mode: ${this.getErrorMessage(e)}`,
+        'enterRowMode',
+      );
+    }
+  }
+
+  /**
+   * Stage 2 of Rowing entry — commit into a live rowing session.
+   *
+   * Writes `EP_SCR_SWITCH ← <action> 3E 00 01` (action picks the preset
+   * screen) followed by the `0xAA 0x13 0x01` vendor state-refresh pulse.
+   * Schedules three reassert ticks at +750 / +1750 / +3000 ms (matching
+   * the Android cadence) to recover from BLE-flake drops where the device
+   * silently fails to enter rowing-active.
+   *
+   * Successful commit (verified externally — the SDK does not yet decode
+   * the confirmation frames):
+   *   - `BP_SET_FITNESS_MODE → 0x0015` (FITNESS_MODE_ROWING_ACTIVE)
+   *   - `APP_CUR_SCR_ID → 0x3E`
+   *   - `FITNESS_ONGOING_UI → 0x0303`
+   *   - `0xAA 0x95 0x25` rowing telemetry begins
+   *
+   * Note on distance presets: the device does not receive a native
+   * target-distance register — `EP_SCR_SWITCH` only selects the preset
+   * *screen*. The iPad enforces stroke targets app-side
+   * (`50m=10×5`, `5000m=1000×5`); SDK consumers are expected to do the
+   * same comparing live distance from the AA95 stream.
+   *
+   * Must be preceded by {@link enterRowMode}; otherwise this throws.
+   *
+   * @param distance Optional preset — pass `'JustRow'` (or omit) for a
+   *   free row; `'M50'` is independently verified, the rest are inferred.
+   */
+  async startRow(distance: RowingDistancePreset = 'JustRow'): Promise<void> {
+    this.ensureConnected();
+
+    if (!this._rowSubMenuOpen) {
+      throw new CommandError(
+        'startRow() requires enterRowMode() first. Call client.enterRowMode() ' +
+          'before client.startRow().',
+        'startRow',
+      );
+    }
+
+    const action = ROW_START_ACTION_CODES[distance];
+    if (action === undefined) {
+      throw new InvalidSettingError(
+        'rowingDistance',
+        distance,
+        Object.keys(ROW_START_ACTION_CODES),
+      );
+    }
+
+    const scrSwitch = buildRowScrSwitchFrame(action);
+    const refresh = buildVendorStateRefreshFrame();
+
+    try {
+      await this.adapter!.write(scrSwitch);
+      await this.adapter!.write(refresh);
+      this._rowStarted = true;
+    } catch (e) {
+      throw new CommandError(`Failed to start row: ${this.getErrorMessage(e)}`, 'startRow');
+    }
+
+    // Schedule reassert ticks. Each tick re-issues the same EP_SCR_SWITCH +
+    // vendor refresh pair. Cancellation happens automatically on the next
+    // arm() / cancel() / mode-change. The action code is captured by
+    // closure so a subsequent startRow() with a different distance only
+    // affects the new attempt.
+    this.rowReassertScheduler.arm(async (attemptId) => {
+      // Bail out if the attempt was superseded or the client is no longer
+      // connected — the scheduler also checks attemptId, but this guards
+      // against post-cleanup re-entry.
+      if (!this.isConnected) return;
+      if (attemptId !== this.rowReassertScheduler.currentAttemptId) return;
+      try {
+        await this.adapter!.write(scrSwitch);
+        await this.adapter!.write(refresh);
+      } catch (e) {
+        // Reassert failures are non-fatal — we'll have at least one more
+        // tick and the next user-initiated startRow() can recover. Surface
+        // the error via the standard event channel so observability tools
+        // can pick it up.
+        const error =
+          e instanceof Error ? e : new Error(`Reassert tick failed: ${this.getErrorMessage(e)}`);
+        this._error = error;
+        this.emit({ type: 'error', error });
+      }
+    });
+  }
+
+  /**
+   * True if {@link startRow} has been called since the last connect /
+   * mode-change. This reflects "command issued" — not necessarily
+   * "device confirmed live" (the SDK doesn't yet decode confirmation
+   * frames). Used by upstream MCP / mobile layers to gate session_start.
+   */
+  get isRowingActive(): boolean {
+    return this._rowStarted;
+  }
+  // </Bug-22>
 
   /**
    * Get available training modes.
@@ -1343,6 +1546,11 @@ export class VoltraClient {
     this._connectedDeviceName = null;
     this._settings = { ...DEFAULT_SETTINGS };
     this._recordingState = 'idle';
+    // <Bug-22>
+    this.rowReassertScheduler.cancel();
+    this._rowSubMenuOpen = false;
+    this._rowStarted = false;
+    // </Bug-22>
   }
 
   private setConnectionState(state: VoltraConnectionState): void {

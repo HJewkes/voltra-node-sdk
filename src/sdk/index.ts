@@ -27,6 +27,7 @@ export type {
   InProgressListener,
   ScanOptions,
   DeviceChooser,
+  RowingDistancePreset,
 } from './types';
 
 // Re-export DeviceSettings for typing event listeners
