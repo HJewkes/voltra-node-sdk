@@ -14,6 +14,7 @@ export type {
   VoltraClientEvent,
   VoltraClientEventListener,
   FrameListener,
+  RawFrameListener,
   ModeConfirmedListener,
   SettingsUpdateListener,
   StateDumpListener,

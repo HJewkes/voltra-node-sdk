@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-05-09
+
+Restores two fixes that were originally written for 0.6.1 / 0.6.2 but never
+merged before the 0.6.0 → 0.7.0 cascade.
+
+### Fixed
+
+- `VoltraManager.connect()` on Node no longer throws
+  `"No device selected. Call scan() first."` after `scan()`. The
+  `scanAdapter` is now reused for the first connect on Node (matching web
+  behavior). Cherry-picked from `cddf7e0`. Without this, every Node consumer
+  hits the error on first connect against real hardware.
+
+### Added
+
+- `client.onRawFrame((data: Uint8Array) => void)` — fires for every inbound
+  BLE notification before decode, including frames that decode to `'unknown'`.
+  Diagnostic surface for byte-level work. Cherry-picked from `b3e3dc3`.
+- `client.onSettingsUpdate(cb)` now replays the most recent cached
+  `DeviceSettings` cascade synchronously on attach if a cascade has already
+  been observed. Closes the bridge-bootstrap-timing window where consumers
+  attached after `await manager.connect()` resolved missed the initial
+  settings cascade. Cherry-picked from `b3e3dc3`.
+
+### Why this wasn't in 0.7.0
+
+The fixes lived on `feat/onrawframe-and-bootstrap-replay` (a 0.6.x branch)
+and were never merged. The 2026-05-07 release went 0.6.0 → 0.7.0 directly.
+The 2026-05-07 evening on-device validation session caught the regression;
+0.7.1 restores both.
+
 ## [0.6.0] - UNRELEASED
 
 ### Added

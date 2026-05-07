@@ -18,8 +18,13 @@ import type { PerRepEvent, SummaryEvent, PreSummaryEvent, InProgressEvent } from
  * 0.6.0 dropped the legacy `onRepBoundary` / `onSetBoundary` payload-less
  * callbacks. The four vendor-frame events surface exclusively through their
  * typed counterparts (`onPerRep`, `onInProgress`, `onSummary`, `onPreSummary`).
+ *
+ * 0.6.2 adds `onRawFrame` — fires for every inbound notification BEFORE
+ * decode, including frames that decode to `'unknown'`. Diagnostic / capture
+ * surface for byte-level work (cmd=0x10 reconnaissance, bootstrap parity).
  */
 export interface NotificationCallbacks {
+  onRawFrame: (data: Uint8Array) => void;
   onFrame: (frame: TelemetryFrame) => void;
   onModeConfirmed: (mode: TrainingMode) => void;
   onSettingsUpdate: (settings: DeviceSettings) => void;
@@ -39,6 +44,11 @@ export interface NotificationCallbacks {
  */
 export function createNotificationHandler(callbacks: NotificationCallbacks): NotificationCallback {
   return (data: Uint8Array) => {
+    // Fire raw-frame callback first so consumers can capture bytes for
+    // every inbound notification, including frames the decoder cannot
+    // classify (e.g. `cmd=0x10` async-update family until 1a lands).
+    callbacks.onRawFrame(data);
+
     const result = decodeNotification(data);
     if (!result) return;
 

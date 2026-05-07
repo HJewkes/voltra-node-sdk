@@ -98,6 +98,7 @@ import type {
   VoltraClientEvent,
   VoltraClientEventListener,
   FrameListener,
+  RawFrameListener,
   ModeConfirmedListener,
   SettingsUpdateListener,
   StateDumpListener,
@@ -159,6 +160,7 @@ export class VoltraClient {
   // Event listeners
   private listeners: Set<VoltraClientEventListener> = new Set();
   private frameListeners: Set<FrameListener> = new Set();
+  private rawFrameListeners: Set<RawFrameListener> = new Set();
   private perRepListeners: Set<PerRepListener> = new Set();
   private summaryListeners: Set<SummaryListener> = new Set();
   private preSummaryListeners: Set<PreSummaryListener> = new Set();
@@ -190,6 +192,13 @@ export class VoltraClient {
   private _rowStarted = false;
   private readonly rowReassertScheduler = new ReassertScheduler();
   // </Bug-22>
+
+  // Bootstrap-replay buffer: caches the most recent settings cascade so a
+  // listener attached AFTER `connect()` resolves still sees the bootstrap
+  // settings. Cleared in `cleanup()`. Added 0.6.2 to fix the bridge-bootstrap
+  // timing window where consumers can't realistically attach listeners
+  // synchronously inside connect().
+  private _lastDeviceSettings: DeviceSettings | null = null;
 
   // Disposed flag
   private disposed = false;
@@ -1440,6 +1449,25 @@ export class VoltraClient {
   }
 
   /**
+   * Subscribe to raw BLE notifications BEFORE decode. Fires for every
+   * inbound notification — typed frames, vendor frames, async-updates,
+   * and frames the decoder cannot classify (returns `'unknown'`).
+   *
+   * Diagnostic / capture surface: byte-level work (cmd=0x10 reconnaissance,
+   * bootstrap parity, capture-replay regression). Consumers needing typed
+   * events should use the typed listeners (`onFrame`, `onPerRep`, etc.).
+   *
+   * Added 0.6.2.
+   *
+   * @param listener Raw frame listener
+   * @returns Unsubscribe function
+   */
+  onRawFrame(listener: RawFrameListener): () => void {
+    this.rawFrameListeners.add(listener);
+    return () => this.rawFrameListeners.delete(listener);
+  }
+
+  /**
    * Subscribe to connection state changes.
    *
    * @param listener State listener
@@ -1529,11 +1557,20 @@ export class VoltraClient {
    * Subscribe to settings update events.
    * Called when the device reports its current settings.
    *
+   * **0.6.2 bootstrap replay**: if a settings cascade has already been
+   * received before this listener attaches (the common case for consumers
+   * who attach listeners after `manager.connect()` resolves — bootstrap
+   * fires inside `connect()`), the most recent cascade is replayed
+   * synchronously. Each listener attach gets at most one replay event.
+   *
    * @param listener Settings update listener
    * @returns Unsubscribe function
    */
   onSettingsUpdate(listener: SettingsUpdateListener): () => void {
     this.settingsUpdateListeners.add(listener);
+    if (this._lastDeviceSettings !== null) {
+      listener(this._lastDeviceSettings);
+    }
     return () => this.settingsUpdateListeners.delete(listener);
   }
 
@@ -1592,6 +1629,7 @@ export class VoltraClient {
     // Clear all listeners
     this.listeners.clear();
     this.frameListeners.clear();
+    this.rawFrameListeners.clear();
     this.perRepListeners.clear();
     this.summaryListeners.clear();
     this.preSummaryListeners.clear();
@@ -1638,6 +1676,9 @@ export class VoltraClient {
     if (!this.adapter) return;
 
     const handler = createNotificationHandler({
+      onRawFrame: (data) => {
+        this.rawFrameListeners.forEach((listener) => listener(data));
+      },
       onFrame: (frame) => {
         this.emit({ type: 'frame', frame });
         this.frameListeners.forEach((listener) => listener(frame));
@@ -1663,6 +1704,8 @@ export class VoltraClient {
         this.modeConfirmedListeners.forEach((listener) => listener(mode));
       },
       onSettingsUpdate: (settings) => {
+        // Cache for bootstrap replay (see onSettingsUpdate registration).
+        this._lastDeviceSettings = settings;
         this.emit({ type: 'settingsUpdate', settings });
         this.settingsUpdateListeners.forEach((listener) => listener(settings));
         this.syncSettingsFromDevice(settings);
@@ -1889,6 +1932,9 @@ export class VoltraClient {
     // is gone and the registers can no longer be read.
     this.stopGuidedLoadPolling();
     this._guidedLoadActive = false;
+    // Drop the bootstrap-replay cache: a stale cascade from a different
+    // connection should not leak into a subsequent listener attach.
+    this._lastDeviceSettings = null;
   }
 
   private setConnectionState(state: VoltraConnectionState): void {

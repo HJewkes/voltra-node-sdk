@@ -101,6 +101,14 @@ export type VoltraClientEventListener = (event: VoltraClientEvent) => void;
 export type FrameListener = (frame: TelemetryFrame) => void;
 
 /**
+ * Raw frame listener — fires for every inbound BLE notification BEFORE
+ * decode, including frames that decode to `'unknown'`. Diagnostic surface
+ * for byte-level work; consumers needing typed events should use the typed
+ * listeners (`onFrame`, `onPerRep`, etc.) instead. Added in 0.6.2.
+ */
+export type RawFrameListener = (data: Uint8Array) => void;
+
+/**
  * Mode confirmed listener (called when device confirms mode change).
  */
 export type ModeConfirmedListener = (mode: TrainingMode) => void;

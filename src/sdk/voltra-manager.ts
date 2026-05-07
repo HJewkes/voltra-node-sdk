@@ -298,11 +298,14 @@ export class VoltraManager {
     // writes to all route to the most-recently-connected peripheral
     // because the adapter holds singleton device/server/writeChar fields.
     //
-    // On web, the scanAdapter holds the BluetoothDevice reference returned
-    // from requestDevice(); reuse it for the first connect after a scan
-    // and then null it out so the next connect triggers a new picker.
+    // Exception: the first connect after a scan reuses scanAdapter — it
+    // already holds the discovered-device state (web: BluetoothDevice
+    // reference from requestDevice(); node: selectedDevice populated by
+    // the scan callback) that the connect path needs. Subsequent connects
+    // without a fresh scan allocate a new adapter, supporting multi-device
+    // fan-out.
     let adapter: BLEAdapter;
-    if (this.platform === 'web' && this.scanAdapter) {
+    if (this.scanAdapter) {
       adapter = this.scanAdapter;
       this.scanAdapter = null;
     } else {
