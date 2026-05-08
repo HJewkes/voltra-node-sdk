@@ -927,24 +927,21 @@ export function decodeCmd0x0FResponse(data: Uint8Array): Cmd0x0FBulkResponse | n
 
 /**
  * Decode a device status notification.
- * Extracts battery level.
+ *
+ * Phase 0.5.2 hotfix: the `5523` `deviceInit` frame's byte [11] is a sub-cmd
+ * byte (constant `0xa7` in observed captures), NOT a battery percentage.
+ * Reading it produced nonsense readings (e.g. `0xa7 = 167%`). Battery now
+ * comes via paramID `2d4e` through the cmd=0x10 settings cascade, so the
+ * `deviceInit` branch no longer emits a `device_status` event. The `5523`
+ * frame falls through to `unknown` until a proper decoder lands. See
+ * `coordination/integration-plans/voltra-private-codegen/inventory-inbound.md`
+ * §2.12 for the canonical `5523` byte layout.
+ *
+ * The `statusBattery` (`5534`) branch is kept intact for any non-state-dump
+ * `5534` traffic, but in practice the 52-byte vendor-state-dump dispatch
+ * (which precedes header detection) consumes that header today.
  */
 function decodeDeviceStatus(data: Uint8Array): DecodeResult {
-  // Try device init format first
-  const initConfig = NotificationConfigs.deviceInit;
-  if (
-    initConfig.length &&
-    data.length >= initConfig.length &&
-    initConfig.batteryOffset !== undefined
-  ) {
-    const header = bytesToHex(data.slice(0, 2));
-    if (header === initConfig.header) {
-      const battery = data[initConfig.batteryOffset];
-      return { type: 'device_status', battery };
-    }
-  }
-
-  // Try status/battery format
   const statusConfig = NotificationConfigs.statusBattery;
   if (
     statusConfig.length &&

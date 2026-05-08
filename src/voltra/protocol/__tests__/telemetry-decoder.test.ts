@@ -755,17 +755,20 @@ function createSettingsUpdateBuffer(
 
 /**
  * Create a device_init notification buffer.
- * Header: 0x55 0x23, length: 35, batteryOffset: 11
+ * Header: 0x55 0x23, length: 35.
+ *
+ * Phase 0.5.2 hotfix: byte [11] of this frame is a sub-cmd byte (`0xa7` in
+ * observed captures), NOT a battery percentage. The `byteAt11` argument is
+ * named generically so tests can inject the on-wire sub-cmd byte and assert
+ * the decoder no longer surfaces it as a battery reading.
  */
-function createDeviceInitBuffer(battery: number): Uint8Array {
+function createDeviceInitBuffer(byteAt11: number): Uint8Array {
   const config = NotificationConfigs.deviceInit;
   const buffer = new Uint8Array(config.length!);
   const headerBytes = hexToBytes(config.header);
   buffer[0] = headerBytes[0];
   buffer[1] = headerBytes[1];
-  if (config.batteryOffset !== undefined) {
-    buffer[config.batteryOffset] = battery;
-  }
+  buffer[11] = byteAt11;
   return buffer;
 }
 
@@ -945,15 +948,23 @@ describe('decodeNotification – settings_update', () => {
 });
 
 describe('decodeNotification – device_status (deviceInit & statusBattery)', () => {
-  it('returns device_status with battery from deviceInit notification', () => {
-    const buffer = createDeviceInitBuffer(92);
+  // Phase 0.5.2 hotfix: byte [11] of the 35-byte `5523` deviceInit frame is
+  // a sub-cmd byte (`0xa7` in observed captures), NOT a battery percentage.
+  // The decoder no longer emits `device_status` for `5523` frames; battery
+  // arrives via paramID `2d4e` through the cmd=0x10 settings cascade.
+  it('does NOT emit device_status from a deviceInit (5523) notification', () => {
+    // byte [11] = 0xa7 (the actual on-wire sub-cmd byte) — must NOT be
+    // surfaced as a 167% battery reading.
+    const buffer = createDeviceInitBuffer(0xa7);
 
     const result = decodeNotification(buffer);
 
     expect(result).not.toBeNull();
-    expect(result!.type).toBe('device_status');
-    if (result?.type === 'device_status') {
-      expect(result.battery).toBe(92);
+    expect(result!.type).not.toBe('device_status');
+    expect(result!.type).toBe('unknown');
+    if (result?.type === 'unknown') {
+      // No `battery` field should be present on the result.
+      expect((result as Record<string, unknown>).battery).toBeUndefined();
     }
   });
 
@@ -969,19 +980,7 @@ describe('decodeNotification – device_status (deviceInit & statusBattery)', ()
     }
   });
 
-  it('handles zero battery level', () => {
-    const buffer = createDeviceInitBuffer(0);
-
-    const result = decodeNotification(buffer);
-
-    expect(result).not.toBeNull();
-    expect(result!.type).toBe('device_status');
-    if (result?.type === 'device_status') {
-      expect(result.battery).toBe(0);
-    }
-  });
-
-  it('handles 100% battery level', () => {
+  it('handles 100% battery level from statusBattery notification', () => {
     const buffer = createStatusBatteryBuffer(100);
 
     const result = decodeNotification(buffer);
