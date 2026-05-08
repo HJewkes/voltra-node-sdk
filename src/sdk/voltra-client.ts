@@ -35,6 +35,7 @@
  */
 
 import type { BLEAdapter } from '../bluetooth/adapters/types';
+import { PeripheralAdapterBridge } from './peripheral-adapter-bridge';
 import type { DiscoveredDevice } from '../bluetooth/models/device';
 import type { VoltraConnectionState } from '../voltra/models/connection';
 import { DEFAULT_SETTINGS } from '../voltra/models/device';
@@ -126,8 +127,12 @@ import {
 
 /**
  * Default client options.
+ *
+ * `adapter` and `peripheral` are mutually exclusive — both omitted from
+ * defaults; the constructor decides which path to take based on which
+ * was supplied.
  */
-const DEFAULT_OPTIONS: Required<Omit<VoltraClientOptions, 'adapter'>> = {
+const DEFAULT_OPTIONS: Required<Omit<VoltraClientOptions, 'adapter' | 'peripheral'>> = {
   autoReconnect: false,
   maxReconnectAttempts: 3,
   reconnectDelayMs: 1000,
@@ -138,10 +143,19 @@ const DEFAULT_OPTIONS: Required<Omit<VoltraClientOptions, 'adapter'>> = {
  */
 export class VoltraClient {
   // Options
-  private readonly options: Required<Omit<VoltraClientOptions, 'adapter'>>;
+  private readonly options: Required<Omit<VoltraClientOptions, 'adapter' | 'peripheral'>>;
 
-  // Adapter
+  // Adapter — legacy path; populated either directly from
+  // `options.adapter` or synthesized from `options.peripheral` via the
+  // `PeripheralAdapterBridge`. All internal BLE I/O routes through here.
   private adapter: BLEAdapter | null;
+
+  /**
+   * Bridge instance when constructed with `{ peripheral }`. Held so
+   * `dispose()` can release the peripheral subscriptions and so
+   * `unsafeDiagnostics()` can return the underlying typed peripheral.
+   */
+  private peripheralBridge: PeripheralAdapterBridge | null = null;
 
   // State
   private _connectionState: VoltraConnectionState = 'disconnected';
@@ -204,8 +218,23 @@ export class VoltraClient {
   private disposed = false;
 
   constructor(options: VoltraClientOptions = {}) {
+    if (options.adapter && options.peripheral) {
+      throw new Error(
+        'VoltraClient: pass `adapter` OR `peripheral`, not both. ' +
+          'The peripheral path supersedes the adapter path.'
+      );
+    }
     this.options = { ...DEFAULT_OPTIONS, ...options };
-    this.adapter = options.adapter ?? null;
+
+    if (options.peripheral) {
+      // New Phase 0 path: drive through a Peripheral. The bridge
+      // adapts to the legacy BLEAdapter shape so the rest of
+      // VoltraClient is unchanged.
+      this.peripheralBridge = new PeripheralAdapterBridge(options.peripheral);
+      this.adapter = this.peripheralBridge;
+    } else {
+      this.adapter = options.adapter ?? null;
+    }
   }
 
   // ===========================================================================
@@ -310,9 +339,89 @@ export class VoltraClient {
 
   /**
    * Get the current adapter.
+   *
+   * When the client is backed by a `Peripheral` (Phase 0+), this
+   * returns the underlying legacy `BLEAdapter` if the peripheral was
+   * built via the `LegacyAdapterPeripheral` shim — preserving backward
+   * compatibility with mock-debug callers + test assertions that expect
+   * the concrete adapter back. For peripherals from a non-legacy host
+   * (e.g. a future noble-backed host), this returns the
+   * `PeripheralAdapterBridge` itself, which still implements the full
+   * `BLEAdapter` interface.
    */
   getAdapter(): BLEAdapter | null {
+    if (this.peripheralBridge) {
+      // Try to unwrap to the legacy adapter inside a LegacyAdapterPeripheral.
+      const peripheral = this.peripheralBridge.peripheral as {
+        adapter?: BLEAdapter;
+      };
+      if (peripheral.adapter) {
+        return peripheral.adapter;
+      }
+      return this.peripheralBridge;
+    }
     return this.adapter;
+  }
+
+  /**
+   * Diagnostic byte-pipe accessor.
+   *
+   * Returns a narrowed surface for raw BLE writes + matched-response
+   * collection. Used by tooling (voltras-mcp's `device.send_raw`,
+   * protocol-byte sweeps, ad-hoc reverse engineering) that needs to send
+   * a hand-built frame and observe the next inbound bytes.
+   *
+   * The deliberately-ugly name (`unsafeDiagnostics`) keeps it out of the
+   * typical autocomplete path. Audit logging, command-allowlisting, and
+   * mock-adapter rejection remain a CONSUMER concern (e.g. mcp). The SDK
+   * surface here only owns:
+   * - Single point of truth for "where does the byte go?" — uses the
+   *   underlying `Peripheral.write()` (or legacy adapter `write()`),
+   *   which catches `PeripheralLost` and flips the client to
+   *   disconnected via the same path as `writeFrame()`.
+   * - Listener attach/detach for response collection — the consumer
+   *   passes a callback; we wire it through `adapter.onNotification`
+   *   and return an unsubscribe.
+   *
+   * Throws `NotConnectedError` if the client is not connected. Callers
+   * are responsible for any timing, audit, or matching logic.
+   *
+   * Returns `null` if the client has no adapter configured (constructor
+   * was called without `adapter` or `peripheral`).
+   */
+  unsafeDiagnostics(): {
+    write: (data: Uint8Array, options?: { withResponse?: boolean }) => Promise<void>;
+    onResponse: (callback: (data: Uint8Array) => void) => () => void;
+  } | null {
+    if (!this.adapter) {
+      return null;
+    }
+    const adapter = this.adapter;
+    return {
+      write: async (data, _options) => {
+        // Run through ensureConnected so a half-dead link surfaces the
+        // same `CONNECTION_LOST` error that the typed setters do —
+        // diagnostic writers see consistent semantics with the rest of
+        // the SDK.
+        this.ensureConnected();
+        try {
+          await adapter.write(data);
+        } catch (e) {
+          // Mirror writeFrame's flip-to-disconnected + rethrow-as-
+          // ConnectionError contract. The typed surface and the raw
+          // surface both need to agree on what a failed write means
+          // for the link.
+          this.flipToDisconnected();
+          const cause = e instanceof Error ? e : undefined;
+          throw new ConnectionError(
+            `BLE diagnostic write failed — link is functionally dead, reconnect required: ${this.getErrorMessage(e)}`,
+            ErrorCode.CONNECTION_LOST,
+            cause
+          );
+        }
+      },
+      onResponse: (callback) => adapter.onNotification(callback),
+    };
   }
 
   // ===========================================================================
@@ -331,6 +440,13 @@ export class VoltraClient {
   async scan(options: ScanOptions = {}): Promise<DiscoveredDevice[]> {
     this.ensureNotDisposed();
     this.ensureAdapter();
+
+    if (this.peripheralBridge) {
+      throw new Error(
+        'VoltraClient.scan() is not supported when constructed with a `peripheral`. ' +
+          'Use BluetoothHost.scan() at the host layer instead.'
+      );
+    }
 
     const { timeout = 10000, filterVoltra = true } = options;
 
@@ -360,9 +476,14 @@ export class VoltraClient {
     this._lastConnectedDevice = device;
 
     try {
-      // Connect
+      // Connect. When backed by a pre-dialed Peripheral, the BLE-level
+      // dial has already happened at the host layer — skip the legacy
+      // adapter.connect() call (which is a no-op anyway through the
+      // bridge but throws on unexpected status). Auth + init still run.
       this.setConnectionState('connecting');
-      await this.adapter!.connect(device.id);
+      if (!this.peripheralBridge) {
+        await this.adapter!.connect(device.id);
+      }
 
       // Setup notification handler before auth
       this.setupNotificationHandler();
@@ -1669,6 +1790,11 @@ export class VoltraClient {
 
     // Cleanup
     this.cleanup();
+
+    // Release peripheral-bridge subscriptions when applicable. The
+    // bridge's `dispose()` is idempotent.
+    this.peripheralBridge?.dispose();
+    this.peripheralBridge = null;
   }
 
   // ===========================================================================

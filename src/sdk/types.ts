@@ -4,7 +4,7 @@
  * Types for the high-level VoltraClient API.
  */
 
-import type { BLEAdapter } from '../bluetooth/adapters/types';
+import type { BLEAdapter, Peripheral } from '../bluetooth/adapters/types';
 import type { DiscoveredDevice } from '../bluetooth/models/device';
 import type { TelemetryFrame } from '../voltra/models/telemetry';
 import type { VoltraConnectionState } from '../voltra/models/connection';
@@ -17,10 +17,25 @@ import type { DeviceSettings, StateDumpEvent } from '../voltra/protocol/types';
  */
 export interface VoltraClientOptions {
   /**
-   * Pre-configured BLE adapter to use.
-   * If not provided, you must call setAdapter() before connecting.
+   * Pre-configured BLE adapter to use (legacy path).
+   * If not provided, you must call setAdapter() before connecting OR
+   * pass `peripheral` instead.
    */
   adapter?: BLEAdapter;
+
+  /**
+   * Pre-dialed peripheral to drive (Phase 0 path).
+   *
+   * When supplied, the client treats the peripheral as already
+   * connected — `client.connect(device)` becomes auth-only (no fresh
+   * BLE dial), `client.scan()` is unsupported (use the host directly),
+   * and `client.disconnect()` resolves to `peripheral.disconnect()`.
+   *
+   * Mutually exclusive with `adapter`. Pass exactly one. New consumers
+   * should prefer this; the legacy `adapter` path is retained for
+   * backward compatibility through Phase 2.
+   */
+  peripheral?: Peripheral;
 
   /**
    * Enable auto-reconnect on connection loss.
