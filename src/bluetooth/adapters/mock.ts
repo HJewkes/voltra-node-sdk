@@ -209,6 +209,25 @@ export class MockBLEAdapter extends BaseBLEAdapter {
   }
 
   /**
+   * Test helper: simulate an unexpected adapter-level disconnect — equivalent
+   * to `gattserverdisconnected` firing without a prior `client.disconnect()`.
+   * The adapter's connection state is flipped to `'disconnected'` (which
+   * fires `onConnectionStateChange` listeners) and the link is killed.
+   *
+   * Used by the slot-routing regression test
+   * (`coordination/bug-investigations/ble-slot-routing-2026-05-08.md`,
+   * Fix C in `sdk-slot-routing-code-trace-2026-05-08.md`) to verify that
+   * `VoltraClient` observes adapter-level disconnects even when
+   * `autoReconnect=false`.
+   */
+  simulateUnexpectedDisconnect(): void {
+    this._stopTelemetry();
+    this.errorInjector.clearTimers();
+    this.linkAlive = false;
+    this.setConnectionState('disconnected');
+  }
+
+  /**
    * Switch the active training mode at runtime.
    * Resets phase/rep counters and emits a mode confirmation notification.
    */

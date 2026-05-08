@@ -41,22 +41,37 @@ export interface ReconnectState {
 }
 
 /**
- * Setup a disconnect handler on the adapter that triggers auto-reconnect.
+ * Setup a disconnect handler on the adapter that observes adapter-level
+ * `disconnected` transitions and routes them to the client's
+ * `handleDisconnect` callback.
+ *
+ * The listener is ALWAYS installed regardless of `options.autoReconnect`.
+ * The reconnect *attempts* are gated downstream inside the client's
+ * `handleDisconnect` callback (see `VoltraClient.handleUnexpectedDisconnect`):
+ * with `autoReconnect=false`, that callback still flips connection state
+ * back to `'disconnected'` and emits the `'disconnected'` event so MCP /
+ * SDK consumers learn about the link death. Previously this monitor
+ * short-circuited with `return null` whenever `autoReconnect=false`,
+ * which left `client._connectionState` stuck at `'connected'` after a
+ * `gattserverdisconnected` event — the root cause of the slot-routing
+ * cross-talk documented in
+ * `coordination/bug-investigations/ble-slot-routing-2026-05-08.md`
+ * (specifically Q6 / "always-on disconnect monitor" of
+ * `sdk-slot-routing-code-trace-2026-05-08.md`).
  *
  * @param adapter BLE adapter to monitor
- * @param options Reconnect options
+ * @param _options Reconnect options (kept for callsite compatibility; the
+ *   reconnect-vs-flip-only decision is made by `handleDisconnect` itself).
  * @param isConnected Function that returns current connection state
  * @param handleDisconnect Function to call on unexpected disconnect
- * @returns Unsubscribe function, or null if auto-reconnect is disabled
+ * @returns Unsubscribe function for the installed listener.
  */
 export function setupDisconnectMonitor(
   adapter: BLEAdapter,
-  options: ReconnectOptions,
+  _options: ReconnectOptions,
   isConnected: () => boolean,
   handleDisconnect: () => void
-): (() => void) | null {
-  if (!options.autoReconnect) return null;
-
+): () => void {
   const unsubscribe = adapter.onConnectionStateChange((state) => {
     if (state === 'disconnected' && isConnected()) {
       handleDisconnect();
