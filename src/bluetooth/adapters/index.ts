@@ -35,6 +35,20 @@ export { PeripheralLost, PeripheralRebound } from './types';
 export { LegacyAdapterHost, LegacyAdapterPeripheral } from './legacy-shim';
 export type { LegacyAdapterHostOptions } from './legacy-shim';
 
+// Phase 1 (2026-05-08): noble-backed Node host + peripheral. Available
+// behind `platform: 'node-noble'` opt-in. Default `'node'` platform
+// remains on webbluetooth until Phase 4 promotes this. Implements the
+// Phase 0 BluetoothHost/Peripheral interfaces directly (no legacy
+// BLEAdapter shim).
+export { NobleHost, NoblePeripheral, __setNobleModuleForTesting } from './node-noble';
+export type {
+  NobleHostConfig,
+  NobleBindingType,
+  NoblePeripheralLike,
+  NobleCharacteristicLike,
+  NobleLike,
+} from './node-noble';
+
 // Platform adapters. Native adapter is type-only here to avoid eagerly
 // loading `react-native-ble-plx` for non-RN consumers; the value is
 // reachable via the `@voltras/node-sdk/native` subpath.

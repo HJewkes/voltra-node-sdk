@@ -39,8 +39,18 @@ import type { VoltraClientOptions, VoltraClientEvent, ScanOptions } from './type
 
 /**
  * Supported platforms for BLE.
+ *
+ * - `'node'`: Node.js via the `webbluetooth` package. Default for Node.
+ *   Affected by the upstream SimplebleAdapter singleton cross-talk bug
+ *   (see `coordination/bug-investigations/sdk-fresh-connect-cross-talk-2026-05-08.md`)
+ *   when driving 2+ peripherals concurrently.
+ * - `'node-noble'`: Node.js via `@stoprocent/noble`. Multi-peripheral-safe;
+ *   opt-in alongside `'node'` for one release. Will become the default in
+ *   Phase 4 after on-hardware bilateral validation. Implements the
+ *   Phase 0 BluetoothHost/Peripheral interfaces directly (no legacy
+ *   BLEAdapter shim).
  */
-export type Platform = 'web' | 'node' | 'native' | 'mock';
+export type Platform = 'web' | 'node' | 'node-noble' | 'native' | 'mock';
 
 /**
  * Factory function to create a BLE adapter.
@@ -172,11 +182,18 @@ export class VoltraManager {
     }
 
     // Phase 0: every flow now goes through a BluetoothHost. If the user
-    // supplied one, use it directly; otherwise wrap the resolved
-    // adapter factory as a LegacyAdapterHost. Either way, scan/dial
-    // converge on the new interface — no observable behavior change for
-    // legacy consumers.
-    this.host = options.host ?? new LegacyAdapterHost(this.adapterFactory);
+    // supplied one, use it directly; otherwise build the host that fits
+    // the resolved platform. Phase 1 introduces `'node-noble'` which
+    // builds a `NobleHost` directly (no legacy BLEAdapter shim — the
+    // noble peripheral implements `Peripheral` natively). All other
+    // platforms wrap the adapter factory as a `LegacyAdapterHost`.
+    if (options.host) {
+      this.host = options.host;
+    } else if (this.platform === 'node-noble') {
+      this.host = this.createNobleHost();
+    } else {
+      this.host = new LegacyAdapterHost(this.adapterFactory);
+    }
   }
 
   // ===========================================================================
@@ -191,10 +208,30 @@ export class VoltraManager {
   }
 
   /**
-   * Create a manager for Node.js.
+   * Create a manager for Node.js (legacy `webbluetooth` backend).
+   *
+   * Default Node platform. Affected by the upstream SimplebleAdapter
+   * singleton cross-talk bug when driving 2+ peripherals concurrently.
+   * For multi-peripheral safety prefer `forNodeNoble()` (Phase 1).
    */
   static forNode(options?: Omit<VoltraManagerOptions, 'platform'>): VoltraManager {
     return new VoltraManager({ ...options, platform: 'node' });
+  }
+
+  /**
+   * Create a manager for Node.js using the `@stoprocent/noble` backend.
+   *
+   * Phase 1 (2026-05-08) opt-in alternative to `forNode()`. Implements
+   * the BluetoothHost/Peripheral split with per-instance noble peripheral
+   * handles, so multi-device cross-talk is impossible at the library
+   * layer. Will be promoted to the default Node platform in Phase 4 after
+   * bilateral on-hardware validation.
+   *
+   * Requires `@stoprocent/noble` installed. macOS: terminal must hold
+   * Bluetooth permission. See research doc §4 for caveats.
+   */
+  static forNodeNoble(options?: Omit<VoltraManagerOptions, 'platform'>): VoltraManager {
+    return new VoltraManager({ ...options, platform: 'node-noble' });
   }
 
   /**
@@ -638,9 +675,38 @@ export class VoltraManager {
           return new MockBLEAdapter();
         };
 
+      case 'node-noble':
+        // node-noble drives a `BluetoothHost` directly (built in
+        // `createNobleHost()`); the legacy adapter factory is unused.
+        // Return a stub that throws if anything reaches it — that would
+        // mean a code path bypassed the host route, which is a bug.
+        return () => {
+          throw new Error(
+            "platform='node-noble' uses BluetoothHost directly — adapterFactory should not be invoked"
+          );
+        };
+
       default:
         throw new Error(`Unknown platform: ${platform}`);
     }
+  }
+
+  /**
+   * Build a `NobleHost` for the `'node-noble'` platform (Phase 1).
+   * Lazily requires `@stoprocent/noble` via the adapter file's dynamic
+   * import — `NobleHost` itself is imported eagerly here, but it does
+   * not pull noble until `scan()`/`isAvailable()`/`dial()`.
+   */
+  private createNobleHost(): BluetoothHost {
+    const bleConfig = {
+      serviceUUID: BLE.SERVICE_UUID,
+      notifyCharUUID: BLE.NOTIFY_CHAR_UUID,
+      writeCharUUID: BLE.WRITE_CHAR_UUID,
+      deviceNamePrefix: BLE.DEVICE_NAME_PREFIX,
+    };
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { NobleHost } = require('../bluetooth/adapters/node-noble');
+    return new NobleHost({ ble: bleConfig });
   }
 
   private handleClientEvent(deviceId: string, event: VoltraClientEvent): void {

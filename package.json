@@ -47,6 +47,16 @@
         "default": "./dist/cjs/bluetooth/adapters/node.js"
       }
     },
+    "./node-noble": {
+      "import": {
+        "types": "./dist/types/bluetooth/adapters/node-noble.d.ts",
+        "default": "./dist/esm/bluetooth/adapters/node-noble.js"
+      },
+      "require": {
+        "types": "./dist/types/bluetooth/adapters/node-noble.d.ts",
+        "default": "./dist/cjs/bluetooth/adapters/node-noble.js"
+      }
+    },
     "./web": {
       "import": {
         "types": "./dist/types/bluetooth/adapters/web.d.ts",
@@ -95,6 +105,7 @@
     }
   },
   "optionalDependencies": {
+    "@stoprocent/noble": "^2.5.3",
     "webbluetooth": "^3.4.0"
   },
   "devDependencies": {
