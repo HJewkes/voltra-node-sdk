@@ -403,35 +403,53 @@ export interface DeviceSettings {
 // <Decoder-cmd07-cmd10> ==========================================================
 // State-dump (cmd=0x07 / 52-byte aa80-25 envelope) parsed payload.
 //
-// The 52-byte vendor frame `aa 80 25 ...` is currently mis-classified by the
-// `statusBattery` 4-byte header path (which yields nonsense battery values
-// pulled from the sub-type length marker byte). Voltra-private's Campaign 3
-// recon (notes-2026-05-06T21-38-19.md) located byte offsets for assist mode
-// and chains-active flag inside this frame; the layout below mirrors what is
-// independently confirmable from those captures.
-//
-// Note: detailed byte tables for the rest of the 37-byte payload remain
-// uncertain across the runbook narrative ("byte [4]/[37]") and the AA-subtype
-// catalog (`aa-subtype-catalog-2026-05-07-android-deep.md` §7.1, gated on
-// payload[2]=0x06 for the Custom-Curve variant — NOT seen in our captures).
-// Decoder exposes only fields that are stable across the captured frames.
+// Field offsets validated on-device in the 2026-05-07 session E captures
+// (cmd-0x07-variable-layout-fix-2026-05-08 investigation in voltra-private/research).
+// The earlier "variable-layout / discriminator byte" hypothesis was disproved:
+// the 37-byte payload following `aa 80 25` has a fixed layout across every
+// observed (trainingMode × assistMode × transition) combination. Only fields
+// stable across the captured frames are exposed.
 // CRC trailer occupies frame[encodedLength-2 .. encodedLength-1], i.e. the
 // last 2 bytes of the 52-byte frame, not inside the decoded payload.
 // ==========================================================
 /**
  * Parsed state-dump frame (52-byte `0xAA 0x80 0x25` envelope).
+ *
+ * Field semantics validated against on-device captures in session E
+ * (2026-05-07). Earlier decoder versions mislabelled `trainingMode` as
+ * `chainsActive` and read `chainTargetForceTenths` from the wrong offset
+ * (where weight-in-tenths actually sits); both were corrected together.
  */
 export interface StateDumpEvent {
-  /** Chains-active flag at payload offset 0 (0 or 0x01). */
-  chainsActive: number;
+  /**
+   * Active training mode at payload offset 0 (raw byte; 0 = transitional
+   * mid-mode-switch, 1 = WeightTraining, 2 = ResistanceBand). The numeric
+   * values align with the {@link TrainingMode} enum but the byte is exposed
+   * verbatim — the encoded byte is uint8, while `TrainingMode` is uint16 LE.
+   * Consumers that want the typed enum should narrow with the enum's
+   * numeric values.
+   */
+  trainingMode: TrainingMode;
   /** Fitness-assist toggle at payload offset 1 (0 or 0x02). */
   assistMode: number;
   /**
-   * Chain target weight in tenths of pounds (uint16 LE) at payload offset 3.
-   * Mirrored at payload offset 5 in observed captures (likely current/target
-   * pair); only the offset-3 value is exposed.
+   * Active weight setting in tenths of pounds (uint16 LE) at payload
+   * offset 3. Mirrors the cmd=0x10 cascade `baseWeight` × 10. Zero in
+   * non-WeightTraining modes.
    */
-  chainTargetTenths: number;
+  weightLbsTenths: number;
+  /**
+   * Effective chain target force at the cable in tenths of pounds (uint16
+   * LE) at payload offset 5. Equals `min(chains, weight) × 10` — the device
+   * silently caps the chain setting at the active weight. Use the cmd=0x10
+   * cascade `chains` field for the user-set chain value.
+   */
+  chainTargetForceTenths: number;
+  /**
+   * Eccentric overload setting in tenths of percent (uint16 LE) at payload
+   * offset 7. Mirrors the cmd=0x10 cascade `eccentric` × 10.
+   */
+  eccentricPercentTenths: number;
   /** Raw 37-byte payload after the `aa 80 25` sub-type prefix (excludes CRC). */
   raw: Uint8Array;
 }

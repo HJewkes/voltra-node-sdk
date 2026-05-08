@@ -668,12 +668,13 @@ function decodeCmd10ToResult(data: Uint8Array): DecodeResult {
  *
  * Returns `null` for any frame that doesn't match the sub-type bytes or is
  * shorter than 52 bytes. The 37-byte payload following `aa 80 25` carries
- * runtime state (chains-engagement, assist toggle, runtime metrics that we
- * don't yet decode); the trailing 2 frame bytes are CRC16 and are NOT
- * included in `event.raw`.
+ * runtime state (active training mode, assist toggle, weight, effective
+ * chain force, eccentric overload). The trailing 2 frame bytes are CRC16
+ * and are NOT included in `event.raw`.
  *
- * Field offsets discovered via Campaign 3 recon
- * (`coordination/validation-runbooks/notes-2026-05-06T21-38-19.md`).
+ * Field offsets validated on-device in session E (2026-05-07); see
+ * `voltra-private/research/cmd-0x07-variable-layout-fix-2026-05-08.md` for
+ * the byte table and the disproof of the earlier variable-layout hypothesis.
  */
 export function decodeStateDump(data: Uint8Array): StateDumpEvent | null {
   if (data.length < STATE_DUMP_FRAME_LENGTH) return null;
@@ -688,9 +689,11 @@ export function decodeStateDump(data: Uint8Array): StateDumpEvent | null {
   const raw = data.slice(payloadStart, payloadEnd);
 
   return {
-    chainsActive: raw[0],
+    trainingMode: raw[0] as TrainingMode,
     assistMode: raw[1],
-    chainTargetTenths: readUint16LE(raw, 3),
+    weightLbsTenths: readUint16LE(raw, 3),
+    chainTargetForceTenths: readUint16LE(raw, 5),
+    eccentricPercentTenths: readUint16LE(raw, 7),
     raw,
   };
 }

@@ -275,41 +275,51 @@ describe('decodeNotification - cmd=0x10 routing', () => {
 // =============================================================================
 
 describe('decodeStateDump', () => {
-  it('decodes the assist-ON state dump (assistMode=2, no chains)', () => {
+  it('decodes the assist-ON state dump (assistMode=2, transitional trainingMode)', () => {
     const data = hexToBytes(FRAME_STATE_DUMP_ASSIST_ON);
 
     const event = decodeStateDump(data);
 
     expect(event).not.toBeNull();
     expect(event!.assistMode).toBe(0x02);
-    expect(event!.chainsActive).toBe(0x00);
-    expect(event!.chainTargetTenths).toBe(0);
+    // raw[0] = 0x00 → transitional / mid-mode-switch (TrainingMode.Idle).
+    expect(event!.trainingMode).toBe(TrainingMode.Idle);
+    expect(event!.weightLbsTenths).toBe(0);
+    expect(event!.chainTargetForceTenths).toBe(0);
+    expect(event!.eccentricPercentTenths).toBe(0);
     // Raw payload is the 37 bytes following `aa 80 25` (excluding 2-byte CRC).
     expect(event!.raw).toHaveLength(37);
   });
 
-  it('decodes the chains=25 state dump (chainsActive=1, chainTargetTenths=250)', () => {
+  it('decodes the chains=25 state dump (WT mode, chains coerced to weight)', () => {
     const data = hexToBytes(FRAME_STATE_DUMP_CHAINS_25);
 
     const event = decodeStateDump(data);
 
     expect(event).not.toBeNull();
-    expect(event!.chainsActive).toBe(0x01);
+    // raw[0] = 0x01 → WeightTraining.
+    expect(event!.trainingMode).toBe(TrainingMode.WeightTraining);
     expect(event!.assistMode).toBe(0x00);
-    // Chain target stored as uint16 LE tenths-of-pounds at payload offset 3:
+    // Weight stored as uint16 LE tenths-of-pounds at payload offset 3:
     // 0xfa = 250 = 25.0 lbs.
-    expect(event!.chainTargetTenths).toBe(250);
+    expect(event!.weightLbsTenths).toBe(250);
+    // Effective chain force at offset 5 = min(chains, weight) × 10. With
+    // chains=25 and weight=25 the effective chain force is 25.0 lbs.
+    expect(event!.chainTargetForceTenths).toBe(250);
+    expect(event!.eccentricPercentTenths).toBe(0);
   });
 
-  it('decodes the damper-baseline state dump (assistMode=0, chainsActive=0)', () => {
+  it('decodes the damper-baseline state dump (transitional, all zero)', () => {
     const data = hexToBytes(FRAME_STATE_DUMP_DAMPER_BASELINE);
 
     const event = decodeStateDump(data);
 
     expect(event).not.toBeNull();
     expect(event!.assistMode).toBe(0);
-    expect(event!.chainsActive).toBe(0);
-    expect(event!.chainTargetTenths).toBe(0);
+    expect(event!.trainingMode).toBe(TrainingMode.Idle);
+    expect(event!.weightLbsTenths).toBe(0);
+    expect(event!.chainTargetForceTenths).toBe(0);
+    expect(event!.eccentricPercentTenths).toBe(0);
   });
 
   it('returns null for a frame that is not aa-80-25', () => {
@@ -347,8 +357,9 @@ describe('decodeNotification - cmd=0x07 routing', () => {
     expect(result).not.toBeNull();
     expect(result!.type).toBe('state_dump');
     if (result?.type === 'state_dump') {
-      expect(result.event.chainsActive).toBe(1);
-      expect(result.event.chainTargetTenths).toBe(250);
+      expect(result.event.trainingMode).toBe(TrainingMode.WeightTraining);
+      expect(result.event.weightLbsTenths).toBe(250);
+      expect(result.event.chainTargetForceTenths).toBe(250);
     }
   });
 });
