@@ -113,6 +113,20 @@ import type {
   GuidedLoadOptions,
   GuidedLoadState,
   GuidedLoadStateListener,
+  BatteryUpdateEvent,
+  RawFrameEvent,
+  ModeChangeEvent,
+  ConnectionStateChangeEvent,
+  ConnectionLossEvent,
+  GuidedLoadStateEvent,
+  ModeRevertEvent,
+  BatteryUpdateEventListener,
+  RawFrameEventListener,
+  ModeChangeEventListener,
+  ConnectionStateChangeEventListener,
+  ConnectionLossEventListener,
+  GuidedLoadStateEventListener,
+  ModeRevertEventListener,
 } from './types';
 import type { DeviceSettings } from '../voltra/protocol/types';
 import {
@@ -184,6 +198,37 @@ export class VoltraClient {
   private stateDumpListeners: Set<StateDumpListener> = new Set();
   private batteryUpdateListeners: Set<BatteryUpdateListener> = new Set();
   private guidedLoadStateListeners: Set<GuidedLoadStateListener> = new Set();
+
+  // Phase 6 wrapper listeners — fire alongside the bare-value listeners.
+  private batteryUpdateEventListeners: Set<BatteryUpdateEventListener> = new Set();
+  private rawFrameEventListeners: Set<RawFrameEventListener> = new Set();
+  private modeChangeEventListeners: Set<ModeChangeEventListener> = new Set();
+  private connectionStateChangeEventListeners: Set<ConnectionStateChangeEventListener> = new Set();
+  private connectionLossEventListeners: Set<ConnectionLossEventListener> = new Set();
+  private guidedLoadStateEventListeners: Set<GuidedLoadStateEventListener> = new Set();
+  private modeRevertEventListeners: Set<ModeRevertEventListener> = new Set();
+
+  // Phase 6: per-connection monotonic event sequence number. Resets to 0 on
+  // each successful `connect()` (initial assignment + every connect entry).
+  private _eventSeq = 0;
+
+  // Phase 6: mode-revert detection. Captures the last `setMode()` target +
+  // a 2s confirmation window. When a `ModeChangeEvent` arrives with
+  // `to !== expectedMode` inside the window, the SDK fires
+  // `onModeRevertEvent` and clears the latch.
+  private _expectedMode: TrainingMode | null = null;
+  private _expectedModeExpiresAt = 0;
+  private _lastConfirmedMode: TrainingMode | null = null;
+
+  // Phase 6: target weight passed to the most recent startGuidedLoad() call.
+  // Surfaced in GuidedLoadStateEvent.weightLbs.
+  private _guidedLoadTargetWeightLbs: number | null = null;
+
+  // Phase 6: latched true while a user-initiated `disconnect()` is in flight
+  // so the adapter-level disconnect callback (routed through
+  // `handleUnexpectedDisconnect`) suppresses ConnectionLossEvent — voluntary
+  // disconnects are not "losses." Reset on the next `connect()`.
+  private _voluntaryDisconnectInFlight = false;
 
   // Guided-load state machine (Phase 1g, @experimental)
   private _guidedLoadActive = false;
@@ -475,6 +520,15 @@ export class VoltraClient {
     this._error = null;
     this._lastConnectedDevice = device;
 
+    // Phase 6: per-connection seq resets at the START of each connect attempt
+    // so the `'disconnected → connecting'` ConnectionStateChangeEvent fired
+    // below carries seq=1 for the new connection.
+    this._eventSeq = 0;
+    this._lastConfirmedMode = null;
+    this._expectedMode = null;
+    this._expectedModeExpiresAt = 0;
+    this._voluntaryDisconnectInFlight = false;
+
     try {
       // Connect. When backed by a pre-dialed Peripheral, the BLE-level
       // dial has already happened at the host layer — skip the legacy
@@ -532,6 +586,13 @@ export class VoltraClient {
 
     const deviceId = this._connectedDeviceId;
 
+    // Phase 6: suppress ConnectionLossEvent on voluntary disconnects. The
+    // adapter's `setConnectionState('disconnected')` (called inside
+    // `adapter.disconnect()`) will route through `setupDisconnectMonitor`
+    // → `handleUnexpectedDisconnect`; the latch lets that path skip the
+    // loss-event emit while still flipping observable state correctly.
+    this._voluntaryDisconnectInFlight = true;
+
     try {
       // Stop recording if active
       if (this._recordingState !== 'idle') {
@@ -544,8 +605,11 @@ export class VoltraClient {
     }
 
     this.cleanup();
-    this.setConnectionState('disconnected');
+    if (this._connectionState !== 'disconnected') {
+      this.setConnectionState('disconnected');
+    }
     this.emit({ type: 'disconnected', deviceId });
+    this._voluntaryDisconnectInFlight = false;
   }
 
   // ===========================================================================
@@ -699,6 +763,7 @@ export class VoltraClient {
     // strength-arm. Default to Just Row; advanced callers that need a
     // distance preset must use enterRowMode() + startRow(distance) directly.
     if (mode === TrainingMode.Rowing) {
+      this.armExpectedMode(mode);
       await this.enterRowMode();
       await this.startRow();
       return;
@@ -715,12 +780,26 @@ export class VoltraClient {
       throw new InvalidSettingError('mode', mode, getAvailableModes());
     }
 
+    this.armExpectedMode(mode);
+
     try {
       await this.writeFrame(cmd);
     } catch (e) {
       if (e instanceof ConnectionError) throw e;
       throw new CommandError(`Failed to set mode: ${this.getErrorMessage(e)}`, 'setMode');
     }
+  }
+
+  /**
+   * Phase 6: arm the mode-revert latch with a 2-second confirmation window.
+   * If the device confirms a different mode within the window we synthesize
+   * a `ModeRevertEvent`. After the window expires the latch self-clears so
+   * spontaneous user-initiated mode changes (e.g. via the device UI) don't
+   * trip the revert detector.
+   */
+  private armExpectedMode(mode: TrainingMode): void {
+    this._expectedMode = mode;
+    this._expectedModeExpiresAt = Date.now() + 2000;
   }
 
   // <Bug-22>
@@ -1399,6 +1478,10 @@ export class VoltraClient {
     const pollIntervalMs = opts.pollIntervalMs ?? 500;
     const pollDurationMs = opts.pollDurationMs ?? 18000;
 
+    // Phase 6: capture the target weight so GuidedLoadStateEvent.weightLbs
+    // can carry it through every state transition.
+    this._guidedLoadTargetWeightLbs = opts.targetWeightLbs;
+
     // Step 1: write the target weight (BP_BASE_WEIGHT). `setWeight` already
     // validates against the available-weights table; out-of-range values
     // surface as `InvalidSettingError` before any trigger is written.
@@ -1603,12 +1686,27 @@ export class VoltraClient {
    *
    * Added 0.6.2.
    *
+   * @deprecated Use {@link onRawFrameEvent} for the wrapper shape with
+   *   `seq` + `ts`. The bare-value listener will continue to fire.
    * @param listener Raw frame listener
    * @returns Unsubscribe function
    */
   onRawFrame(listener: RawFrameListener): () => void {
     this.rawFrameListeners.add(listener);
     return () => this.rawFrameListeners.delete(listener);
+  }
+
+  /**
+   * Phase 6 wrapper variant of {@link onRawFrame}. Fires the same payload
+   * but wrapped as a {@link RawFrameEvent} carrying a per-connection
+   * monotonic `seq` and an ISO `ts`.
+   *
+   * @param listener Raw-frame wrapper listener
+   * @returns Unsubscribe function
+   */
+  onRawFrameEvent(listener: RawFrameEventListener): () => void {
+    this.rawFrameEventListeners.add(listener);
+    return () => this.rawFrameEventListeners.delete(listener);
   }
 
   /**
@@ -1696,12 +1794,43 @@ export class VoltraClient {
    * Subscribe to mode confirmation events.
    * Called when the device confirms a training mode change.
    *
+   * @deprecated Use {@link onModeChangeEvent} for the wrapper shape with
+   *   `from` / `to` / `seq` / `ts`. The bare-value listener will continue
+   *   to fire.
    * @param listener Mode confirmed listener
    * @returns Unsubscribe function
    */
   onModeConfirmed(listener: ModeConfirmedListener): () => void {
     this.modeConfirmedListeners.add(listener);
     return () => this.modeConfirmedListeners.delete(listener);
+  }
+
+  /**
+   * Phase 6 wrapper variant of {@link onModeConfirmed}. Fires a
+   * {@link ModeChangeEvent} carrying both the previous mode (`from`) and
+   * the newly-confirmed mode (`to`), plus `seq` + `ts`. `from` is `null`
+   * on the first observation post-connect.
+   *
+   * @param listener Mode-change wrapper listener
+   * @returns Unsubscribe function
+   */
+  onModeChangeEvent(listener: ModeChangeEventListener): () => void {
+    this.modeChangeEventListeners.add(listener);
+    return () => this.modeChangeEventListeners.delete(listener);
+  }
+
+  /**
+   * Phase 6: subscribe to mode-revert detection events. Fires when the
+   * device confirms a different training mode than the SDK last requested
+   * via {@link setMode}, within a 2-second confirmation window. Lifts the
+   * Bug 22 mode-revert latch from the MCP bridge into the SDK.
+   *
+   * @param listener Mode-revert listener
+   * @returns Unsubscribe function
+   */
+  onModeRevertEvent(listener: ModeRevertEventListener): () => void {
+    this.modeRevertEventListeners.add(listener);
+    return () => this.modeRevertEventListeners.delete(listener);
   }
 
   /**
@@ -1749,12 +1878,70 @@ export class VoltraClient {
    * Subscribe to battery update events.
    * Called when the device reports its battery level.
    *
+   * @deprecated Use {@link onBatteryUpdateEvent} for the wrapper shape with
+   *   `seq` + `ts`. The bare-value listener will continue to fire.
    * @param listener Battery update listener
    * @returns Unsubscribe function
    */
   onBatteryUpdate(listener: BatteryUpdateListener): () => void {
     this.batteryUpdateListeners.add(listener);
     return () => this.batteryUpdateListeners.delete(listener);
+  }
+
+  /**
+   * Phase 6 wrapper variant of {@link onBatteryUpdate}. Fires a
+   * {@link BatteryUpdateEvent} carrying `level` + `seq` + `ts`.
+   *
+   * @param listener Battery-update wrapper listener
+   * @returns Unsubscribe function
+   */
+  onBatteryUpdateEvent(listener: BatteryUpdateEventListener): () => void {
+    this.batteryUpdateEventListeners.add(listener);
+    return () => this.batteryUpdateEventListeners.delete(listener);
+  }
+
+  /**
+   * Phase 6: subscribe to connection-state transitions wrapped as
+   * {@link ConnectionStateChangeEvent}. Fires on every internal state
+   * transition (`disconnected → connecting → authenticating → connected`
+   * + reverse) — supersedes {@link onConnectionStateChange}, which only
+   * sees the `to` state.
+   *
+   * @param listener Connection-state-change wrapper listener
+   * @returns Unsubscribe function
+   */
+  onConnectionStateChangeEvent(listener: ConnectionStateChangeEventListener): () => void {
+    this.connectionStateChangeEventListeners.add(listener);
+    return () => this.connectionStateChangeEventListeners.delete(listener);
+  }
+
+  /**
+   * Phase 6: subscribe to involuntary disconnects ({@link ConnectionLossEvent}).
+   * Fires only on unexpected losses (gatt disconnect, write failure during
+   * a connected session) — voluntary `client.disconnect()` does NOT trigger
+   * this event. The event carries `lastKnownSettings` + `disconnected_at`
+   * so consumers can drop their own staleness machinery.
+   *
+   * @param listener Connection-loss listener
+   * @returns Unsubscribe function
+   */
+  onConnectionLossEvent(listener: ConnectionLossEventListener): () => void {
+    this.connectionLossEventListeners.add(listener);
+    return () => this.connectionLossEventListeners.delete(listener);
+  }
+
+  /**
+   * Phase 6 wrapper variant of {@link onGuidedLoadState}. Fires a
+   * {@link GuidedLoadStateEvent} carrying the new phase, the target weight
+   * passed to {@link startGuidedLoad}, and `seq` + `ts`.
+   *
+   * @experimental — see {@link startGuidedLoad}.
+   * @param listener Guided-load-state wrapper listener
+   * @returns Unsubscribe function
+   */
+  onGuidedLoadStateEvent(listener: GuidedLoadStateEventListener): () => void {
+    this.guidedLoadStateEventListeners.add(listener);
+    return () => this.guidedLoadStateEventListeners.delete(listener);
   }
 
   // ===========================================================================
@@ -1790,6 +1977,14 @@ export class VoltraClient {
     this.stateDumpListeners.clear();
     this.batteryUpdateListeners.clear();
     this.guidedLoadStateListeners.clear();
+    // Phase 6 wrapper listeners
+    this.batteryUpdateEventListeners.clear();
+    this.rawFrameEventListeners.clear();
+    this.modeChangeEventListeners.clear();
+    this.connectionStateChangeEventListeners.clear();
+    this.connectionLossEventListeners.clear();
+    this.guidedLoadStateEventListeners.clear();
+    this.modeRevertEventListeners.clear();
 
     // Stop any in-flight guided-load polling
     this.stopGuidedLoadPolling();
@@ -1834,6 +2029,7 @@ export class VoltraClient {
     const handler = createNotificationHandler({
       onRawFrame: (data) => {
         this.rawFrameListeners.forEach((listener) => listener(data));
+        this.notifyRawFrameEvent(data);
       },
       onFrame: (frame) => {
         this.emit({ type: 'frame', frame });
@@ -1858,6 +2054,7 @@ export class VoltraClient {
       onModeConfirmed: (mode) => {
         this.emit({ type: 'modeConfirmed', mode });
         this.modeConfirmedListeners.forEach((listener) => listener(mode));
+        this.notifyModeChangeEvent(mode);
       },
       onSettingsUpdate: (settings) => {
         // Cache for bootstrap replay (see onSettingsUpdate registration).
@@ -1873,6 +2070,7 @@ export class VoltraClient {
       onBatteryUpdate: (battery) => {
         this.emit({ type: 'batteryUpdate', battery });
         this.batteryUpdateListeners.forEach((listener) => listener(battery));
+        this.notifyBatteryUpdateEvent(battery);
       },
     });
 
@@ -2003,6 +2201,7 @@ export class VoltraClient {
         console.error('[VoltraClient] guided-load listener error:', e);
       }
     });
+    this.notifyGuidedLoadStateEvent(next.phase);
   }
 
   /** Cancel the guided-load poll + end timers. Idempotent. */
@@ -2038,10 +2237,18 @@ export class VoltraClient {
   }
 
   private async handleUnexpectedDisconnect(): Promise<void> {
+    const deviceId = this._connectedDeviceId ?? 'unknown';
+    const deviceName = this._connectedDeviceName ?? 'unknown';
+    const lastSettings = this._lastDeviceSettings;
+    const isVoluntary = this._voluntaryDisconnectInFlight;
+
     if (!this.options.autoReconnect || !this._lastConnectedDevice) {
       this.cleanup();
       this.setConnectionState('disconnected');
-      this.emit({ type: 'disconnected', deviceId: this._connectedDeviceId ?? 'unknown' });
+      this.emit({ type: 'disconnected', deviceId });
+      if (!isVoluntary) {
+        this.notifyConnectionLossEvent(deviceId, deviceName, 'gatt_disconnect', lastSettings);
+      }
       return;
     }
 
@@ -2059,6 +2266,9 @@ export class VoltraClient {
         this.cleanup();
         this.setConnectionState('disconnected');
         this.emit({ type: 'disconnected', deviceId: this._connectedDeviceId ?? 'unknown' });
+        if (!isVoluntary) {
+          this.notifyConnectionLossEvent(deviceId, deviceName, 'gatt_disconnect', lastSettings);
+        }
       },
     });
 
@@ -2094,11 +2304,13 @@ export class VoltraClient {
   }
 
   private setConnectionState(state: VoltraConnectionState): void {
-    if (!isValidVoltraTransition(this._connectionState, state)) {
-      console.warn(`[VoltraClient] Invalid state transition: ${this._connectionState} -> ${state}`);
+    const previous = this._connectionState;
+    if (!isValidVoltraTransition(previous, state)) {
+      console.warn(`[VoltraClient] Invalid state transition: ${previous} -> ${state}`);
     }
     this._connectionState = state;
     this.emit({ type: 'connectionStateChanged', state });
+    this.notifyConnectionStateChangeEvent(previous, state);
   }
 
   private setRecordingState(state: VoltraRecordingState): void {
@@ -2183,12 +2395,19 @@ export class VoltraClient {
    * the `'disconnected'` event. Shared by `ensureConnected()` (link-dead
    * pre-check) and `writeFrame()` (write-failed post-check) so both paths
    * reach the same observable end-state.
+   *
+   * The optional `reason` propagates into the Phase 6
+   * {@link ConnectionLossEvent} so consumers can distinguish a write-side
+   * failure from an adapter-side disconnect callback.
    */
-  private flipToDisconnected(): void {
+  private flipToDisconnected(reason: string = 'write_failure'): void {
     const deviceId = this._connectedDeviceId ?? 'unknown';
+    const deviceName = this._connectedDeviceName ?? 'unknown';
+    const lastSettings = this._lastDeviceSettings;
     this.cleanup();
     this.setConnectionState('disconnected');
     this.emit({ type: 'disconnected', deviceId });
+    this.notifyConnectionLossEvent(deviceId, deviceName, reason, lastSettings);
   }
 
   private wrapError(e: unknown, context: string): Error {
@@ -2206,6 +2425,181 @@ export class VoltraClient {
 
   private getErrorMessage(e: unknown): string {
     return e instanceof Error ? e.message : String(e);
+  }
+
+  // ===========================================================================
+  // Phase 6 wrapper helpers
+  // ===========================================================================
+
+  /** Mint the next per-connection seq number. */
+  private nextSeq(): number {
+    return ++this._eventSeq;
+  }
+
+  /** Current ISO-8601 timestamp — extracted so tests can fake it via Date.now. */
+  private nowIso(): string {
+    return new Date().toISOString();
+  }
+
+  private notifyBatteryUpdateEvent(level: number): void {
+    if (this.batteryUpdateEventListeners.size === 0) return;
+    const event: BatteryUpdateEvent = {
+      level,
+      seq: this.nextSeq(),
+      ts: this.nowIso(),
+    };
+    this.batteryUpdateEventListeners.forEach((listener) => {
+      try {
+        listener(event);
+      } catch (e) {
+        console.error('[VoltraClient] battery wrapper listener error:', e);
+      }
+    });
+  }
+
+  private notifyRawFrameEvent(bytes: Uint8Array): void {
+    if (this.rawFrameEventListeners.size === 0) return;
+    const event: RawFrameEvent = {
+      bytes,
+      seq: this.nextSeq(),
+      ts: this.nowIso(),
+    };
+    this.rawFrameEventListeners.forEach((listener) => {
+      try {
+        listener(event);
+      } catch (e) {
+        console.error('[VoltraClient] raw-frame wrapper listener error:', e);
+      }
+    });
+  }
+
+  private notifyModeChangeEvent(mode: TrainingMode): void {
+    const previous = this._lastConfirmedMode;
+    this._lastConfirmedMode = mode;
+
+    // Mode-revert detection runs BEFORE listener notification so consumers
+    // attached only to onModeRevertEvent see the revert immediately.
+    this.detectModeRevert(previous, mode);
+
+    if (this.modeChangeEventListeners.size === 0) return;
+    const event: ModeChangeEvent = {
+      from: previous,
+      to: mode,
+      seq: this.nextSeq(),
+      ts: this.nowIso(),
+    };
+    this.modeChangeEventListeners.forEach((listener) => {
+      try {
+        listener(event);
+      } catch (e) {
+        console.error('[VoltraClient] mode-change wrapper listener error:', e);
+      }
+    });
+  }
+
+  private detectModeRevert(previous: TrainingMode | null, to: TrainingMode): void {
+    const expected = this._expectedMode;
+    if (expected === null) return;
+
+    // Window-expired: clear the latch silently. The device's spontaneous
+    // mode change is not a revert — the SDK no longer cares.
+    if (Date.now() > this._expectedModeExpiresAt) {
+      this._expectedMode = null;
+      return;
+    }
+
+    if (to === expected) {
+      // Confirmation arrived — clear the latch and don't fire.
+      this._expectedMode = null;
+      return;
+    }
+
+    // Within the window AND the device disagrees with what we asked for.
+    // The 'from' side of the revert is the previous confirmed mode if we
+    // have one, otherwise the expected mode itself (we never saw the
+    // confirmation, but we know what we asked for).
+    const revertFrom = previous ?? expected;
+    const event: ModeRevertEvent = {
+      expectedMode: expected,
+      from: revertFrom,
+      to,
+      occurred_at: this.nowIso(),
+      seq: this.nextSeq(),
+    };
+    this._expectedMode = null;
+    this.modeRevertEventListeners.forEach((listener) => {
+      try {
+        listener(event);
+      } catch (e) {
+        console.error('[VoltraClient] mode-revert listener error:', e);
+      }
+    });
+  }
+
+  private notifyConnectionStateChangeEvent(
+    from: VoltraConnectionState,
+    to: VoltraConnectionState
+  ): void {
+    if (this.connectionStateChangeEventListeners.size === 0) return;
+    const event: ConnectionStateChangeEvent = {
+      from,
+      to,
+      deviceId: this._connectedDeviceId ?? this._lastConnectedDevice?.id ?? 'unknown',
+      deviceName: this._connectedDeviceName ?? this._lastConnectedDevice?.name ?? 'unknown',
+      lastKnownSettings: this._lastDeviceSettings,
+      seq: this.nextSeq(),
+      ts: this.nowIso(),
+    };
+    this.connectionStateChangeEventListeners.forEach((listener) => {
+      try {
+        listener(event);
+      } catch (e) {
+        console.error('[VoltraClient] connection-state wrapper listener error:', e);
+      }
+    });
+  }
+
+  private notifyConnectionLossEvent(
+    deviceId: string,
+    deviceName: string,
+    reason: string,
+    lastKnownSettings: DeviceSettings | null
+  ): void {
+    if (this.connectionLossEventListeners.size === 0) return;
+    const ts = this.nowIso();
+    const event: ConnectionLossEvent = {
+      deviceId,
+      deviceName,
+      reason,
+      lastKnownSettings,
+      disconnected_at: ts,
+      seq: this.nextSeq(),
+      ts,
+    };
+    this.connectionLossEventListeners.forEach((listener) => {
+      try {
+        listener(event);
+      } catch (e) {
+        console.error('[VoltraClient] connection-loss listener error:', e);
+      }
+    });
+  }
+
+  private notifyGuidedLoadStateEvent(phase: GuidedLoadState['phase']): void {
+    if (this.guidedLoadStateEventListeners.size === 0) return;
+    const event: GuidedLoadStateEvent = {
+      state: phase,
+      weightLbs: this._guidedLoadTargetWeightLbs,
+      seq: this.nextSeq(),
+      ts: this.nowIso(),
+    };
+    this.guidedLoadStateEventListeners.forEach((listener) => {
+      try {
+        listener(event);
+      } catch (e) {
+        console.error('[VoltraClient] guided-load wrapper listener error:', e);
+      }
+    });
   }
 
   /**

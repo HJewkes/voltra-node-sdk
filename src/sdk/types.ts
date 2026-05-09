@@ -333,6 +333,144 @@ export type SetSummaryListener = (event: SetSummaryEvent) => void;
 /** InProgress listener (called ~1 Hz during active sets). */
 export type InProgressListener = (event: InProgressEvent) => void;
 
+// =============================================================================
+// Phase 6 event wrappers (0.10.0+)
+//
+// Each wrapper carries a per-connection monotonic `seq` (resets to 0 on every
+// successful `connect()`) and an ISO-8601 `ts` captured at SDK observation
+// time. The bare-value listeners (`onBatteryUpdate`, `onRawFrame`, etc.) keep
+// firing for backwards compatibility; consumers wanting the wrapper shape
+// should subscribe to the parallel `on*Event` listeners.
+//
+// `ConnectionLossEvent.lastKnownSettings` and `disconnected_at` exist so the
+// MCP bridge can drop its `staleSinceDisconnect` machinery — the SDK now
+// captures the `_settings` snapshot at the moment the link dies and stamps
+// a single observation timestamp instead of forcing each consumer to do it.
+//
+// `ModeRevertEvent` lifts the Bug 22 mode-revert latch out of the MCP bridge
+// into the SDK: when the device emits a mode change that disagrees with the
+// last `setMode()` call (within a 2s confirmation window), the SDK fires
+// `onModeRevertEvent`.
+// =============================================================================
+
+/**
+ * Wrapper for battery-level updates (parallel to {@link BatteryUpdateListener}).
+ */
+export interface BatteryUpdateEvent {
+  /** Battery level 0-100 (mirrors the bare-value listener payload). */
+  level: number;
+  /** Per-connection monotonic counter (resets on each successful `connect()`). */
+  seq: number;
+  /** ISO-8601 timestamp captured when the SDK observed this update. */
+  ts: string;
+}
+
+/**
+ * Wrapper for raw inbound BLE frames (parallel to {@link RawFrameListener}).
+ */
+export interface RawFrameEvent {
+  bytes: Uint8Array;
+  seq: number;
+  ts: string;
+}
+
+/**
+ * Wrapper for confirmed training-mode changes (parallel to
+ * {@link ModeConfirmedListener}).
+ *
+ * `from` is `null` on the first observation post-connect — the SDK has no
+ * pre-connect mode to compare against.
+ */
+export interface ModeChangeEvent {
+  from: TrainingMode | null;
+  to: TrainingMode;
+  seq: number;
+  ts: string;
+}
+
+/**
+ * Wrapper for connection-state transitions.
+ *
+ * `lastKnownSettings` is populated for transitions that leave the connected
+ * state (e.g. `connected → disconnected`); for entry transitions
+ * (e.g. `disconnected → connecting`) it is the cached pre-disconnect
+ * settings if one is available, otherwise `null`.
+ */
+export interface ConnectionStateChangeEvent {
+  from: VoltraConnectionState;
+  to: VoltraConnectionState;
+  deviceId: string;
+  deviceName: string;
+  lastKnownSettings: DeviceSettings | null;
+  seq: number;
+  ts: string;
+}
+
+/**
+ * Wrapper for involuntary disconnects (gatt disconnect, write failure during
+ * a connected session, idle timeout). Voluntary `client.disconnect()` calls do
+ * NOT fire this event — only unexpected losses.
+ *
+ * `lastKnownSettings` carries the SDK's `_settings` cache at the moment of
+ * loss so consumers can replay the device's pre-disconnect state without
+ * waiting for the next bootstrap cascade.
+ *
+ * `reason` is a free-form string for forward compatibility — known values
+ * today are `'gatt_disconnect'` and `'write_failure'`.
+ */
+export interface ConnectionLossEvent {
+  deviceId: string;
+  deviceName: string;
+  reason: string;
+  lastKnownSettings: DeviceSettings | null;
+  /** ISO-8601 timestamp the SDK observed the loss. */
+  disconnected_at: string;
+  seq: number;
+  ts: string;
+}
+
+/**
+ * Wrapper for guided-load state transitions (parallel to
+ * {@link GuidedLoadStateListener}).
+ *
+ * `weightLbs` carries the target weight passed to the most recent
+ * {@link VoltraClient.startGuidedLoad} call when known, otherwise `null`.
+ */
+export interface GuidedLoadStateEvent {
+  state: GuidedLoadPhase;
+  weightLbs: number | null;
+  seq: number;
+  ts: string;
+}
+
+/**
+ * Mode-revert event — fired when the device confirms a different training
+ * mode than the SDK last requested via {@link VoltraClient.setMode}, within
+ * a 2-second confirmation window. Lifts the Bug 22 mode-revert latch from
+ * the MCP bridge into the SDK.
+ *
+ * No bare-value equivalent — this is a SDK-synthesized event.
+ */
+export interface ModeRevertEvent {
+  /** What the SDK had been told to set via setMode(). */
+  expectedMode: TrainingMode;
+  /** Mode the device confirmed *before* the revert. */
+  from: TrainingMode;
+  /** Mode the device reverted *to*. */
+  to: TrainingMode;
+  /** ISO-8601 timestamp of the revert detection. */
+  occurred_at: string;
+  seq: number;
+}
+
+export type BatteryUpdateEventListener = (event: BatteryUpdateEvent) => void;
+export type RawFrameEventListener = (event: RawFrameEvent) => void;
+export type ModeChangeEventListener = (event: ModeChangeEvent) => void;
+export type ConnectionStateChangeEventListener = (event: ConnectionStateChangeEvent) => void;
+export type ConnectionLossEventListener = (event: ConnectionLossEvent) => void;
+export type GuidedLoadStateEventListener = (event: GuidedLoadStateEvent) => void;
+export type ModeRevertEventListener = (event: ModeRevertEvent) => void;
+
 // <Bug-22>
 /**
  * Distance preset for {@link VoltraClient.startRow}. Pass `'JustRow'` for

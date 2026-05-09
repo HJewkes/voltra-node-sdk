@@ -72,6 +72,21 @@ export {
   type GuidedLoadPhase,
   type GuidedLoadStateListener,
   type SettingsFieldChangedEvent,
+  // Phase 6 event wrappers
+  type BatteryUpdateEvent,
+  type RawFrameEvent,
+  type ModeChangeEvent,
+  type ConnectionStateChangeEvent,
+  type ConnectionLossEvent,
+  type GuidedLoadStateEvent,
+  type ModeRevertEvent,
+  type BatteryUpdateEventListener,
+  type RawFrameEventListener,
+  type ModeChangeEventListener,
+  type ConnectionStateChangeEventListener,
+  type ConnectionLossEventListener,
+  type GuidedLoadStateEventListener,
+  type ModeRevertEventListener,
 } from './sdk';
 
 // =============================================================================

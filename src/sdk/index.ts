@@ -35,6 +35,21 @@ export type {
   GuidedLoadPhase,
   GuidedLoadStateListener,
   SettingsFieldChangedEvent,
+  // Phase 6 event wrappers
+  BatteryUpdateEvent,
+  RawFrameEvent,
+  ModeChangeEvent,
+  ConnectionStateChangeEvent,
+  ConnectionLossEvent,
+  GuidedLoadStateEvent,
+  ModeRevertEvent,
+  BatteryUpdateEventListener,
+  RawFrameEventListener,
+  ModeChangeEventListener,
+  ConnectionStateChangeEventListener,
+  ConnectionLossEventListener,
+  GuidedLoadStateEventListener,
+  ModeRevertEventListener,
 } from './types';
 
 // Re-export DeviceSettings + StateDumpEvent for typing event listeners
