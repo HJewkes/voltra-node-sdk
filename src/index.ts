@@ -106,6 +106,22 @@ export type {
   ConnectionStateCallback,
 } from './bluetooth/adapters/types';
 
+// Phase 0 (2026-05-08): BluetoothHost + Peripheral split. New shape
+// alongside the legacy `BLEAdapter` — see
+// coordination/architecture/ble-adapter-refactor-2026-05-08.md.
+export type {
+  BluetoothHost,
+  Peripheral,
+  Discovery,
+  PeripheralStatus,
+  PeripheralStatusCallback,
+  PeripheralWriteOptions,
+  HostScanOptions,
+} from './bluetooth/adapters/types';
+export { PeripheralLost, PeripheralRebound } from './bluetooth/adapters/types';
+export { LegacyAdapterHost, LegacyAdapterPeripheral } from './bluetooth/adapters/legacy-shim';
+export type { LegacyAdapterHostOptions } from './bluetooth/adapters/legacy-shim';
+
 // =============================================================================
 // Device Discovery
 // =============================================================================

@@ -28,7 +28,8 @@
  * ```
  */
 
-import type { BLEAdapter } from '../bluetooth/adapters/types';
+import type { BLEAdapter, BluetoothHost, Discovery } from '../bluetooth/adapters/types';
+import { LegacyAdapterHost } from '../bluetooth/adapters/legacy-shim';
 import { MockBLEAdapter, type MockBLEConfig } from '../bluetooth/adapters/mock';
 import type { DiscoveredDevice } from '../bluetooth/models/device';
 import { filterVoltraDevices } from '../voltra/models/device-filter';
@@ -63,9 +64,23 @@ export interface VoltraManagerOptions {
   adapterFactory?: AdapterFactory;
 
   /**
+   * Pre-built `BluetoothHost`. Overrides `adapterFactory` and `platform`.
+   *
+   * Phase 0 (2026-05-08): the new entry point for the host/peripheral
+   * split. When provided, scan + dial route through this host and each
+   * `VoltraClient` is constructed with a `Peripheral` (not an
+   * `adapter`). When omitted (the legacy path), the manager builds a
+   * `LegacyAdapterHost` around the resolved factory so internal code
+   * paths are unified — visible behavior is unchanged.
+   *
+   * See: coordination/architecture/ble-adapter-refactor-2026-05-08.md
+   */
+  host?: BluetoothHost;
+
+  /**
    * Options to pass to each VoltraClient.
    */
-  clientOptions?: Omit<VoltraClientOptions, 'adapter'>;
+  clientOptions?: Omit<VoltraClientOptions, 'adapter' | 'peripheral'>;
 }
 
 /**
@@ -101,8 +116,15 @@ export type VoltraManagerEventListener = (event: VoltraManagerEvent) => void;
  */
 export class VoltraManager {
   private adapterFactory: AdapterFactory;
-  private readonly clientOptions: Omit<VoltraClientOptions, 'adapter'>;
+  private readonly clientOptions: Omit<VoltraClientOptions, 'adapter' | 'peripheral'>;
   private readonly platform: Platform;
+
+  /**
+   * Phase 0 host. Either user-supplied via `options.host` or built
+   * lazily from `adapterFactory` as a `LegacyAdapterHost`. Owns scan +
+   * dial state.
+   */
+  private host: BluetoothHost;
 
   // Connected devices
   private clients: Map<string, VoltraClient> = new Map();
@@ -110,9 +132,20 @@ export class VoltraManager {
 
   // Discovered devices (from last scan)
   private discoveredDevices: DiscoveredDevice[] = [];
+  /**
+   * Phase 0 cache of typed `Discovery` handles keyed by deviceId so
+   * `connect(device)` can look up the matching discovery for `dial()`.
+   * Populated each scan; cleared on dispose.
+   */
+  private lastDiscoveriesById: Map<string, Discovery> = new Map();
 
   // Scanning state
   private _isScanning = false;
+  /**
+   * Legacy compatibility field — kept so `getAdapter()` continues to
+   * return the most-recent scan adapter for mock-debug callers. The
+   * `Phase 0` `host`/`Peripheral` flow does NOT depend on this.
+   */
   private scanAdapter: BLEAdapter | null = null;
 
   // Event listeners
@@ -137,6 +170,13 @@ export class VoltraManager {
       this.platform = this.detectPlatform();
       this.adapterFactory = this.createAdapterFactory(this.platform);
     }
+
+    // Phase 0: every flow now goes through a BluetoothHost. If the user
+    // supplied one, use it directly; otherwise wrap the resolved
+    // adapter factory as a LegacyAdapterHost. Either way, scan/dial
+    // converge on the new interface — no observable behavior change for
+    // legacy consumers.
+    this.host = options.host ?? new LegacyAdapterHost(this.adapterFactory);
   }
 
   // ===========================================================================
@@ -260,12 +300,26 @@ export class VoltraManager {
     this.emit({ type: 'scanStarted' });
 
     try {
-      // Create adapter for scanning if needed
-      if (!this.scanAdapter) {
-        this.scanAdapter = this.adapterFactory();
-      }
+      const discoveries = await this.host.scan({ timeout });
 
-      const devices = await this.scanAdapter.scan(timeout);
+      // Cache the typed discoveries by id for `connect(device)` to
+      // re-find the matching `Discovery` handle for `host.dial()`.
+      this.lastDiscoveriesById = new Map(discoveries.map((d) => [d.id, d]));
+
+      // Surface as DiscoveredDevice[] for backward compat with existing
+      // consumers + the manager's `devices` getter.
+      const devices: DiscoveredDevice[] = discoveries.map((d) => ({
+        id: d.id,
+        name: d.name,
+        rssi: d.rssi,
+      }));
+
+      // Update the legacy `scanAdapter` field from the discovery
+      // payload so `getAdapter()` continues to return the underlying
+      // adapter (used by mock-debug callers + a few tests). Pulls the
+      // adapter reference out of the legacy-host payload shape.
+      this.scanAdapter = extractAdapterFromDiscovery(discoveries[0]) ?? this.scanAdapter;
+
       this.discoveredDevices = filterVoltra ? filterVoltraDevices(devices) : devices;
 
       this.emit({ type: 'scanStopped', devices: this.discoveredDevices });
@@ -293,31 +347,46 @@ export class VoltraManager {
       return this.clients.get(device.id)!;
     }
 
-    // Build a fresh adapter per client so each VoltraClient owns its own
-    // BLE handle. Sharing one adapter across clients caused multi-device
-    // writes to all route to the most-recently-connected peripheral
-    // because the adapter holds singleton device/server/writeChar fields.
+    // Phase 0: dial through the BluetoothHost. The host owns scan-state
+    // lifecycle; per-peripheral handles come back as `Peripheral`
+    // objects, each carrying its own typed identity. Cross-talk (writes
+    // to client A landing on device B) becomes a type-level
+    // impossibility — `client.adapter.write()` collapses to
+    // `peripheral.write()` against this peripheral's id only.
     //
-    // Exception: the first connect after a scan reuses scanAdapter — it
-    // already holds the discovered-device state (web: BluetoothDevice
-    // reference from requestDevice(); node: selectedDevice populated by
-    // the scan callback) that the connect path needs. Subsequent connects
-    // without a fresh scan allocate a new adapter, supporting multi-device
-    // fan-out.
-    let adapter: BLEAdapter;
-    if (this.scanAdapter) {
-      adapter = this.scanAdapter;
-      this.scanAdapter = null;
-    } else {
-      adapter = this.adapterFactory();
+    // The `LegacyAdapterHost` (used when no `host` option is supplied)
+    // preserves the legacy "fresh adapter per client" rule + the
+    // "first connect after scan reuses scanAdapter" rule internally.
+    // Behavior visible to consumers is identical to pre-Phase-0.
+
+    let discovery = this.lastDiscoveriesById.get(device.id);
+    if (!discovery) {
+      // Legacy fallback: a consumer called `manager.connect(device)`
+      // without a prior `scan()` (or after the discovery was already
+      // consumed by a previous dial). Synthesize a host-scoped
+      // discovery on the fly using a fresh adapter from the factory.
+      // This preserves the pre-Phase-0 behavior where the manager
+      // would just build a new adapter and call `connect(deviceId)`
+      // through it.
+      discovery = this.synthesizeDiscovery(device);
     }
+
+    const peripheral = await this.host.dial(discovery);
+    // Once consumed, drop the discovery — re-dialing the same handle
+    // would attempt to reuse an already-claimed adapter.
+    this.lastDiscoveriesById.delete(device.id);
+    // Clear scanAdapter too — the legacy host has now consumed it.
+    this.scanAdapter = null;
 
     const client = new VoltraClient({
       ...this.clientOptions,
-      adapter,
+      peripheral,
     });
 
     try {
+      // The peripheral is already dialed; client.connect() runs auth +
+      // init only (the BLE-level connect is short-circuited inside
+      // VoltraClient when constructed with `peripheral`).
       await client.connect(device);
 
       // Store client
@@ -340,6 +409,8 @@ export class VoltraManager {
       return client;
     } catch (error) {
       client.dispose();
+      // Best-effort: drop the peripheral we dialed but never used.
+      peripheral.disconnect().catch(() => {});
       throw error;
     }
   }
@@ -497,6 +568,8 @@ export class VoltraManager {
     this.listeners.clear();
     this.clientUnsubscribes.clear();
     this.scanAdapter = null;
+    this.lastDiscoveriesById.clear();
+    this.host.dispose().catch(() => {});
   }
 
   // ===========================================================================
@@ -607,4 +680,52 @@ export class VoltraManager {
       throw new Error('Manager has been disposed');
     }
   }
+
+  /**
+   * Synthesize a `Discovery` for the legacy "connect-without-scan"
+   * path, preserving pre-Phase-0 behavior where `manager.connect(device)`
+   * could be called against a known device without first calling
+   * `scan()`. Only valid for the default `LegacyAdapterHost` path —
+   * user-supplied hosts are assumed to provide their own discoveries.
+   */
+  private synthesizeDiscovery(device: DiscoveredDevice): Discovery {
+    if (!(this.host instanceof LegacyAdapterHost)) {
+      throw new Error(
+        `manager.connect(${device.id}) requires a prior manager.scan() ` +
+          `when using a non-legacy BluetoothHost`
+      );
+    }
+    const adapter = this.adapterFactory();
+    const discovery: Discovery = {
+      id: device.id,
+      name: device.name ?? null,
+      rssi: device.rssi ?? null,
+      _origin: this.host,
+      _payload: { adapter, deviceId: device.id },
+    };
+    return discovery;
+  }
+}
+
+/**
+ * Extract the underlying `BLEAdapter` from a Phase 0 `Discovery`'s
+ * legacy-host payload, when present. Used to keep the deprecated
+ * `manager.getAdapter()` accessor functional during Phase 0.
+ *
+ * Returns `null` when the discovery wasn't produced by a
+ * `LegacyAdapterHost` (e.g., a future noble-backed host wouldn't
+ * carry an adapter reference). Callers must tolerate `null`.
+ */
+function extractAdapterFromDiscovery(discovery: Discovery | undefined): BLEAdapter | null {
+  if (!discovery) return null;
+  const payload = discovery._payload;
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    'adapter' in payload &&
+    typeof (payload as { adapter?: unknown }).adapter === 'object'
+  ) {
+    return (payload as { adapter: BLEAdapter }).adapter;
+  }
+  return null;
 }

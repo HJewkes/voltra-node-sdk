@@ -7,7 +7,7 @@
  * - Node.js: webbluetooth npm package
  */
 
-// Public types
+// Public types — legacy BLEAdapter (preserved through Phase 2)
 export type {
   BLEAdapter,
   Device,
@@ -17,6 +17,23 @@ export type {
   ConnectOptions,
   BLEServiceConfig,
 } from './types';
+
+// Public types — Phase 0 BluetoothHost + Peripheral split
+export type {
+  BluetoothHost,
+  Peripheral,
+  Discovery,
+  PeripheralStatus,
+  PeripheralStatusCallback,
+  PeripheralWriteOptions,
+  HostScanOptions,
+} from './types';
+export { PeripheralLost, PeripheralRebound } from './types';
+
+// Phase 0 legacy shim — wraps an existing BLEAdapter as Host + Peripheral.
+// Re-exported so consumers building custom hosts can compose with it.
+export { LegacyAdapterHost, LegacyAdapterPeripheral } from './legacy-shim';
+export type { LegacyAdapterHostOptions } from './legacy-shim';
 
 // Platform adapters. Native adapter is type-only here to avoid eagerly
 // loading `react-native-ble-plx` for non-RN consumers; the value is
