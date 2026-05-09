@@ -61,12 +61,17 @@ export {
   type SummaryListener,
   type SetSummaryListener,
   type InProgressListener,
+  type ModeConfirmedListener,
+  type SettingsUpdateListener,
+  type StateDumpListener,
+  type BatteryUpdateListener,
   type ScanOptions,
   type RowingDistancePreset,
   type GuidedLoadOptions,
   type GuidedLoadState,
   type GuidedLoadPhase,
   type GuidedLoadStateListener,
+  type SettingsFieldChangedEvent,
 } from './sdk';
 
 // =============================================================================
@@ -161,6 +166,11 @@ export type {
 
 export type { VoltraConnectionState } from './voltra/models/connection';
 
+// DeviceSettings is the protocol-level settings type used in event payloads
+// (SettingsUpdateListener, StateDumpEvent). Exported here so consumers can
+// type their event listener callbacks without reaching into subpaths.
+export type { DeviceSettings } from './voltra/protocol/types';
+
 // =============================================================================
 // Telemetry
 // =============================================================================
@@ -180,6 +190,15 @@ export {
   type DecodeResult,
   type MessageType,
 } from './voltra/protocol/telemetry-decoder';
+
+// Rowing telemetry event payload types (HYPOTHESIS — pending on-device validation
+// in a future Rowing-mode session). The decoder functions that produce these are
+// already exported above via `decodeNotification` / `decodeVendorPerRep` et al.
+export type {
+  RowingSummaryEvent,
+  RowingStatusEvent,
+  WaveformChunkEvent,
+} from './voltra/protocol/types';
 
 export {
   MovementPhase,
