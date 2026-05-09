@@ -202,8 +202,12 @@ export interface VendorSubTypesConfig {
   summary: VendorSubTypeConfig;
   /** Recurring in-progress telemetry (79 B). Was previously aliased as setSummary. */
   inProgress: VendorSubTypeConfig;
-  /** Pre-summary frame (110 B). Fires once near workout end. */
-  preSummary: VendorSubTypeConfig;
+  /**
+   * `aa 85 5f` set-summary frame (110 B). Device emits one per set in
+   * WT/RB/Damper after all reps complete. Renamed from `preSummary` in 0.9.0;
+   * see SetSummaryEvent for the misnomer history.
+   */
+  setSummary: VendorSubTypeConfig;
   /** Rowing-mode telemetry. Field offsets unvalidated. */
   rowing: VendorSubTypeConfig;
   /** Per-set isometric summary. Field layout unknown. */
@@ -231,7 +235,7 @@ export interface VendorSubTypeConfig {
   motionPhases?: { pull: number; return: number };
   /**
    * Optional payload offset of the per-mode schema-version byte.
-   * Only present on `summary` and `preSummary` whose 4-byte sub-type is
+   * Only present on `summary` and `setSummary` whose 4-byte sub-type is
    * `cmd 0xAA + 2-byte fixed identifier + this byte`.
    */
   schemaVersionByteOffset?: number;

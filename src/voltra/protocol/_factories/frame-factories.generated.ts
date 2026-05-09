@@ -35,7 +35,7 @@ import { calculateCRC8, calculateCRC16 } from './checksum.generated';
 import { TELEMETRY_CONFIG } from './telemetry-config-source.generated';
 // Inlined from voltra-private/src/protocol/enums.ts.
 // Per-mode schema version for the 4th sub-type byte of vendor summary /
-// preSummary frames (cmd 0xAA + 2-byte fixed identifier + this byte).
+// setSummary frames (cmd 0xAA + 2-byte fixed identifier + this byte).
 export enum VendorSchemaVersion {
   Weight = 0x01,
   Band = 0x02,

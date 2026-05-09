@@ -10,14 +10,14 @@ import type { TelemetryFrame } from '../voltra/models/telemetry';
 import type { TrainingMode } from '../voltra/protocol/constants';
 import type { DeviceSettings, StateDumpEvent } from '../voltra/protocol/types';
 import { decodeNotification } from '../voltra/protocol/telemetry-decoder';
-import type { PerRepEvent, SummaryEvent, PreSummaryEvent, InProgressEvent } from './types';
+import type { PerRepEvent, SummaryEvent, SetSummaryEvent, InProgressEvent } from './types';
 
 /**
  * Callbacks for each notification type.
  *
  * 0.6.0 dropped the legacy `onRepBoundary` / `onSetBoundary` payload-less
  * callbacks. The four vendor-frame events surface exclusively through their
- * typed counterparts (`onPerRep`, `onInProgress`, `onSummary`, `onPreSummary`).
+ * typed counterparts (`onPerRep`, `onInProgress`, `onSummary`, `onSetSummary`).
  *
  * 0.6.2 adds `onRawFrame` — fires for every inbound notification BEFORE
  * decode, including frames that decode to `'unknown'`. Diagnostic / capture
@@ -32,7 +32,7 @@ export interface NotificationCallbacks {
   onBatteryUpdate: (battery: number) => void;
   onPerRep: (event: PerRepEvent) => void;
   onSummary: (event: SummaryEvent) => void;
-  onPreSummary: (event: PreSummaryEvent) => void;
+  onSetSummary: (event: SetSummaryEvent) => void;
   onInProgress: (event: InProgressEvent) => void;
 }
 
@@ -69,8 +69,8 @@ export function createNotificationHandler(callbacks: NotificationCallbacks): Not
         callbacks.onSummary(result.event);
         break;
 
-      case 'preSummary':
-        callbacks.onPreSummary(result.event);
+      case 'setSummary':
+        callbacks.onSetSummary(result.event);
         break;
 
       case 'mode_confirmation':

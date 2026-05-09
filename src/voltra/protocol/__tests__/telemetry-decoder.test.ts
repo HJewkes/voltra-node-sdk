@@ -158,12 +158,12 @@ describe('identifyMessageType', () => {
     expect(result).toBe('vendor_summary');
   });
 
-  it('identifies preSummary vendor sub-type messages', () => {
-    const buffer = createVendorSubTypeBuffer(VendorMessages.subTypes.preSummary);
+  it('identifies setSummary vendor sub-type messages', () => {
+    const buffer = createVendorSubTypeBuffer(VendorMessages.subTypes.setSummary);
 
     const result = identifyMessageType(buffer);
 
-    expect(result).toBe('vendor_pre_summary');
+    expect(result).toBe('vendor_set_summary');
   });
 
   it('identifies status update messages (statusBattery 2-byte header)', () => {

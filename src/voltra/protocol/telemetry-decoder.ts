@@ -31,7 +31,7 @@ import type {
   Cmd10AsyncState,
   Cmd10Param,
 } from './types';
-import type { PerRepEvent, SummaryEvent, PreSummaryEvent, InProgressEvent } from '../../sdk/types';
+import type { PerRepEvent, SummaryEvent, SetSummaryEvent, InProgressEvent } from '../../sdk/types';
 
 // =============================================================================
 // Param ID constants
@@ -201,15 +201,16 @@ function writeInt16LE(data: Uint8Array, offset: number, value: number): void {
  * The 0.6.0 release renamed the legacy `'rep_summary'` / `'set_summary'`
  * aliases (left over from the pre-vendor-sub-type era) to clearer
  * `'vendor_per_rep'` / `'vendor_in_progress'` strings, and added
- * `'vendor_summary'` / `'vendor_pre_summary'` for the two end-of-set
- * vendor frames the SDK now decodes.
+ * `'vendor_summary'` / `'vendor_set_summary'` for the workout-end and
+ * per-set vendor frames the SDK now decodes (the latter renamed from
+ * `'vendor_pre_summary'` in 0.9.0).
  */
 export type MessageType =
   | 'telemetry_stream'
   | 'vendor_per_rep'
   | 'vendor_in_progress'
   | 'vendor_summary'
-  | 'vendor_pre_summary'
+  | 'vendor_set_summary'
   // <Decoder-cmd07-cmd10>
   | 'vendor_state_dump'
   | 'vendor_rowing_summary'
@@ -242,15 +243,16 @@ export function identifyMessageType(data: Uint8Array): MessageType {
   // (2026-05-05, 1369 frames) confirmed that perRep frames alias the
   // legacy 4-byte repSummary header and inProgress frames alias the
   // legacy 4-byte setSummary header. 2026-05-06 expanded coverage to
-  // `summary` and `preSummary`.
+  // `summary` and `setSummary` (the `aa 85 5f` per-set close marker;
+  // renamed from `preSummary` in 0.9.0).
   if (matchesVendorSubType(data, VendorMessages.subTypes.perRep)) {
     return 'vendor_per_rep';
   } else if (matchesVendorSubType(data, VendorMessages.subTypes.inProgress)) {
     return 'vendor_in_progress';
   } else if (matchesVendorSubType(data, VendorMessages.subTypes.summary)) {
     return 'vendor_summary';
-  } else if (matchesVendorSubType(data, VendorMessages.subTypes.preSummary)) {
-    return 'vendor_pre_summary';
+  } else if (matchesVendorSubType(data, VendorMessages.subTypes.setSummary)) {
+    return 'vendor_set_summary';
   }
 
   // <Bug-17> cmd=0x0F bulk-read response: matched on frame-type byte
@@ -343,7 +345,7 @@ export type DecodeResult =
   | { type: 'frame'; frame: TelemetryFrame }
   | { type: 'perRep'; event: PerRepEvent } // Typed perRep frame (0.6.0+)
   | { type: 'summary'; event: SummaryEvent } // Typed end-of-set summary (0.6.0+)
-  | { type: 'preSummary'; event: PreSummaryEvent } // Typed pre-summary (0.6.0+)
+  | { type: 'setSummary'; event: SetSummaryEvent } // Typed per-set summary (`aa 85 5f`); renamed from `preSummary` in 0.9.0
   | { type: 'inProgress'; event: InProgressEvent } // Typed in-progress heartbeat (0.6.0+)
   | { type: 'mode_confirmation'; mode: TrainingMode } // Mode change confirmed
   | { type: 'settings_update'; settings: DeviceSettings } // Device settings
@@ -394,7 +396,7 @@ export function decodeTelemetryFrame(data: Uint8Array): TelemetryFrame | null {
 // Vendor frame decoders (0.6.0+)
 //
 // Field offsets validated 2026-05-06 on VTR-212006 (voltra-private phase-5
-// captures). For perRep / summary / preSummary we read offsets from the
+// captures). For perRep / summary / setSummary we read offsets from the
 // regen's `fields` block — keeping the SDK in sync with voltra-private's
 // validation work without recompiling.
 // =============================================================================
@@ -459,10 +461,15 @@ export function decodeVendorSummary(data: Uint8Array): SummaryEvent | null {
 }
 
 /**
- * Decode a vendor `preSummary` frame (110 B, fires ~3s before final rep).
+ * Decode a vendor `aa 85 5f` set-summary frame (110 B). Per-set close marker
+ * in WT/RB/Damper modes; emitted by the device after all reps complete.
+ *
+ * Renamed from `decodeVendorPreSummary` in 0.9.0 — the legacy `preSummary`
+ * label and "fires before final rep" docstring were misnomers. The frame
+ * fires post-final-rep with the device's own debounce.
  */
-export function decodeVendorPreSummary(data: Uint8Array): PreSummaryEvent | null {
-  const cfg = VendorMessages.subTypes.preSummary;
+export function decodeVendorSetSummary(data: Uint8Array): SetSummaryEvent | null {
+  const cfg = VendorMessages.subTypes.setSummary;
   if (!matchesVendorSubType(data, cfg)) return null;
   if (cfg.frameLength != null && data.length < cfg.frameLength) return null;
   if (!cfg.fields || cfg.schemaVersionByteOffset === undefined) return null;
@@ -993,9 +1000,9 @@ export function decodeNotification(data: Uint8Array): DecodeResult {
       return event ? { type: 'summary', event } : { type: 'unknown', data };
     }
 
-    case 'vendor_pre_summary': {
-      const event = decodeVendorPreSummary(data);
-      return event ? { type: 'preSummary', event } : { type: 'unknown', data };
+    case 'vendor_set_summary': {
+      const event = decodeVendorSetSummary(data);
+      return event ? { type: 'setSummary', event } : { type: 'unknown', data };
     }
 
     case 'mode_confirmation':

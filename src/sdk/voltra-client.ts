@@ -106,7 +106,7 @@ import type {
   BatteryUpdateListener,
   PerRepListener,
   SummaryListener,
-  PreSummaryListener,
+  SetSummaryListener,
   InProgressListener,
   ScanOptions,
   RowingDistancePreset,
@@ -177,7 +177,7 @@ export class VoltraClient {
   private rawFrameListeners: Set<RawFrameListener> = new Set();
   private perRepListeners: Set<PerRepListener> = new Set();
   private summaryListeners: Set<SummaryListener> = new Set();
-  private preSummaryListeners: Set<PreSummaryListener> = new Set();
+  private setSummaryListeners: Set<SetSummaryListener> = new Set();
   private inProgressListeners: Set<InProgressListener> = new Set();
   private modeConfirmedListeners: Set<ModeConfirmedListener> = new Set();
   private settingsUpdateListeners: Set<SettingsUpdateListener> = new Set();
@@ -1659,16 +1659,23 @@ export class VoltraClient {
   }
 
   /**
-   * Subscribe to typed `preSummary` frame events. Fires ~3s before the final
-   * rep, providing early access to `repDurationMs` and `repCount` before the
-   * device emits the formal `summary` frame.
+   * Subscribe to typed `aa 85 5f` set-summary frame events. The device emits
+   * one of these per set in WT/RB/Damper modes after all reps complete, with
+   * the final `repCount` and `repDurationMs` baked in. This is the canonical
+   * per-set close marker — `onSummary` (`aa 86 7d`) is workout-end / post-STOP
+   * only and may not fire at all in some modes.
    *
-   * @param listener preSummary listener
+   * Renamed from `onPreSummary` in 0.9.0 — the legacy name + "fires before
+   * final rep" docstring were misnomers. See
+   * `voltra-private/research/aa-subtype-catalog-2026-05-07-android-deep.md`
+   * §7.5 for the cross-decompile analysis.
+   *
+   * @param listener setSummary listener
    * @returns Unsubscribe function
    */
-  onPreSummary(listener: PreSummaryListener): () => void {
-    this.preSummaryListeners.add(listener);
-    return () => this.preSummaryListeners.delete(listener);
+  onSetSummary(listener: SetSummaryListener): () => void {
+    this.setSummaryListeners.add(listener);
+    return () => this.setSummaryListeners.delete(listener);
   }
 
   /**
@@ -1776,7 +1783,7 @@ export class VoltraClient {
     this.rawFrameListeners.clear();
     this.perRepListeners.clear();
     this.summaryListeners.clear();
-    this.preSummaryListeners.clear();
+    this.setSummaryListeners.clear();
     this.inProgressListeners.clear();
     this.modeConfirmedListeners.clear();
     this.settingsUpdateListeners.clear();
@@ -1840,9 +1847,9 @@ export class VoltraClient {
         this.emit({ type: 'summary', event });
         this.summaryListeners.forEach((listener) => listener(event));
       },
-      onPreSummary: (event) => {
-        this.emit({ type: 'preSummary', event });
-        this.preSummaryListeners.forEach((listener) => listener(event));
+      onSetSummary: (event) => {
+        this.emit({ type: 'setSummary', event });
+        this.setSummaryListeners.forEach((listener) => listener(event));
       },
       onInProgress: (event) => {
         this.emit({ type: 'inProgress', event });
