@@ -65,6 +65,7 @@ export {
   type SettingsUpdateListener,
   type StateDumpListener,
   type BatteryUpdateListener,
+  type ConnectionStateListener,
   type ScanOptions,
   type RowingDistancePreset,
   type GuidedLoadOptions,

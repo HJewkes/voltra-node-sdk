@@ -19,6 +19,7 @@ export type {
   SettingsUpdateListener,
   StateDumpListener,
   BatteryUpdateListener,
+  ConnectionStateListener,
   PerRepEvent,
   SummaryEvent,
   SetSummaryEvent,
@@ -28,7 +29,6 @@ export type {
   SetSummaryListener,
   InProgressListener,
   ScanOptions,
-  DeviceChooser,
   RowingDistancePreset,
   GuidedLoadOptions,
   GuidedLoadState,
@@ -54,6 +54,10 @@ export type {
 
 // Re-export DeviceSettings + StateDumpEvent for typing event listeners
 export type { DeviceSettings, StateDumpEvent } from '../voltra/protocol/types';
+
+// DeviceChooser is canonical in the adapter layer; re-export from there to
+// avoid duplicate declarations.
+export type { DeviceChooser } from '../bluetooth/adapters/node';
 
 export type {
   Platform,

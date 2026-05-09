@@ -1919,7 +1919,7 @@ export class VoltraClient {
    * Phase 6: subscribe to involuntary disconnects ({@link ConnectionLossEvent}).
    * Fires only on unexpected losses (gatt disconnect, write failure during
    * a connected session) — voluntary `client.disconnect()` does NOT trigger
-   * this event. The event carries `lastKnownSettings` + `disconnected_at`
+   * this event. The event carries `lastKnownSettings` + `ts`
    * so consumers can drop their own staleness machinery.
    *
    * @param listener Connection-loss listener
@@ -2523,7 +2523,7 @@ export class VoltraClient {
       expectedMode: expected,
       from: revertFrom,
       to,
-      occurred_at: this.nowIso(),
+      ts: this.nowIso(),
       seq: this.nextSeq(),
     };
     this._expectedMode = null;
@@ -2572,9 +2572,8 @@ export class VoltraClient {
       deviceName,
       reason,
       lastKnownSettings,
-      disconnected_at: ts,
-      seq: this.nextSeq(),
       ts,
+      seq: this.nextSeq(),
     };
     this.connectionLossEventListeners.forEach((listener) => {
       try {

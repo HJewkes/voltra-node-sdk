@@ -230,7 +230,7 @@ describe('Phase 6 event wrappers', () => {
       expect(reverts[0].expectedMode).toBe(TrainingMode.WeightTraining);
       expect(reverts[0].to).toBe(TrainingMode.Damper);
       expect(reverts[0].seq).toBeGreaterThan(0);
-      expect(typeof reverts[0].occurred_at).toBe('string');
+      expect(typeof reverts[0].ts).toBe('string');
     });
 
     it('does NOT fire ModeRevertEvent when device confirms the requested mode', async () => {
@@ -297,7 +297,7 @@ describe('Phase 6 event wrappers', () => {
       expect(losses).toHaveLength(1);
       expect(losses[0].reason).toBe('gatt_disconnect');
       expect(losses[0].deviceId).toBe(device.id);
-      expect(typeof losses[0].disconnected_at).toBe('string');
+      expect(typeof losses[0].ts).toBe('string');
       // lastKnownSettings may be null (no settings cascade in mock) but the
       // field MUST be present on the event shape.
       expect('lastKnownSettings' in losses[0]).toBe(true);

@@ -5,7 +5,6 @@
  */
 
 import type { BLEAdapter, Peripheral } from '../bluetooth/adapters/types';
-import type { DiscoveredDevice } from '../bluetooth/models/device';
 import type { TelemetryFrame } from '../voltra/models/telemetry';
 import type { VoltraConnectionState } from '../voltra/models/connection';
 import type { VoltraDeviceSettings, VoltraRecordingState } from '../voltra/models/device';
@@ -149,6 +148,13 @@ export type BatteryUpdateListener = (battery: number) => void;
  * value other than `1` should be treated as off).
  */
 export type StateDumpListener = (event: StateDumpEvent) => void;
+
+/**
+ * Connection-state change listener — fires whenever the client transitions
+ * between {@link VoltraConnectionState} values. Consistent with the other
+ * `XxxListener` aliases in the SDK.
+ */
+export type ConnectionStateListener = (state: VoltraConnectionState) => void;
 
 // =============================================================================
 // Typed vendor-frame events (0.6.0+)
@@ -342,10 +348,10 @@ export type InProgressListener = (event: InProgressEvent) => void;
 // firing for backwards compatibility; consumers wanting the wrapper shape
 // should subscribe to the parallel `on*Event` listeners.
 //
-// `ConnectionLossEvent.lastKnownSettings` and `disconnected_at` exist so the
-// MCP bridge can drop its `staleSinceDisconnect` machinery — the SDK now
-// captures the `_settings` snapshot at the moment the link dies and stamps
-// a single observation timestamp instead of forcing each consumer to do it.
+// `ConnectionLossEvent.lastKnownSettings` exists so the MCP bridge can drop
+// its `staleSinceDisconnect` machinery — the SDK now captures the `_settings`
+// snapshot at the moment the link dies and stamps a single `ts` timestamp
+// instead of forcing each consumer to do it.
 //
 // `ModeRevertEvent` lifts the Bug 22 mode-revert latch out of the MCP bridge
 // into the SDK: when the device emits a mode change that disagrees with the
@@ -424,9 +430,8 @@ export interface ConnectionLossEvent {
   reason: string;
   lastKnownSettings: DeviceSettings | null;
   /** ISO-8601 timestamp the SDK observed the loss. */
-  disconnected_at: string;
-  seq: number;
   ts: string;
+  seq: number;
 }
 
 /**
@@ -459,7 +464,7 @@ export interface ModeRevertEvent {
   /** Mode the device reverted *to*. */
   to: TrainingMode;
   /** ISO-8601 timestamp of the revert detection. */
-  occurred_at: string;
+  ts: string;
   seq: number;
 }
 
@@ -511,11 +516,6 @@ export interface VoltraClientState {
   isRecording: boolean;
   error: Error | null;
 }
-
-/**
- * Device chooser function for programmatic device selection (Node.js).
- */
-export type DeviceChooser = (devices: DiscoveredDevice[]) => DiscoveredDevice | null;
 
 /**
  * Generic helper for per-field settings change events.
