@@ -3,7 +3,7 @@ import { createNotificationHandler, type NotificationCallbacks } from '../notifi
 import { TrainingMode, VendorSchemaVersion } from '../../voltra/protocol/constants';
 import type { TelemetryFrame } from '../../voltra/models/telemetry';
 import type { DeviceSettings, StateDumpEvent } from '../../voltra/protocol/types';
-import type { PerRepEvent, SummaryEvent, PreSummaryEvent, InProgressEvent } from '../types';
+import type { PerRepEvent, SummaryEvent, SetSummaryEvent, InProgressEvent } from '../types';
 
 // Mock the decoder so we can control exactly what DecodeResult comes back
 vi.mock('../../voltra/protocol/telemetry-decoder', () => ({
@@ -25,7 +25,7 @@ function makeCallbacks(): NotificationCallbacks & {
     onBatteryUpdate: vi.fn(),
     onPerRep: vi.fn(),
     onSummary: vi.fn(),
-    onPreSummary: vi.fn(),
+    onSetSummary: vi.fn(),
     onInProgress: vi.fn(),
   };
 }
@@ -106,7 +106,7 @@ describe('notification-dispatcher', () => {
     expect(callbacks.onBatteryUpdate).not.toHaveBeenCalled();
     expect(callbacks.onPerRep).not.toHaveBeenCalled();
     expect(callbacks.onSummary).not.toHaveBeenCalled();
-    expect(callbacks.onPreSummary).not.toHaveBeenCalled();
+    expect(callbacks.onSetSummary).not.toHaveBeenCalled();
     expect(callbacks.onInProgress).not.toHaveBeenCalled();
   });
 
@@ -122,7 +122,7 @@ describe('notification-dispatcher', () => {
     expect(callbacks.onBatteryUpdate).not.toHaveBeenCalled();
     expect(callbacks.onPerRep).not.toHaveBeenCalled();
     expect(callbacks.onSummary).not.toHaveBeenCalled();
-    expect(callbacks.onPreSummary).not.toHaveBeenCalled();
+    expect(callbacks.onSetSummary).not.toHaveBeenCalled();
     expect(callbacks.onInProgress).not.toHaveBeenCalled();
   });
 
@@ -204,20 +204,20 @@ describe('notification-dispatcher', () => {
     expect(callbacks.onSummary).toHaveBeenCalledWith(event);
   });
 
-  it('dispatches onPreSummary for preSummary results', () => {
-    const event: PreSummaryEvent = {
+  it('dispatches onSetSummary for setSummary results', () => {
+    const event: SetSummaryEvent = {
       schemaVersion: VendorSchemaVersion.Damper,
       targetWeightTenths: 0,
       repCount: 5,
       repDurationMs: 1234,
       raw: new Uint8Array(110),
     };
-    mockDecode.mockReturnValue({ type: 'preSummary', event });
+    mockDecode.mockReturnValue({ type: 'setSummary', event });
 
     handler(dummyData);
 
-    expect(callbacks.onPreSummary).toHaveBeenCalledOnce();
-    expect(callbacks.onPreSummary).toHaveBeenCalledWith(event);
+    expect(callbacks.onSetSummary).toHaveBeenCalledOnce();
+    expect(callbacks.onSetSummary).toHaveBeenCalledWith(event);
   });
 
   // ===========================================================================

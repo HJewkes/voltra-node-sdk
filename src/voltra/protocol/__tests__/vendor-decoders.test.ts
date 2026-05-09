@@ -17,7 +17,7 @@ import { describe, it, expect } from 'vitest';
 import {
   decodeVendorPerRep,
   decodeVendorSummary,
-  decodeVendorPreSummary,
+  decodeVendorSetSummary,
   decodeVendorInProgress,
 } from '../telemetry-decoder';
 import { VendorMessages, VendorSchemaVersion } from '../constants';
@@ -83,7 +83,7 @@ function buildPerRepFrameWithWeight(fields: {
 }
 
 /**
- * Build a vendor preSummary frame from scratch — no factory exists yet.
+ * Build a vendor setSummary (`aa 85 5f`) frame from scratch — no factory exists yet.
  *
  * Layout (frame offsets):
  *   0..3   universal header (start marker, length, category, header CRC8)
@@ -97,15 +97,15 @@ function buildPerRepFrameWithWeight(fields: {
  * We piggy-back on `buildVendorSummaryFrame` for the envelope/CRC, then
  * rewrite the identifier bytes + relevant fields.
  */
-function buildPreSummaryFrame(fields: {
+function buildSetSummaryFrame(fields: {
   schemaVersion: VendorSchemaVersion;
   targetWeightTenths: number;
   repCount: number;
   repDurationMs: number;
 }): Uint8Array {
-  const cfg = VendorMessages.subTypes.preSummary;
+  const cfg = VendorMessages.subTypes.setSummary;
   if (cfg.frameLength == null || !cfg.fields || cfg.schemaVersionByteOffset === undefined) {
-    throw new Error('preSummary metadata not populated');
+    throw new Error('setSummary metadata not populated');
   }
 
   // Use buildVendorSummaryFrame as a vehicle then rewrite identifier +
@@ -116,7 +116,7 @@ function buildPreSummaryFrame(fields: {
     repCount: 0,
   });
 
-  // Allocate a frame of preSummary's documented frameLength and copy the
+  // Allocate a frame of setSummary's documented frameLength and copy the
   // envelope (offsets 0..10) from the summary scaffold. The header CRC8 at
   // frame[3] is left stale — decoders only validate length + sub-type bytes,
   // not the header CRC.
@@ -317,19 +317,19 @@ describe('decodeVendorSummary', () => {
 });
 
 // =============================================================================
-// decodeVendorPreSummary
+// decodeVendorSetSummary
 // =============================================================================
 
-describe('decodeVendorPreSummary', () => {
-  it('decodes a synthesized preSummary frame with all fields', () => {
-    const frame = buildPreSummaryFrame({
+describe('decodeVendorSetSummary', () => {
+  it('decodes a synthesized setSummary frame with all fields', () => {
+    const frame = buildSetSummaryFrame({
       schemaVersion: VendorSchemaVersion.Damper,
       targetWeightTenths: 0,
       repCount: 5,
       repDurationMs: 4321,
     });
 
-    const event = decodeVendorPreSummary(frame);
+    const event = decodeVendorSetSummary(frame);
 
     expect(event).not.toBeNull();
     expect(event!.schemaVersion).toBe(VendorSchemaVersion.Damper);
@@ -346,13 +346,13 @@ describe('decodeVendorPreSummary', () => {
       repCount: 5,
     });
 
-    const event = decodeVendorPreSummary(summary);
+    const event = decodeVendorSetSummary(summary);
 
     expect(event).toBeNull();
   });
 
-  it('returns null for a truncated preSummary frame', () => {
-    const frame = buildPreSummaryFrame({
+  it('returns null for a truncated setSummary frame', () => {
+    const frame = buildSetSummaryFrame({
       schemaVersion: VendorSchemaVersion.Weight,
       targetWeightTenths: 500,
       repCount: 5,
@@ -360,7 +360,7 @@ describe('decodeVendorPreSummary', () => {
     });
     const truncated = frame.slice(0, 50);
 
-    const event = decodeVendorPreSummary(truncated);
+    const event = decodeVendorSetSummary(truncated);
 
     expect(event).toBeNull();
   });

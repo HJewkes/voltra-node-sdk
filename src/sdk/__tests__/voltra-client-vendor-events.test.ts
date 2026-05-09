@@ -2,7 +2,7 @@
  * Tests for VoltraClient typed vendor-frame subscribe methods (0.6.0+).
  *
  * Verifies:
- *   - onPerRep / onSummary / onPreSummary / onInProgress fire when the
+ *   - onPerRep / onSummary / onSetSummary / onInProgress fire when the
  *     adapter emits the corresponding vendor frame
  *   - Multiple listeners on the same event all fire
  *   - Unsubscribe handles actually unsubscribe

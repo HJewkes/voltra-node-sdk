@@ -93,7 +93,7 @@ export type VoltraClientEvent =
   // Typed vendor-frame events (0.6.0+)
   | { type: 'perRep'; event: PerRepEvent }
   | { type: 'summary'; event: SummaryEvent }
-  | { type: 'preSummary'; event: PreSummaryEvent }
+  | { type: 'setSummary'; event: SetSummaryEvent }
   | { type: 'inProgress'; event: InProgressEvent }
   // Device notification events
   | { type: 'modeConfirmed'; mode: TrainingMode }
@@ -156,7 +156,7 @@ export type StateDumpListener = (event: StateDumpEvent) => void;
 // Field offsets validated 2026-05-06 on VTR-212006 (voltra-private phase-5
 // captures). 0.6.0 removed the legacy onRepBoundary / onSetBoundary listeners
 // — the four vendor frames are now exclusively surfaced via their typed
-// perRep / inProgress / summary / preSummary callbacks.
+// perRep / inProgress / summary / setSummary callbacks.
 // =============================================================================
 
 /**
@@ -199,11 +199,20 @@ export interface SummaryEvent {
 }
 
 /**
- * Payload of a vendor `preSummary` frame (110 B). Fires ~3s before the final
- * rep with early access to `repDurationMs` and `repCount` before the device
- * emits the formal `summary` frame.
+ * Payload of a vendor `aa 85 5f` set-summary frame (110 B). The device emits
+ * one of these per set in WT/RB/Damper modes after all reps complete, with
+ * the final `repCount` and `repDurationMs` baked in. (The legacy `preSummary`
+ * label and the "fires ~3s before final rep" comment were misnomers; the
+ * frame fires post-final-rep with the device's own debounce. See
+ * `voltra-private/research/aa-subtype-catalog-2026-05-07-android-deep.md` §7.5
+ * for the cross-decompile analysis and `voltra-private/captures/sessions/validation-phase-6-set-boundaries-2026-05-06T20-12-57.events.json`
+ * for the empirical evidence.)
+ *
+ * In WT/RB/Damper this is the canonical per-set close marker — the
+ * `aa 86 7d` "summary" frame is workout-end / post-STOP only and may not
+ * fire at all in some modes.
  */
-export interface PreSummaryEvent {
+export interface SetSummaryEvent {
   /** Schema version: 1=weight, 2=band, 3=damper, 4=isokinetic. */
   schemaVersion: VendorSchemaVersion;
   /** Target weight in tenths of pounds (frame[16..17], uint16 LE). */
@@ -318,8 +327,8 @@ export type PerRepListener = (event: PerRepEvent) => void;
 /** Summary listener (called once at end-of-set). */
 export type SummaryListener = (event: SummaryEvent) => void;
 
-/** PreSummary listener (called ~3s before the final rep). */
-export type PreSummaryListener = (event: PreSummaryEvent) => void;
+/** Set-summary listener (called per-set after all reps complete in WT/RB/Damper). */
+export type SetSummaryListener = (event: SetSummaryEvent) => void;
 
 /** InProgress listener (called ~1 Hz during active sets). */
 export type InProgressListener = (event: InProgressEvent) => void;
