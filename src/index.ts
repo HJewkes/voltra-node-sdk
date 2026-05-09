@@ -122,6 +122,20 @@ export { PeripheralLost, PeripheralRebound } from './bluetooth/adapters/types';
 export { LegacyAdapterHost, LegacyAdapterPeripheral } from './bluetooth/adapters/legacy-shim';
 export type { LegacyAdapterHostOptions } from './bluetooth/adapters/legacy-shim';
 
+// Phase 1 (2026-05-08): noble-backed Node host + peripheral. Type-only
+// at the root entry to avoid eagerly loading `@stoprocent/noble` for
+// consumers that don't opt in. Get the values via `VoltraManager.forNodeNoble()`
+// or via the `@voltras/node-sdk/node-noble` subpath.
+export type {
+  NobleHost,
+  NoblePeripheral,
+  NobleHostConfig,
+  NobleBindingType,
+  NoblePeripheralLike,
+  NobleCharacteristicLike,
+  NobleLike,
+} from './bluetooth/adapters/node-noble';
+
 // =============================================================================
 // Device Discovery
 // =============================================================================

@@ -489,3 +489,373 @@ void [
   null as unknown as ConnectionStateCallback,
   null as unknown as NotificationCallback,
 ];
+
+// =============================================================================
+// Phase 1 (2026-05-08) — Noble backend contract suite.
+//
+// Exercises `NobleHost` + `NoblePeripheral` against an in-memory mock of the
+// `@stoprocent/noble` module. The contract suite (cross-talk, re-scan,
+// PeripheralRebound) must pass GREEN here — that's the whole point of the
+// migration. Where the legacy webbluetooth backend gets `it.fails()` for
+// rescan, the noble backend gets a passing test.
+//
+// The mock noble module supports: peripheral discovery via async iterator,
+// connectAsync/disconnectAsync, characteristic discovery, writeAsync,
+// notification fan-out via 'data' events, the disconnect event, and a
+// rebound scenario (mutate the peripheral's id mid-flight to force the
+// `PeripheralRebound` path).
+//
+// We intentionally do NOT use vi.mock at module scope — the production
+// `node-noble.ts` exposes `__setNobleModuleForTesting()` for exactly this
+// purpose, which is cleaner than `vi.mock` indirection and works in both
+// CJS+ESM build modes.
+// =============================================================================
+
+import {
+  NobleHost,
+  NoblePeripheral,
+  __setNobleModuleForTesting,
+  type NobleCharacteristicLike,
+  type NobleLike,
+  type NoblePeripheralLike,
+} from '../node-noble';
+import { afterEach } from 'vitest';
+
+// Voltra service / characteristic UUIDs — copied from the protocol
+// constants so the mock peripheral hands back matching characteristics.
+const VOLTRA_SERVICE_UUID = 'E4DADA34-0867-8783-9F70-2CA29216C7E4';
+const VOLTRA_NOTIFY_CHAR_UUID = '55CA1E52-7354-25DE-6AFC-B7DF1E8816AC';
+const VOLTRA_WRITE_CHAR_UUID = 'A010891D-F50F-44F0-901F-9A2421A9E050';
+
+const TEST_BLE_CONFIG = {
+  serviceUUID: VOLTRA_SERVICE_UUID,
+  notifyCharUUID: VOLTRA_NOTIFY_CHAR_UUID,
+  writeCharUUID: VOLTRA_WRITE_CHAR_UUID,
+  deviceNamePrefix: 'VTR-',
+};
+
+class MockNobleCharacteristic implements NobleCharacteristicLike {
+  readonly uuid: string;
+  readonly properties: string[];
+  readonly writes: Buffer[] = [];
+  private listeners: Map<string, Array<(...args: unknown[]) => void>> = new Map();
+
+  constructor(uuid: string, properties: string[] = ['write', 'notify']) {
+    this.uuid = uuid;
+    this.properties = properties;
+  }
+
+  async writeAsync(data: Buffer, _withoutResponse: boolean): Promise<void> {
+    this.writes.push(Buffer.from(data));
+  }
+
+  async subscribeAsync(): Promise<void> {
+    // no-op; matches noble where subscribe enables 'data' events
+  }
+
+  async unsubscribeAsync(): Promise<void> {
+    // no-op
+  }
+
+  on(event: 'data', listener: (data: Buffer, isNotification: boolean) => void): unknown {
+    const list = this.listeners.get(event) ?? [];
+    list.push(listener as (...args: unknown[]) => void);
+    this.listeners.set(event, list);
+    return this;
+  }
+
+  removeListener(
+    event: 'data',
+    listener: (data: Buffer, isNotification: boolean) => void
+  ): unknown {
+    const list = this.listeners.get(event) ?? [];
+    const idx = list.indexOf(listener as (...args: unknown[]) => void);
+    if (idx >= 0) list.splice(idx, 1);
+    return this;
+  }
+
+  /** Test helper — fan out a synthesized notification to subscribers. */
+  emitData(data: Buffer): void {
+    const list = this.listeners.get('data') ?? [];
+    for (const cb of [...list]) {
+      (cb as (d: Buffer, isNotif: boolean) => void)(data, true);
+    }
+  }
+}
+
+class MockNoblePeripheral implements NoblePeripheralLike {
+  /** Mutable so tests can simulate the underlying-library handle rebound. */
+  id: string;
+  readonly address: string;
+  readonly advertisement: { localName?: string };
+  readonly rssi: number;
+  state: 'error' | 'connecting' | 'connected' | 'disconnecting' | 'disconnected' = 'disconnected';
+
+  readonly notifyChar: MockNobleCharacteristic;
+  readonly writeChar: MockNobleCharacteristic;
+
+  private listeners: Map<string, Array<(...args: unknown[]) => void>> = new Map();
+
+  constructor(id: string, name: string, rssi: number = -50) {
+    this.id = id;
+    this.address = id;
+    this.advertisement = { localName: name };
+    this.rssi = rssi;
+    this.notifyChar = new MockNobleCharacteristic(VOLTRA_NOTIFY_CHAR_UUID, ['notify']);
+    this.writeChar = new MockNobleCharacteristic(VOLTRA_WRITE_CHAR_UUID, ['write']);
+  }
+
+  async connectAsync(): Promise<void> {
+    this.state = 'connected';
+  }
+
+  async disconnectAsync(): Promise<void> {
+    this.state = 'disconnected';
+    this.emit('disconnect', 'test-disconnect');
+  }
+
+  async discoverSomeServicesAndCharacteristicsAsync(
+    _serviceUUIDs: string[],
+    _characteristicUUIDs: string[]
+  ): Promise<{
+    services: unknown[];
+    characteristics: NobleCharacteristicLike[];
+  }> {
+    return {
+      services: [],
+      characteristics: [this.notifyChar, this.writeChar],
+    };
+  }
+
+  on(event: string, listener: (...args: unknown[]) => void): unknown {
+    const list = this.listeners.get(event) ?? [];
+    list.push(listener);
+    this.listeners.set(event, list);
+    return this;
+  }
+
+  removeListener(event: string, listener: (...args: unknown[]) => void): unknown {
+    const list = this.listeners.get(event) ?? [];
+    const idx = list.indexOf(listener);
+    if (idx >= 0) list.splice(idx, 1);
+    return this;
+  }
+
+  /** Test helper — emit a 'disconnect' event to subscribers. */
+  emit(event: string, ...args: unknown[]): void {
+    const list = this.listeners.get(event) ?? [];
+    for (const cb of [...list]) cb(...args);
+  }
+}
+
+class MockNoble implements NobleLike {
+  state = 'poweredOn';
+  /** Peripherals advertised on next scan. Rewritable per test. */
+  peripherals: MockNoblePeripheral[] = [];
+
+  async waitForPoweredOnAsync(_timeout?: number): Promise<void> {
+    if (this.state === 'poweredOn') return;
+    throw new Error('mock not powered on');
+  }
+
+  async startScanningAsync(_uuids?: string[], _allowDup?: boolean): Promise<void> {
+    // no-op
+  }
+
+  async stopScanningAsync(): Promise<void> {
+    // no-op
+  }
+
+  async *discoverAsync(): AsyncGenerator<NoblePeripheralLike, void, unknown> {
+    for (const p of this.peripherals) {
+      yield p;
+    }
+  }
+
+  reset(): void {
+    // no-op
+  }
+
+  stop(): void {
+    // no-op
+  }
+}
+
+interface NobleFixture {
+  host: NobleHost;
+  noble: MockNoble;
+  peripheralA: MockNoblePeripheral;
+  peripheralB: MockNoblePeripheral;
+}
+
+function buildNobleFixture(): NobleFixture {
+  const noble = new MockNoble();
+  const peripheralA = new MockNoblePeripheral('noble-a', 'VTR-AAAAAA', -50);
+  const peripheralB = new MockNoblePeripheral('noble-b', 'VTR-BBBBBB', -60);
+  noble.peripherals = [peripheralA, peripheralB];
+  __setNobleModuleForTesting({ withBindings: () => noble });
+  const host = new NobleHost({ ble: TEST_BLE_CONFIG });
+  return { host, noble, peripheralA, peripheralB };
+}
+
+describe('BluetoothHost contract — NobleHost (Phase 1, mocked @stoprocent/noble)', () => {
+  let fixture: NobleFixture;
+
+  beforeEach(() => {
+    fixture = buildNobleFixture();
+  });
+
+  afterEach(async () => {
+    await fixture.host.dispose();
+    __setNobleModuleForTesting(null);
+  });
+
+  it('host produces discoveries from scan() that dial() can consume', async () => {
+    const discoveries = await fixture.host.scan({ timeout: 50 });
+    expect(discoveries.length).toBe(2);
+    for (const d of discoveries) {
+      expect(d._origin).toBe(fixture.host);
+    }
+  });
+
+  it('dial() rejects a discovery from a different host (origin mismatch)', async () => {
+    const otherFixture = buildNobleFixture();
+    const [otherDiscovery] = await otherFixture.host.scan({ timeout: 50 });
+    await expect(fixture.host.dial(otherDiscovery)).rejects.toThrow(/different host/i);
+    await otherFixture.host.dispose();
+  });
+
+  it('cross-talk: write to peripheral A never reaches peripheral B', async () => {
+    const [discA, discB] = await fixture.host.scan({ timeout: 50 });
+    const pA = await fixture.host.dial(discA);
+    const pB = await fixture.host.dial(discB);
+
+    const SENTINEL_A = new Uint8Array([0xa1, 0xa2]);
+    const SENTINEL_B = new Uint8Array([0xb1, 0xb2]);
+
+    await pA.write(SENTINEL_A);
+    await pB.write(SENTINEL_B);
+
+    // Each NoblePeripheral writes to its own underlying noble.Peripheral —
+    // there is no shared singleton state to corrupt. Verify by inspecting
+    // the per-peripheral writeChar logs.
+    expect(fixture.peripheralA.writeChar.writes.length).toBe(1);
+    expect(fixture.peripheralB.writeChar.writes.length).toBe(1);
+    expect(fixture.peripheralA.writeChar.writes[0].equals(Buffer.from(SENTINEL_A))).toBe(true);
+    expect(fixture.peripheralB.writeChar.writes[0].equals(Buffer.from(SENTINEL_B))).toBe(true);
+
+    await pA.disconnect();
+    await pB.disconnect();
+  });
+
+  it('re-scan does not invalidate an open peripheral (Phase 1 fix)', async () => {
+    const [discA] = await fixture.host.scan({ timeout: 50 });
+    const pA = await fixture.host.dial(discA);
+    expect(pA.status).toBe('connected');
+
+    // Re-scan. With noble each Peripheral handle is per-instance — there
+    // is NO process-wide peripherals Map for the second scan to overwrite.
+    // pA's status must remain `connected` and writes must keep landing
+    // on its own underlying peripheral.
+    await fixture.host.scan({ timeout: 50 });
+
+    expect(pA.status).toBe('connected');
+    await pA.write(new Uint8Array([0xc0, 0xff, 0xee]));
+    expect(fixture.peripheralA.writeChar.writes.length).toBe(1);
+
+    await pA.disconnect();
+  });
+
+  it("peripheral.status flips to 'lost' when the underlying noble peripheral fires 'disconnect' unexpectedly", async () => {
+    const [discA] = await fixture.host.scan({ timeout: 50 });
+    const pA = await fixture.host.dial(discA);
+    expect(pA.status).toBe('connected');
+
+    // Simulate an unsolicited disconnect from the noble layer (e.g. a
+    // stack-level `gattserverdisconnected` analog).
+    fixture.peripheralA.state = 'disconnected';
+    fixture.peripheralA.emit('disconnect', 'remote-dropped');
+
+    expect(pA.status).toBe('lost');
+  });
+
+  it('peripheral.write throws PeripheralLost after status === lost', async () => {
+    const [discA] = await fixture.host.scan({ timeout: 50 });
+    const pA = await fixture.host.dial(discA);
+    fixture.peripheralA.emit('disconnect', 'remote-dropped');
+    expect(pA.status).toBe('lost');
+    await expect(pA.write(new Uint8Array([0xff]))).rejects.toThrow(
+      /Peripheral .* is no longer reachable/
+    );
+  });
+
+  it("peripheral.disconnect transitions status to 'disconnected' (not 'lost')", async () => {
+    const [discA] = await fixture.host.scan({ timeout: 50 });
+    const pA = await fixture.host.dial(discA);
+    const events: string[] = [];
+    pA.onStatusChange((s) => events.push(s));
+
+    await pA.disconnect();
+
+    expect(pA.status).toBe('disconnected');
+    expect(events).toContain('disconnecting');
+    expect(events).toContain('disconnected');
+    expect(events).not.toContain('lost');
+  });
+
+  it('peripheral.write() throws PeripheralRebound when the underlying noble handle rebinds to a different id', async () => {
+    const [discA] = await fixture.host.scan({ timeout: 50 });
+    const pA = await fixture.host.dial(discA);
+    expect(pA.status).toBe('connected');
+    expect(pA).toBeInstanceOf(NoblePeripheral);
+
+    // Simulate the upstream `webbluetooth` SimplebleAdapter cross-talk
+    // shape: the cached underlying peripheral's id is now pointing to
+    // a DIFFERENT device. With Phase 1's per-instance `_underlying.id`
+    // check, the write must throw `PeripheralRebound` — not silently
+    // route to the wrong device.
+    fixture.peripheralA.id = 'rebound-x';
+    await expect(pA.write(new Uint8Array([0xde, 0xad]))).rejects.toThrow(PeripheralRebound);
+    // Important: status is NOT flipped to 'lost' — the underlying
+    // handle may still be alive, just bound to a different device. The
+    // SDK reconnect-handler decides what to do based on the typed error.
+    expect(pA.status).toBe('connected');
+  });
+
+  it('onNotification subscribers receive bytes emitted by the notify characteristic', async () => {
+    const [discA] = await fixture.host.scan({ timeout: 50 });
+    const pA = await fixture.host.dial(discA);
+
+    const received: Uint8Array[] = [];
+    pA.onNotification((data) => received.push(data));
+
+    fixture.peripheralA.notifyChar.emitData(Buffer.from([0xaa, 0x80, 0x25]));
+
+    expect(received.length).toBe(1);
+    expect(Array.from(received[0])).toEqual([0xaa, 0x80, 0x25]);
+
+    await pA.disconnect();
+  });
+
+  it('immediate-write option fires before the connected transition', async () => {
+    const [discA] = await fixture.host.scan({ timeout: 50 });
+    const pA = await fixture.host.dial(discA, { immediateWrite: new Uint8Array([0x55, 0x29]) });
+    expect(pA.status).toBe('connected');
+    expect(fixture.peripheralA.writeChar.writes.length).toBe(1);
+    expect(Array.from(fixture.peripheralA.writeChar.writes[0])).toEqual([0x55, 0x29]);
+    await pA.disconnect();
+  });
+
+  it('host.isAvailable() returns true when noble reports poweredOn', async () => {
+    expect(await fixture.host.isAvailable()).toBe(true);
+  });
+
+  it('host.getKnownDiscoveries() returns empty (no persistent auth on Node)', async () => {
+    expect(await fixture.host.getKnownDiscoveries()).toEqual([]);
+  });
+
+  it('host.dispose() prevents subsequent scan() calls', async () => {
+    await fixture.host.dispose();
+    await expect(fixture.host.scan({ timeout: 50 })).rejects.toThrow(/disposed/i);
+  });
+});
