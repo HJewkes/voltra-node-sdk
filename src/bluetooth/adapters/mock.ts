@@ -89,6 +89,14 @@ export class MockBLEAdapter extends BaseBLEAdapter {
    * connection state being updated (Bug 30 reproducer).
    */
   private linkAlive = false;
+  /**
+   * Test helper queue: when non-null, the next `write()` call throws this
+   * error WITHOUT touching `linkAlive`. Models a stuck GATT write pipe
+   * (supervision-timeout-adjacent / MTU-window collapse) where the writeChar
+   * handle is intact but the underlying queue rejects. Bug 30 follow-up
+   * reproducer; see `feedback_ble_write_fail_reconnect_not_retry`.
+   */
+  private nextWriteError: Error | null = null;
 
   private readonly sessionConfig: MockSessionConfig | null;
   private currentSet = 0;
@@ -150,6 +158,11 @@ export class MockBLEAdapter extends BaseBLEAdapter {
   }
 
   async write(data: Uint8Array): Promise<void> {
+    if (this.nextWriteError) {
+      const err = this.nextWriteError;
+      this.nextWriteError = null;
+      throw err;
+    }
     if (!this.linkAlive) {
       throw new Error('Not connected to device');
     }
@@ -182,6 +195,17 @@ export class MockBLEAdapter extends BaseBLEAdapter {
    */
   simulateLinkLoss(): void {
     this.linkAlive = false;
+  }
+
+  /**
+   * Test helper: cause the next `write()` to reject with the given error
+   * while leaving `linkAlive` true. Models a jammed GATT write pipe where
+   * the adapter believes the link is healthy but the firmware-side write
+   * queue has stalled — observed on VTR-097082 2026-05-07T16-11-15
+   * (`feedback_ble_write_fail_reconnect_not_retry`).
+   */
+  simulateWriteFailure(error: Error = new Error('Write failed')): void {
+    this.nextWriteError = error;
   }
 
   /**

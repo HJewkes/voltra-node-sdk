@@ -78,7 +78,25 @@ export const Init = {
 export const Workout = {
   /** Prepare device for workout */
   PREPARE: hexToBytes(protocol.commands.workout.prepare),
-  /** Configure workout mode */
+  /**
+   * Multi-paramID READ for `MC_DEFAULT_OFFLEN_CM` (`0x506a`, LE bytes `6a 50`)
+   * + `BP_RUNTIME_POSITION_CM` (`0x3e82`, LE bytes `82 3e`).
+   *
+   * Phase 0.5.2 reclassification: previously documented as "Configure
+   * workout mode," but the byte layout (cmdID `0x0F` + reserved
+   * `[0x02, 0x00]` + paramID pair, no value bytes between paramIDs and
+   * CRC16) is the Type-C "config / multi-paramID read" envelope, not a
+   * setter. The device responds with a `cmd_0f_bulk_response` carrying
+   * the saved cable offset (`MC_DEFAULT_OFFLEN_CM`) and the live cable
+   * position (`BP_RUNTIME_POSITION_CM`). See
+   * `voltra-private/docs/protocol-reference.md` § "Workout Control" + the
+   * paramID table; canonical bytes are
+   * `55 13 04 03 aa 10 15 00 20 00 0f 02 00 6a 50 82 3e 8f 2f`.
+   *
+   * Kept under `Workout` for now to preserve the bootstrap-sequence
+   * call-site contract; Phase 1 of the codegen refactor will relocate
+   * read-class commands to a dedicated `Reads` / `ReadCmd` module.
+   */
   SETUP: hexToBytes(protocol.commands.workout.setup),
   /** Start resistance/tracking */
   GO: hexToBytes(protocol.commands.workout.go),

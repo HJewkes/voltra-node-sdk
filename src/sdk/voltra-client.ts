@@ -445,9 +445,10 @@ export class VoltraClient {
     }
 
     try {
-      await this.adapter!.write(cmd);
+      await this.writeFrame(cmd);
       this._settings.weight = lbs;
     } catch (e) {
+      if (e instanceof ConnectionError) throw e;
       throw new CommandError(`Failed to set weight: ${this.getErrorMessage(e)}`, 'setWeight');
     }
   }
@@ -466,9 +467,10 @@ export class VoltraClient {
     }
 
     try {
-      await this.adapter!.write(cmd);
+      await this.writeFrame(cmd);
       this._settings.chains = lbs;
     } catch (e) {
+      if (e instanceof ConnectionError) throw e;
       throw new CommandError(`Failed to set chains: ${this.getErrorMessage(e)}`, 'setChains');
     }
   }
@@ -490,9 +492,10 @@ export class VoltraClient {
     }
 
     try {
-      await this.adapter!.write(cmd);
+      await this.writeFrame(cmd);
       this._settings.inverseChains = lbs;
     } catch (e) {
+      if (e instanceof ConnectionError) throw e;
       throw new CommandError(
         `Failed to set inverse chains: ${this.getErrorMessage(e)}`,
         'setInverseChains'
@@ -514,9 +517,10 @@ export class VoltraClient {
     }
 
     try {
-      await this.adapter!.write(cmd);
+      await this.writeFrame(cmd);
       this._settings.eccentric = percent;
     } catch (e) {
+      if (e instanceof ConnectionError) throw e;
       throw new CommandError(`Failed to set eccentric: ${this.getErrorMessage(e)}`, 'setEccentric');
     }
   }
@@ -591,8 +595,9 @@ export class VoltraClient {
     }
 
     try {
-      await this.adapter!.write(cmd);
+      await this.writeFrame(cmd);
     } catch (e) {
+      if (e instanceof ConnectionError) throw e;
       throw new CommandError(`Failed to set mode: ${this.getErrorMessage(e)}`, 'setMode');
     }
   }
@@ -640,10 +645,11 @@ export class VoltraClient {
     }
 
     try {
-      await this.adapter!.write(cmd);
+      await this.writeFrame(cmd);
       this._rowSubMenuOpen = true;
       this._rowStarted = false;
     } catch (e) {
+      if (e instanceof ConnectionError) throw e;
       throw new CommandError(
         `Failed to enter row mode: ${this.getErrorMessage(e)}`,
         'enterRowMode'
@@ -702,10 +708,11 @@ export class VoltraClient {
     const refresh = buildVendorStateRefreshFrame();
 
     try {
-      await this.adapter!.write(scrSwitch);
-      await this.adapter!.write(refresh);
+      await this.writeFrame(scrSwitch);
+      await this.writeFrame(refresh);
       this._rowStarted = true;
     } catch (e) {
+      if (e instanceof ConnectionError) throw e;
       throw new CommandError(`Failed to start row: ${this.getErrorMessage(e)}`, 'startRow');
     }
 
@@ -788,8 +795,9 @@ export class VoltraClient {
     }
 
     try {
-      await this.adapter!.write(cmd);
+      await this.writeFrame(cmd);
     } catch (e) {
+      if (e instanceof ConnectionError) throw e;
       throw new CommandError(
         `Failed to set damper level: ${this.getErrorMessage(e)}`,
         'setDamperLevel'
@@ -818,8 +826,9 @@ export class VoltraClient {
     }
 
     try {
-      await this.adapter!.write(cmd);
+      await this.writeFrame(cmd);
     } catch (e) {
+      if (e instanceof ConnectionError) throw e;
       throw new CommandError(
         `Failed to set assist mode: ${this.getErrorMessage(e)}`,
         'setAssistMode'
@@ -848,8 +857,9 @@ export class VoltraClient {
     }
 
     try {
-      await this.adapter!.write(cmd);
+      await this.writeFrame(cmd);
     } catch (e) {
+      if (e instanceof ConnectionError) throw e;
       throw new CommandError(
         `Failed to set band max force: ${this.getErrorMessage(e)}`,
         'setBandMaxForce'
@@ -885,8 +895,9 @@ export class VoltraClient {
     }
 
     try {
-      await this.adapter!.write(cmd);
+      await this.writeFrame(cmd);
     } catch (e) {
+      if (e instanceof ConnectionError) throw e;
       throw new CommandError(
         `Failed to set isokinetic target speed: ${this.getErrorMessage(e)}`,
         'setIsokineticTargetSpeed'
@@ -915,8 +926,9 @@ export class VoltraClient {
     }
 
     try {
-      await this.adapter!.write(cmd);
+      await this.writeFrame(cmd);
     } catch (e) {
+      if (e instanceof ConnectionError) throw e;
       throw new CommandError(
         `Failed to set isokinetic eccentric mode: ${this.getErrorMessage(e)}`,
         'setIsokineticEccMode'
@@ -949,8 +961,9 @@ export class VoltraClient {
     }
 
     try {
-      await this.adapter!.write(cmd);
+      await this.writeFrame(cmd);
     } catch (e) {
+      if (e instanceof ConnectionError) throw e;
       throw new CommandError(
         `Failed to set isokinetic eccentric speed limit: ${this.getErrorMessage(e)}`,
         'setIsokineticEccSpeedLimit'
@@ -987,8 +1000,9 @@ export class VoltraClient {
     }
 
     try {
-      await this.adapter!.write(cmd);
+      await this.writeFrame(cmd);
     } catch (e) {
+      if (e instanceof ConnectionError) throw e;
       throw new CommandError(
         `Failed to set isokinetic eccentric constant weight: ${this.getErrorMessage(e)}`,
         'setIsokineticEccConstWeight'
@@ -1025,8 +1039,9 @@ export class VoltraClient {
     }
 
     try {
-      await this.adapter!.write(cmd);
+      await this.writeFrame(cmd);
     } catch (e) {
+      if (e instanceof ConnectionError) throw e;
       throw new CommandError(
         `Failed to set isokinetic eccentric overload weight: ${this.getErrorMessage(e)}`,
         'setIsokineticEccOverloadWeight'
@@ -1096,8 +1111,9 @@ export class VoltraClient {
     }
 
     try {
-      await this.adapter!.write(cmd);
+      await this.writeFrame(cmd);
     } catch (e) {
+      if (e instanceof ConnectionError) throw e;
       throw new CommandError(
         `Failed to set telemetry rate: ${this.getErrorMessage(e)}`,
         'setTelemetryRate'
@@ -1127,8 +1143,9 @@ export class VoltraClient {
     }
 
     try {
-      await this.adapter!.write(cmd);
+      await this.writeFrame(cmd);
     } catch (e) {
+      if (e instanceof ConnectionError) throw e;
       throw new CommandError(
         `Failed to set telemetry subscribe: ${this.getErrorMessage(e)}`,
         'setTelemetrySubscribe'
@@ -1158,8 +1175,9 @@ export class VoltraClient {
     }
 
     try {
-      await this.adapter!.write(cmd);
+      await this.writeFrame(cmd);
     } catch (e) {
+      if (e instanceof ConnectionError) throw e;
       throw new CommandError(
         `Failed to set cable trigger: ${this.getErrorMessage(e)}`,
         'setCableTrigger'
@@ -1189,8 +1207,9 @@ export class VoltraClient {
     }
 
     try {
-      await this.adapter!.write(cmd);
+      await this.writeFrame(cmd);
     } catch (e) {
+      if (e instanceof ConnectionError) throw e;
       throw new CommandError(
         `Failed to set resistance experience: ${this.getErrorMessage(e)}`,
         'setResistanceExperience'
@@ -1266,8 +1285,9 @@ export class VoltraClient {
 
     // Step 2: write the direct-load trigger frame.
     try {
-      await this.adapter!.write(buildGuidedLoadTriggerFrame());
+      await this.writeFrame(buildGuidedLoadTriggerFrame());
     } catch (e) {
+      if (e instanceof ConnectionError) throw e;
       throw new CommandError(
         `Failed to write guided-load trigger: ${this.getErrorMessage(e)}`,
         'startGuidedLoad'
@@ -1311,8 +1331,9 @@ export class VoltraClient {
     this.stopGuidedLoadPolling();
 
     try {
-      await this.adapter!.write(buildGuidedLoadExitFrame());
+      await this.writeFrame(buildGuidedLoadExitFrame());
     } catch (e) {
+      if (e instanceof ConnectionError) throw e;
       throw new CommandError(
         `Failed to exit guided-load: ${this.getErrorMessage(e)}`,
         'exitGuidedLoad'
@@ -1351,14 +1372,15 @@ export class VoltraClient {
     try {
       this.setRecordingState('preparing');
 
-      await this.adapter!.write(Workout.PREPARE);
+      await this.writeFrame(Workout.PREPARE);
       await delay(200);
-      await this.adapter!.write(Workout.SETUP);
+      await this.writeFrame(Workout.SETUP);
       await delay(300);
 
       this.setRecordingState('ready');
     } catch (e) {
       this.setRecordingState('idle');
+      if (e instanceof ConnectionError) throw e;
       throw new CommandError(`Failed to prepare: ${this.getErrorMessage(e)}`, 'prepareRecording');
     }
   }
@@ -1376,9 +1398,10 @@ export class VoltraClient {
     }
 
     try {
-      await this.adapter!.write(Workout.GO);
+      await this.writeFrame(Workout.GO);
       this.setRecordingState('active');
     } catch (e) {
+      if (e instanceof ConnectionError) throw e;
       throw new CommandError(`Failed to start: ${this.getErrorMessage(e)}`, 'startRecording');
     }
   }
@@ -1395,7 +1418,7 @@ export class VoltraClient {
 
     try {
       if (this.adapter) {
-        await this.adapter.write(Workout.STOP);
+        await this.writeFrame(Workout.STOP);
       }
     } catch (e) {
       console.warn('[VoltraClient] Stop error:', e);
@@ -1414,7 +1437,7 @@ export class VoltraClient {
     }
 
     try {
-      await this.adapter!.write(Workout.STOP);
+      await this.writeFrame(Workout.STOP);
       this.setRecordingState('ready');
     } catch (e) {
       console.warn('[VoltraClient] End set error:', e);
@@ -1986,15 +2009,53 @@ export class VoltraClient {
     // adapter so a setter call against a half-dead link reports the correct
     // disconnect rather than hanging on an opaque write rejection.
     if (this.adapter && !this.adapter.isLinkAlive()) {
-      const deviceId = this._connectedDeviceId ?? 'unknown';
-      this.cleanup();
-      this.setConnectionState('disconnected');
-      this.emit({ type: 'disconnected', deviceId });
+      this.flipToDisconnected();
       throw new ConnectionError(
         'BLE link lost — adapter write channel is no longer alive',
         ErrorCode.CONNECTION_LOST
       );
     }
+  }
+
+  /**
+   * Write a frame and treat any rejection as proof the BLE link is
+   * functionally dead. Bug 30 follow-up: the 0.7.2 `isLinkAlive()` check in
+   * `ensureConnected()` catches adapter-level state splits BEFORE a write,
+   * but a writeChar handle can also exist while the underlying GATT write
+   * pipe is jammed (supervision-timeout-adjacent or MTU-window collapse).
+   * In that state `isLinkAlive()` still reports alive, the adapter throws
+   * `Write failed`, and the SDK previously surfaced an opaque
+   * `CommandError`. Per `feedback_ble_write_fail_reconnect_not_retry`, a
+   * write failure means the consumer must reconnect — retrying the same
+   * setter is futile. Flip state to `'disconnected'`, fire the disconnect
+   * listener path, and rethrow as `CONNECTION_LOST` so the next setter
+   * call hits `ensureConnected()` and bails out immediately.
+   */
+  private async writeFrame(data: Uint8Array): Promise<void> {
+    try {
+      await this.adapter!.write(data);
+    } catch (e) {
+      this.flipToDisconnected();
+      const cause = e instanceof Error ? e : undefined;
+      throw new ConnectionError(
+        `BLE write failed — link is functionally dead, reconnect required: ${this.getErrorMessage(e)}`,
+        ErrorCode.CONNECTION_LOST,
+        cause
+      );
+    }
+  }
+
+  /**
+   * Tear down per-connection state, mark the client disconnected, and emit
+   * the `'disconnected'` event. Shared by `ensureConnected()` (link-dead
+   * pre-check) and `writeFrame()` (write-failed post-check) so both paths
+   * reach the same observable end-state.
+   */
+  private flipToDisconnected(): void {
+    const deviceId = this._connectedDeviceId ?? 'unknown';
+    this.cleanup();
+    this.setConnectionState('disconnected');
+    this.emit({ type: 'disconnected', deviceId });
   }
 
   private wrapError(e: unknown, context: string): Error {

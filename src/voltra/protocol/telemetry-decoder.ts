@@ -668,12 +668,13 @@ function decodeCmd10ToResult(data: Uint8Array): DecodeResult {
  *
  * Returns `null` for any frame that doesn't match the sub-type bytes or is
  * shorter than 52 bytes. The 37-byte payload following `aa 80 25` carries
- * runtime state (chains-engagement, assist toggle, runtime metrics that we
- * don't yet decode); the trailing 2 frame bytes are CRC16 and are NOT
- * included in `event.raw`.
+ * runtime state (active training mode, assist toggle, weight, effective
+ * chain force, eccentric overload). The trailing 2 frame bytes are CRC16
+ * and are NOT included in `event.raw`.
  *
- * Field offsets discovered via Campaign 3 recon
- * (`coordination/validation-runbooks/notes-2026-05-06T21-38-19.md`).
+ * Field offsets validated on-device in session E (2026-05-07); see
+ * `voltra-private/research/cmd-0x07-variable-layout-fix-2026-05-08.md` for
+ * the byte table and the disproof of the earlier variable-layout hypothesis.
  */
 export function decodeStateDump(data: Uint8Array): StateDumpEvent | null {
   if (data.length < STATE_DUMP_FRAME_LENGTH) return null;
@@ -688,9 +689,11 @@ export function decodeStateDump(data: Uint8Array): StateDumpEvent | null {
   const raw = data.slice(payloadStart, payloadEnd);
 
   return {
-    chainsActive: raw[0],
+    trainingMode: raw[0] as TrainingMode,
     assistMode: raw[1],
-    chainTargetTenths: readUint16LE(raw, 3),
+    weightLbsTenths: readUint16LE(raw, 3),
+    chainTargetForceTenths: readUint16LE(raw, 5),
+    eccentricPercentTenths: readUint16LE(raw, 7),
     raw,
   };
 }
@@ -927,24 +930,21 @@ export function decodeCmd0x0FResponse(data: Uint8Array): Cmd0x0FBulkResponse | n
 
 /**
  * Decode a device status notification.
- * Extracts battery level.
+ *
+ * Phase 0.5.2 hotfix: the `5523` `deviceInit` frame's byte [11] is a sub-cmd
+ * byte (constant `0xa7` in observed captures), NOT a battery percentage.
+ * Reading it produced nonsense readings (e.g. `0xa7 = 167%`). Battery now
+ * comes via paramID `2d4e` through the cmd=0x10 settings cascade, so the
+ * `deviceInit` branch no longer emits a `device_status` event. The `5523`
+ * frame falls through to `unknown` until a proper decoder lands. See
+ * `coordination/integration-plans/voltra-private-codegen/inventory-inbound.md`
+ * §2.12 for the canonical `5523` byte layout.
+ *
+ * The `statusBattery` (`5534`) branch is kept intact for any non-state-dump
+ * `5534` traffic, but in practice the 52-byte vendor-state-dump dispatch
+ * (which precedes header detection) consumes that header today.
  */
 function decodeDeviceStatus(data: Uint8Array): DecodeResult {
-  // Try device init format first
-  const initConfig = NotificationConfigs.deviceInit;
-  if (
-    initConfig.length &&
-    data.length >= initConfig.length &&
-    initConfig.batteryOffset !== undefined
-  ) {
-    const header = bytesToHex(data.slice(0, 2));
-    if (header === initConfig.header) {
-      const battery = data[initConfig.batteryOffset];
-      return { type: 'device_status', battery };
-    }
-  }
-
-  // Try status/battery format
   const statusConfig = NotificationConfigs.statusBattery;
   if (
     statusConfig.length &&

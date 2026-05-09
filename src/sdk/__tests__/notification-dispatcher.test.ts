@@ -128,15 +128,18 @@ describe('notification-dispatcher', () => {
 
   it('dispatches onStateDump for cmd=0x07 state-dump frames', () => {
     // Synthesize a state-dump payload mirroring the cmd=0x07 (aa 80 25)
-    // envelope contract documented in StateDumpEvent: chains-active flag at
-    // offset 0, fitness-assist toggle at offset 1, chain target tenths at
-    // offset 3 (uint16 LE). Raw `assistMode = 8` is the asymmetric idle
-    // sentinel — consumers MUST receive it unmodified so they can apply
-    // the off-when-not-1 rule themselves.
+    // envelope contract documented in StateDumpEvent: trainingMode at
+    // offset 0, fitness-assist toggle at offset 1, weight tenths at offset
+    // 3 (uint16 LE), effective chain force tenths at offset 5, eccentric
+    // percent tenths at offset 7. Raw `assistMode = 8` is the asymmetric
+    // idle sentinel — consumers MUST receive it unmodified so they can
+    // apply the off-when-not-1 rule themselves.
     const event: StateDumpEvent = {
-      chainsActive: 1,
+      trainingMode: TrainingMode.WeightTraining,
       assistMode: 8, // idle; not 0 — see voltra-private A10/A11 research notes
-      chainTargetTenths: 250,
+      weightLbsTenths: 250,
+      chainTargetForceTenths: 250,
+      eccentricPercentTenths: 0,
       raw: new Uint8Array(37),
     };
     mockDecode.mockReturnValue({ type: 'state_dump', event });
@@ -146,7 +149,7 @@ describe('notification-dispatcher', () => {
     expect(callbacks.onStateDump).toHaveBeenCalledOnce();
     expect(callbacks.onStateDump).toHaveBeenCalledWith(event);
     // Make sure we didn't accidentally fan out to the legacy settings
-    // listener — assistMode/chainsActive lives only on stateDump.
+    // listener — assistMode/trainingMode lives only on stateDump.
     expect(callbacks.onSettingsUpdate).not.toHaveBeenCalled();
   });
 
