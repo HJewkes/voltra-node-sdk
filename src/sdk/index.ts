@@ -34,6 +34,7 @@ export type {
   GuidedLoadState,
   GuidedLoadPhase,
   GuidedLoadStateListener,
+  SettingsFieldChangedEvent,
 } from './types';
 
 // Re-export DeviceSettings + StateDumpEvent for typing event listeners

@@ -378,3 +378,27 @@ export interface VoltraClientState {
  * Device chooser function for programmatic device selection (Node.js).
  */
 export type DeviceChooser = (devices: DiscoveredDevice[]) => DiscoveredDevice | null;
+
+/**
+ * Generic helper for per-field settings change events.
+ *
+ * Parameterised over a key of {@link DeviceSettings} so the `previous` /
+ * `current` values are narrowly typed to the field in question.
+ *
+ * Not yet emitted by the SDK — provided here as a typed building block for
+ * consumers that want to track individual field diffs derived from
+ * `onSettingsUpdate` callbacks.
+ *
+ * @example
+ * ```ts
+ * function handleFieldChange<F extends keyof DeviceSettings>(
+ *   event: SettingsFieldChangedEvent<F>
+ * ) { ... }
+ * ```
+ */
+export type SettingsFieldChangedEvent<F extends keyof DeviceSettings> = {
+  field: F;
+  previous: DeviceSettings[F];
+  current: DeviceSettings[F];
+  changedAt: string;
+};
