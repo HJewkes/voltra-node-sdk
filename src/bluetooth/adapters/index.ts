@@ -65,6 +65,7 @@ export {
   createTempoScenario,
   createShortRestScenario,
 } from './mock';
+export { ReplayBLEAdapter, type ReplayBLEAdapterOptions } from './replay';
 
 // Internal exports (for subclassing if needed, but not part of main API)
 // BaseBLEAdapter and WebBluetoothBase are intentionally not exported from main index
