@@ -114,6 +114,9 @@ export {
   createTempoScenario,
   createShortRestScenario,
 } from './bluetooth/adapters/mock';
+// ReplayBLEAdapter has no platform-specific peers either — value export OK.
+// Also reachable via the `@voltras/node-sdk/testing` subpath alongside Mock.
+export { ReplayBLEAdapter, type ReplayBLEAdapterOptions } from './bluetooth/adapters/replay';
 export { createBLEAdapter } from './bluetooth/adapters';
 
 // Adapter types (what consumers need to implement or use)
