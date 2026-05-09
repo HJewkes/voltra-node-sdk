@@ -33,7 +33,11 @@ describe('reconnect-handler', () => {
   // ===========================================================================
 
   describe('setupDisconnectMonitor', () => {
-    it('returns null when autoReconnect is false', () => {
+    it('always registers a connection state listener regardless of autoReconnect', () => {
+      // Slot-routing fix (2026-05-08): the monitor must install even when
+      // autoReconnect=false so the SDK still observes adapter-level
+      // disconnects and flips connectionState. The reconnect-vs-flip-only
+      // decision is made downstream in the client's handleDisconnect.
       const adapter = makeAdapter();
       const options: ReconnectOptions = {
         autoReconnect: false,
@@ -48,8 +52,8 @@ describe('reconnect-handler', () => {
         () => {}
       );
 
-      expect(result).toBeNull();
-      expect(adapter.onConnectionStateChange).not.toHaveBeenCalled();
+      expect(result).toBeTypeOf('function');
+      expect(adapter.onConnectionStateChange).toHaveBeenCalledOnce();
     });
 
     it('registers a connection state listener when autoReconnect is true', () => {
@@ -69,6 +73,27 @@ describe('reconnect-handler', () => {
 
       expect(unsub).toBeTypeOf('function');
       expect(adapter.onConnectionStateChange).toHaveBeenCalledOnce();
+    });
+
+    it('calls handleDisconnect when autoReconnect=false and adapter disconnects (slot-routing fix)', () => {
+      const adapter = makeAdapter();
+      let capturedCallback: ConnectionStateCallback | null = null;
+      adapter.onConnectionStateChange.mockImplementation((cb: ConnectionStateCallback) => {
+        capturedCallback = cb;
+        return () => {};
+      });
+
+      const handleDisconnect = vi.fn();
+      const options: ReconnectOptions = {
+        autoReconnect: false,
+        maxReconnectAttempts: 3,
+        reconnectDelayMs: 1000,
+      };
+
+      setupDisconnectMonitor(adapter, options, () => true, handleDisconnect);
+
+      capturedCallback!('disconnected');
+      expect(handleDisconnect).toHaveBeenCalledOnce();
     });
 
     it('calls handleDisconnect when state goes to disconnected while connected', () => {
