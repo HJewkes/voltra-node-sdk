@@ -109,6 +109,7 @@
     "webbluetooth": "^3.4.0"
   },
   "devDependencies": {
+    "@voltras/private": "1.0.0",
     "@commitlint/cli": "^20.4.1",
     "@commitlint/config-conventional": "^20.4.1",
     "@types/node": "^25.2.3",
