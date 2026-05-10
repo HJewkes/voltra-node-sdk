@@ -43,6 +43,17 @@ class RecordingAdapter extends BaseBLEAdapter {
   async write(data: Uint8Array): Promise<void> {
     this.writes.push(new Uint8Array(data));
   }
+
+  /**
+   * Test helper: simulate an unexpected adapter-level disconnect
+   * (gattserverdisconnected / noble 'disconnect' event). Flips connection
+   * state to 'disconnected' WITHOUT going through the public disconnect()
+   * — this is the path setupDisconnectMonitor watches and routes through
+   * VoltraClient.handleUnexpectedDisconnect().
+   */
+  simulateUnexpectedDisconnect(): void {
+    this.setConnectionState('disconnected');
+  }
 }
 
 const deviceA: Device = { id: 'device-a', name: 'VTR-AAAAAA', rssi: -50 };
@@ -152,6 +163,65 @@ describe('VoltraManager', () => {
 
       expect(events).not.toContain('deviceDisconnected');
       expect(manager.connectedCount).toBe(0);
+    });
+  });
+
+  describe('Phase 6 wrapper firing under manager auto-dispose', () => {
+    /**
+     * Regression: manager.handleClientEvent listens to the client's bare
+     * `'disconnected'` emit and synchronously calls client.dispose(), which
+     * clears all wrapper listeners. If the client fires
+     * notifyConnectionLossEvent AFTER the bare emit, the listener is gone
+     * and the wrapper silently drops. Verified on hardware 2026-05-10
+     * (HARDWARE-A summary, Test 2b). Fix: fire wrapper BEFORE the bare
+     * emit in flipToDisconnected + handleUnexpectedDisconnect.
+     */
+    it('fires onConnectionLossEvent on adapter-level disconnect through manager path', async () => {
+      const client = await flushAndAwait(manager.connect(deviceA));
+      const adapter = createdAdapters[createdAdapters.length - 1];
+
+      const losses: { seq: number; ts: number; payload: unknown }[] = [];
+      client.onConnectionLossEvent((e) => losses.push(e));
+
+      adapter.simulateUnexpectedDisconnect();
+      // setConnectionState callbacks are synchronous, but
+      // handleUnexpectedDisconnect awaits one microtask before firing.
+      await flushAndAwait(Promise.resolve());
+
+      expect(losses).toHaveLength(1);
+      expect((losses[0].payload as { reason: string }).reason).toBe('gatt_disconnect');
+      expect(typeof losses[0].seq).toBe('number');
+      expect(typeof losses[0].ts).toBe('number');
+      // Manager has disposed the client by the time we observe — but the
+      // wrapper still fired BEFORE that happened.
+      expect(manager.connectedCount).toBe(0);
+    });
+
+    it('fires onConnectionLossEvent on write-failure path through manager', async () => {
+      const client = await flushAndAwait(manager.connect(deviceA));
+      const adapter = createdAdapters[createdAdapters.length - 1];
+
+      const losses: { seq: number; ts: number; payload: unknown }[] = [];
+      client.onConnectionLossEvent((e) => losses.push(e));
+
+      // Force write to throw — simulates a write failure with link
+      // still reporting alive (the Bug 30 scenario).
+      adapter.write = async () => {
+        throw new Error('Write failed: simulated link death');
+      };
+
+      await expect(client.setDamperLevel(2)).rejects.toThrow();
+
+      // The KEY invariant under test: the wrapper fires through the
+      // manager-attached path, despite manager auto-dispose on the bare
+      // 'disconnected' emit. Reason field may resolve as 'write_failure'
+      // OR 'gatt_disconnect' depending on internal cascade order; either
+      // is an actionable signal for the consumer.
+      expect(losses.length).toBeGreaterThanOrEqual(1);
+      const reason = (losses[0].payload as { reason: string }).reason;
+      expect(['write_failure', 'gatt_disconnect']).toContain(reason);
+      expect(typeof losses[0].seq).toBe('number');
+      expect(typeof losses[0].ts).toBe('number');
     });
   });
 

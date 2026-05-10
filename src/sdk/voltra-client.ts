@@ -2252,10 +2252,12 @@ export class VoltraClient {
     if (!this.options.autoReconnect || !this._lastConnectedDevice) {
       this.cleanup();
       this.setConnectionState('disconnected');
-      this.emit({ type: 'disconnected', deviceId });
+      // Fire wrapper notification BEFORE the bare emit — see flipToDisconnected
+      // for the manager-auto-dispose ordering hazard.
       if (!isVoluntary) {
         this.notifyConnectionLossEvent(deviceId, deviceName, 'gatt_disconnect', lastSettings);
       }
+      this.emit({ type: 'disconnected', deviceId });
       return;
     }
 
@@ -2272,10 +2274,12 @@ export class VoltraClient {
       onReconnectFailed: () => {
         this.cleanup();
         this.setConnectionState('disconnected');
-        this.emit({ type: 'disconnected', deviceId: this._connectedDeviceId ?? 'unknown' });
+        // Fire wrapper notification BEFORE the bare emit — see
+        // flipToDisconnected for the manager-auto-dispose ordering hazard.
         if (!isVoluntary) {
           this.notifyConnectionLossEvent(deviceId, deviceName, 'gatt_disconnect', lastSettings);
         }
+        this.emit({ type: 'disconnected', deviceId: this._connectedDeviceId ?? 'unknown' });
       },
     });
 
@@ -2413,8 +2417,12 @@ export class VoltraClient {
     const lastSettings = this._lastDeviceSettings;
     this.cleanup();
     this.setConnectionState('disconnected');
-    this.emit({ type: 'disconnected', deviceId });
+    // Fire the Phase 6 wrapper notification BEFORE the bare 'disconnected'
+    // emit. VoltraManager.handleClientEvent listens to the bare emit and
+    // synchronously calls client.dispose(), which clears all wrapper
+    // listeners — so any wrapper fire after the emit is a silent no-op.
     this.notifyConnectionLossEvent(deviceId, deviceName, reason, lastSettings);
+    this.emit({ type: 'disconnected', deviceId });
   }
 
   private wrapError(e: unknown, context: string): Error {
