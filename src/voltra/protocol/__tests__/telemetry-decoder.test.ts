@@ -879,7 +879,7 @@ describe('decodeNotification – settings_update', () => {
       { paramIdHex: ParamIdHex.BASE_WEIGHT, value: 100 },
       { paramIdHex: ParamIdHex.CHAINS, value: 20 },
       { paramIdHex: ParamIdHex.ECCENTRIC, value: 50 },
-      { paramIdHex: ParamIdHex.UNKNOWN_893E, value: 260 },
+      { paramIdHex: ParamIdHex.BP_SET_FITNESS_MODE, value: 260 },
       { paramIdHex: ParamIdHex.TRAINING_MODE, value: TrainingMode.WeightTraining },
     ]);
 
