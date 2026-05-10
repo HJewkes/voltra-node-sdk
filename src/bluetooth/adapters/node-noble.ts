@@ -469,6 +469,33 @@ export class NoblePeripheral implements Peripheral {
    */
   private boundDataHandler: ((data: Buffer, isNotification: boolean) => void) | null = null;
 
+  /**
+   * Per-peripheral serialization queue for `write()`. Concurrent
+   * `adapter.write()` calls chain onto this and execute one-at-a-time
+   * against the underlying noble characteristic.
+   *
+   * Why: `@stoprocent/noble`'s `Characteristic.writeAsync` registers its
+   * result callback via `onceExclusive('write', cb)`, which REMOVES any
+   * prior listener before adding the new one. Two concurrent
+   * `writeAsync` calls leave only the second callback attached; the
+   * first ACK fires it, and subsequent ACKs are silently dropped — so
+   * the first caller's promise hangs forever despite the device having
+   * received and applied the bytes. See
+   * `coordination/FINDING-2026-05-10-cascade-write-hang.md` for the
+   * source-level diagnosis and
+   * `__tests__/noble-once-exclusive-bug.test.ts` for the regression
+   * pin against the noble package itself.
+   *
+   * The mutex is per-peripheral (held on the instance, not as a static
+   * shared field) so cross-peripheral writes — e.g. a bilateral cascade
+   * across two devices — still run concurrently. Within a single
+   * peripheral, writes are inherently single-pipe at the BLE layer
+   * anyway (one ATT request outstanding per link without EATT, which
+   * neither noble fork supports), so serializing here matches the
+   * underlying contract.
+   */
+  private writeQueue: Promise<void> = Promise.resolve();
+
   constructor(
     underlying: NoblePeripheralLike,
     id: string,
@@ -569,6 +596,26 @@ export class NoblePeripheral implements Peripheral {
   }
 
   async write(data: Uint8Array, options?: PeripheralWriteOptions): Promise<void> {
+    // Serialize per-peripheral: see `writeQueue` field comment for the
+    // noble bug this guards against. Each call chains onto the prior
+    // call's settlement (resolve OR reject) so a failed write does not
+    // poison the chain for subsequent callers.
+    //
+    // Status checks live INSIDE `_writeImpl` (not before queueing) so
+    // that if the prior write fails and flips status to `'lost'`, the
+    // next call observes the failed state and throws `PeripheralLost`
+    // instead of attempting a write through a dead writeChar.
+    const myTurn = this.writeQueue.catch(() => undefined);
+    const myWrite = myTurn.then(() => this._writeImpl(data, options));
+    // Update the queue pointer BEFORE returning so a same-tick second
+    // call chains onto this write (not onto the prior one). The
+    // `.catch` strips rejection from the chain pointer; the original
+    // rejection still propagates to `myWrite`'s caller below.
+    this.writeQueue = myWrite.catch(() => undefined);
+    return myWrite;
+  }
+
+  private async _writeImpl(data: Uint8Array, options?: PeripheralWriteOptions): Promise<void> {
     if (this._status !== 'connected') {
       throw new PeripheralLost(this.id, this._status);
     }
