@@ -61,12 +61,41 @@ export {
   type SummaryListener,
   type SetSummaryListener,
   type InProgressListener,
+  type ModeConfirmedListener,
+  type SettingsUpdateListener,
+  type StateDumpListener,
+  type BatteryUpdateListener,
+  type ConnectionStateListener,
   type ScanOptions,
   type RowingDistancePreset,
   type GuidedLoadOptions,
   type GuidedLoadState,
   type GuidedLoadPhase,
   type GuidedLoadStateListener,
+  type SettingsFieldChangedEvent,
+  // Phase 6 event wrappers — envelope + bare payload shapes + aliases
+  type PhaseSixEventEnvelope,
+  type BatteryUpdate,
+  type RawFrame,
+  type ModeChange,
+  type ConnectionStateChange,
+  type ConnectionLoss,
+  type GuidedLoadStatePayload,
+  type ModeRevert,
+  type BatteryUpdateEvent,
+  type RawFrameEvent,
+  type ModeChangeEvent,
+  type ConnectionStateChangeEvent,
+  type ConnectionLossEvent,
+  type GuidedLoadStateEvent,
+  type ModeRevertEvent,
+  type BatteryUpdateEventListener,
+  type RawFrameEventListener,
+  type ModeChangeEventListener,
+  type ConnectionStateChangeEventListener,
+  type ConnectionLossEventListener,
+  type GuidedLoadStateEventListener,
+  type ModeRevertEventListener,
 } from './sdk';
 
 // =============================================================================
@@ -94,6 +123,9 @@ export {
   createTempoScenario,
   createShortRestScenario,
 } from './bluetooth/adapters/mock';
+// ReplayBLEAdapter has no platform-specific peers either — value export OK.
+// Also reachable via the `@voltras/node-sdk/testing` subpath alongside Mock.
+export { ReplayBLEAdapter, type ReplayBLEAdapterOptions } from './bluetooth/adapters/replay';
 export { createBLEAdapter } from './bluetooth/adapters';
 
 // Adapter types (what consumers need to implement or use)
@@ -161,6 +193,11 @@ export type {
 
 export type { VoltraConnectionState } from './voltra/models/connection';
 
+// DeviceSettings is the protocol-level settings type used in event payloads
+// (SettingsUpdateListener, StateDumpEvent). Exported here so consumers can
+// type their event listener callbacks without reaching into subpaths.
+export type { DeviceSettings } from './voltra/protocol/types';
+
 // =============================================================================
 // Telemetry
 // =============================================================================
@@ -180,6 +217,15 @@ export {
   type DecodeResult,
   type MessageType,
 } from './voltra/protocol/telemetry-decoder';
+
+// Rowing telemetry event payload types (HYPOTHESIS — pending on-device validation
+// in a future Rowing-mode session). The decoder functions that produce these are
+// already exported above via `decodeNotification` / `decodeVendorPerRep` et al.
+export type {
+  RowingSummaryEvent,
+  RowingStatusEvent,
+  WaveformChunkEvent,
+} from './voltra/protocol/types';
 
 export {
   MovementPhase,

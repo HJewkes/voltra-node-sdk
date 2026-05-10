@@ -66,6 +66,16 @@
         "types": "./dist/types/bluetooth/adapters/web.d.ts",
         "default": "./dist/cjs/bluetooth/adapters/web.js"
       }
+    },
+    "./testing": {
+      "import": {
+        "types": "./dist/types/testing/index.d.ts",
+        "default": "./dist/esm/testing/index.js"
+      },
+      "require": {
+        "types": "./dist/types/testing/index.d.ts",
+        "default": "./dist/cjs/testing/index.js"
+      }
     }
   },
   "files": [
@@ -109,6 +119,7 @@
     "webbluetooth": "^3.4.0"
   },
   "devDependencies": {
+    "@voltras/private": "1.0.0",
     "@commitlint/cli": "^20.4.1",
     "@commitlint/config-conventional": "^20.4.1",
     "@types/node": "^25.2.3",

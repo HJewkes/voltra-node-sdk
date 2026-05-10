@@ -5,7 +5,6 @@
  */
 
 import type { BLEAdapter, Peripheral } from '../bluetooth/adapters/types';
-import type { DiscoveredDevice } from '../bluetooth/models/device';
 import type { TelemetryFrame } from '../voltra/models/telemetry';
 import type { VoltraConnectionState } from '../voltra/models/connection';
 import type { VoltraDeviceSettings, VoltraRecordingState } from '../voltra/models/device';
@@ -149,6 +148,13 @@ export type BatteryUpdateListener = (battery: number) => void;
  * value other than `1` should be treated as off).
  */
 export type StateDumpListener = (event: StateDumpEvent) => void;
+
+/**
+ * Connection-state change listener — fires whenever the client transitions
+ * between {@link VoltraConnectionState} values. Consistent with the other
+ * `XxxListener` aliases in the SDK.
+ */
+export type ConnectionStateListener = (state: VoltraConnectionState) => void;
 
 // =============================================================================
 // Typed vendor-frame events (0.6.0+)
@@ -333,6 +339,178 @@ export type SetSummaryListener = (event: SetSummaryEvent) => void;
 /** InProgress listener (called ~1 Hz during active sets). */
 export type InProgressListener = (event: InProgressEvent) => void;
 
+// =============================================================================
+// Phase 6 event wrappers (0.10.0+)
+//
+// All 7 wrappers share the uniform `PhaseSixEventEnvelope<TPayload>` shape.
+// The envelope carries:
+//   - `seq`     — per-connection monotonic counter (resets to 0 on connect())
+//   - `ts`      — wall-clock ms since epoch captured at SDK observation time
+//   - `payload` — the bare event shape, identical to what the matching non-Event
+//                 listener receives (where one exists)
+//
+// Bare-value listeners (`onBatteryUpdate`, `onRawFrame`, etc.) keep firing for
+// backwards compatibility. Use the `on*Event` variants for the envelope shape.
+//
+// `ConnectionLoss.lastKnownSettings` lets the MCP bridge drop its
+// `staleSinceDisconnect` machinery — the SDK captures `_settings` at the
+// moment the link dies so consumers don't have to.
+//
+// `ModeRevert` lifts the Bug 22 mode-revert latch out of the MCP bridge: when
+// the device confirms a mode that disagrees with the last `setMode()` call
+// (within a 2s window), the SDK fires `onModeRevertEvent`.
+// =============================================================================
+
+/**
+ * Uniform envelope for all Phase 6 event wrappers.
+ *
+ * `seq` resets to 0 on each successful `connect()`.
+ * `ts` is wall-clock milliseconds since epoch (use `new Date(event.ts)` to
+ * convert).
+ * `payload` is the bare event shape — identical to the parameter of the
+ * matching non-Event listener where one exists.
+ */
+export interface PhaseSixEventEnvelope<TPayload> {
+  /** Monotonic sequence number assigned at emission (resets on connect()). */
+  seq: number;
+  /** Wall-clock timestamp at emission (ms since epoch). */
+  ts: number;
+  /** The bare event as fired on the matching non-Event listener. */
+  payload: TPayload;
+}
+
+// ---------------------------------------------------------------------------
+// Bare payload shapes
+// ---------------------------------------------------------------------------
+
+/** Payload for {@link BatteryUpdateEvent}. */
+export interface BatteryUpdate {
+  /** Battery level 0-100. */
+  level: number;
+}
+
+/** Payload for {@link RawFrameEvent}. */
+export interface RawFrame {
+  /** Raw bytes of the inbound BLE notification (before decode). */
+  bytes: Uint8Array;
+}
+
+/**
+ * Payload for {@link ModeChangeEvent}.
+ *
+ * `from` is `null` on the first observation post-connect — the SDK has no
+ * pre-connect mode to compare against.
+ */
+export interface ModeChange {
+  from: TrainingMode | null;
+  to: TrainingMode;
+}
+
+/**
+ * Payload for {@link ConnectionStateChangeEvent}.
+ *
+ * `lastKnownSettings` is populated for transitions that leave the connected
+ * state; for entry transitions it is the cached pre-disconnect settings if
+ * available, otherwise `null`.
+ */
+export interface ConnectionStateChange {
+  from: VoltraConnectionState;
+  to: VoltraConnectionState;
+  deviceId: string;
+  deviceName: string;
+  lastKnownSettings: DeviceSettings | null;
+}
+
+/**
+ * Payload for {@link ConnectionLossEvent}.
+ *
+ * Fired on involuntary disconnects only (gatt disconnect, write failure during
+ * a connected session). Voluntary `client.disconnect()` does NOT fire this.
+ *
+ * `lastKnownSettings` carries the SDK's `_settings` snapshot at the moment of
+ * loss; `reason` known values today: `'gatt_disconnect'`, `'write_failure'`.
+ */
+export interface ConnectionLoss {
+  deviceId: string;
+  deviceName: string;
+  /** Free-form string for forward compatibility. */
+  reason: string;
+  lastKnownSettings: DeviceSettings | null;
+}
+
+/**
+ * Payload for {@link GuidedLoadStateEvent}.
+ *
+ * Mirrors the bare {@link GuidedLoadState} shape fired by `onGuidedLoadState`.
+ * `phase` is the current lifecycle phase; `countdownRemainingMs` decreases
+ * from ~3000 to 0 during the countdown phase and is `null` otherwise.
+ */
+export interface GuidedLoadStatePayload {
+  phase: GuidedLoadPhase;
+  countdownRemainingMs: number | null;
+  fitnessModeRaw: number | null;
+}
+
+/**
+ * Payload for {@link ModeRevertEvent}.
+ *
+ * SDK-synthesized — no bare-listener equivalent.
+ */
+export interface ModeRevert {
+  /** What the SDK had been told to set via setMode(). */
+  expectedMode: TrainingMode;
+  /** Mode the device confirmed *before* the revert. */
+  from: TrainingMode;
+  /** Mode the device reverted *to*. */
+  to: TrainingMode;
+}
+
+// ---------------------------------------------------------------------------
+// Wrapper aliases (XxxEvent = PhaseSixEventEnvelope<XxxPayload>)
+// ---------------------------------------------------------------------------
+
+/** Wrapper for battery-level updates (parallel to {@link BatteryUpdateListener}). */
+export type BatteryUpdateEvent = PhaseSixEventEnvelope<BatteryUpdate>;
+
+/** Wrapper for raw inbound BLE frames (parallel to {@link RawFrameListener}). */
+export type RawFrameEvent = PhaseSixEventEnvelope<RawFrame>;
+
+/**
+ * Wrapper for confirmed training-mode changes (parallel to
+ * {@link ModeConfirmedListener}).
+ */
+export type ModeChangeEvent = PhaseSixEventEnvelope<ModeChange>;
+
+/** Wrapper for connection-state transitions. */
+export type ConnectionStateChangeEvent = PhaseSixEventEnvelope<ConnectionStateChange>;
+
+/**
+ * Wrapper for involuntary disconnects. See {@link ConnectionLoss} for payload
+ * shape.
+ */
+export type ConnectionLossEvent = PhaseSixEventEnvelope<ConnectionLoss>;
+
+/**
+ * Wrapper for guided-load state transitions (parallel to
+ * {@link GuidedLoadStateListener}).
+ */
+export type GuidedLoadStateEvent = PhaseSixEventEnvelope<GuidedLoadStatePayload>;
+
+/**
+ * Mode-revert event — fired when the device confirms a different training mode
+ * than the SDK last requested via {@link VoltraClient.setMode}, within a 2s
+ * confirmation window. SDK-synthesized; no bare-listener equivalent.
+ */
+export type ModeRevertEvent = PhaseSixEventEnvelope<ModeRevert>;
+
+export type BatteryUpdateEventListener = (event: BatteryUpdateEvent) => void;
+export type RawFrameEventListener = (event: RawFrameEvent) => void;
+export type ModeChangeEventListener = (event: ModeChangeEvent) => void;
+export type ConnectionStateChangeEventListener = (event: ConnectionStateChangeEvent) => void;
+export type ConnectionLossEventListener = (event: ConnectionLossEvent) => void;
+export type GuidedLoadStateEventListener = (event: GuidedLoadStateEvent) => void;
+export type ModeRevertEventListener = (event: ModeRevertEvent) => void;
+
 // <Bug-22>
 /**
  * Distance preset for {@link VoltraClient.startRow}. Pass `'JustRow'` for
@@ -375,6 +553,25 @@ export interface VoltraClientState {
 }
 
 /**
- * Device chooser function for programmatic device selection (Node.js).
+ * Generic helper for per-field settings change events.
+ *
+ * Parameterised over a key of {@link DeviceSettings} so the `previous` /
+ * `current` values are narrowly typed to the field in question.
+ *
+ * Not yet emitted by the SDK — provided here as a typed building block for
+ * consumers that want to track individual field diffs derived from
+ * `onSettingsUpdate` callbacks.
+ *
+ * @example
+ * ```ts
+ * function handleFieldChange<F extends keyof DeviceSettings>(
+ *   event: SettingsFieldChangedEvent<F>
+ * ) { ... }
+ * ```
  */
-export type DeviceChooser = (devices: DiscoveredDevice[]) => DiscoveredDevice | null;
+export type SettingsFieldChangedEvent<F extends keyof DeviceSettings> = {
+  field: F;
+  previous: DeviceSettings[F];
+  current: DeviceSettings[F];
+  changedAt: string;
+};
