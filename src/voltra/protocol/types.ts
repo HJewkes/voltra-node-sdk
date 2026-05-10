@@ -382,26 +382,6 @@ export interface DeviceSettings {
    * Reflected when paramId 0x0351 is present in a settings_update notification.
    */
   damperLevel?: number;
-  // <Decoder-cmd07-cmd10> Phase 1a additions: assist mode + chains-active flag,
-  // both reflected by the cmd=0x07 (52-byte aa80-25 envelope) state dump.
-  /**
-   * Fitness-assist toggle observed in the state-dump frame at payload offset 1
-   * (post `aa 80 25`). 0 = OFF, 0x02 = ON; see Campaign 3 (validation
-   * 2026-05-06T21-38-19) for byte layout discovery. Other values pass through
-   * verbatim.
-   */
-  assistMode?: number;
-  /**
-   * Chains-active flag from the state-dump frame at payload offset 0
-   * (post `aa 80 25`). 0 = chains not engaged, 0x01 = chains engaged. Other
-   * values pass through verbatim.
-   */
-  chainsActive?: number;
-  /**
-   * Chain target weight in tenths of pounds (uint16 LE) decoded from the
-   * state-dump frame. Only meaningful when `chainsActive` is non-zero.
-   */
-  chainTargetTenths?: number;
 }
 
 // <Decoder-cmd07-cmd10> ==========================================================
