@@ -73,7 +73,15 @@ export {
   type GuidedLoadPhase,
   type GuidedLoadStateListener,
   type SettingsFieldChangedEvent,
-  // Phase 6 event wrappers
+  // Phase 6 event wrappers — envelope + bare payload shapes + aliases
+  type PhaseSixEventEnvelope,
+  type BatteryUpdate,
+  type RawFrame,
+  type ModeChange,
+  type ConnectionStateChange,
+  type ConnectionLoss,
+  type GuidedLoadStatePayload,
+  type ModeRevert,
   type BatteryUpdateEvent,
   type RawFrameEvent,
   type ModeChangeEvent,

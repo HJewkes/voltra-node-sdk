@@ -1,10 +1,11 @@
 /**
- * Phase 6 event wrappers — `seq` + `ts` shape, parallel listeners,
- * mode-revert detection, and connection-loss event capture.
+ * Phase 6 event wrappers — uniform `PhaseSixEventEnvelope` shape, parallel
+ * listeners, mode-revert detection, and connection-loss event capture.
  *
- * Each wrapper listener fires alongside the legacy bare-value listener.
- * Per-connection `seq` resets to 0 on every successful `connect()`. ISO
- * `ts` is monotonically non-decreasing within a connection.
+ * All 7 wrappers share `{ seq, ts, payload }`.  Bare-value listeners keep
+ * firing alongside the `on*Event` variants.  Per-connection `seq` resets to 0
+ * on every successful `connect()`.  `ts` is a wall-clock ms-since-epoch
+ * number.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -98,17 +99,17 @@ describe('Phase 6 event wrappers', () => {
     });
   });
 
-  describe('ts (ISO timestamp)', () => {
-    it('produces valid ISO 8601 strings', () => {
+  describe('ts (ms-since-epoch number)', () => {
+    it('produces a numeric timestamp', () => {
       const events: ModeChangeEvent[] = [];
       client.onModeChangeEvent((e) => events.push(e));
 
       adapter.setTrainingMode(TrainingMode.WeightTraining);
 
       expect(events).toHaveLength(1);
-      // Round-trip: parse and re-serialize. ISO 8601 round-trips losslessly.
-      const parsed = new Date(events[0].ts);
-      expect(parsed.toISOString()).toBe(events[0].ts);
+      expect(typeof events[0].ts).toBe('number');
+      // ts should be a reasonable epoch value (after 2024-01-01).
+      expect(events[0].ts).toBeGreaterThan(1_700_000_000_000);
     });
 
     it('ts is monotonically non-decreasing within a connection', async () => {
@@ -121,10 +122,29 @@ describe('Phase 6 event wrappers', () => {
       await vi.advanceTimersByTimeAsync(10);
       adapter.setTrainingMode(TrainingMode.Band);
 
-      const tsValues = events.map((e) => new Date(e.ts).getTime());
+      const tsValues = events.map((e) => e.ts);
       for (let i = 1; i < tsValues.length; i++) {
         expect(tsValues[i]).toBeGreaterThanOrEqual(tsValues[i - 1]);
       }
+    });
+  });
+
+  describe('uniform envelope shape', () => {
+    it('all wrappers carry seq, ts, and payload at the top level', () => {
+      const events: ModeChangeEvent[] = [];
+      client.onModeChangeEvent((e) => events.push(e));
+      adapter.setTrainingMode(TrainingMode.WeightTraining);
+
+      expect(events).toHaveLength(1);
+      const e = events[0];
+      expect(typeof e.seq).toBe('number');
+      expect(typeof e.ts).toBe('number');
+      expect(typeof e.payload).toBe('object');
+      // payload carries the bare fields, not the envelope
+      expect('from' in e.payload).toBe(true);
+      expect('to' in e.payload).toBe(true);
+      expect('seq' in e.payload).toBe(false);
+      expect('ts' in e.payload).toBe(false);
     });
   });
 
@@ -139,20 +159,20 @@ describe('Phase 6 event wrappers', () => {
 
       expect(bare).toEqual([TrainingMode.Damper]);
       expect(wrapped).toHaveLength(1);
-      expect(wrapped[0].to).toBe(TrainingMode.Damper);
+      expect(wrapped[0].payload.to).toBe(TrainingMode.Damper);
     });
 
-    it('mode change wrapper carries previous confirmed mode in `from`', () => {
+    it('mode change wrapper carries previous confirmed mode in payload.from', () => {
       const wrapped: ModeChangeEvent[] = [];
       client.onModeChangeEvent((e) => wrapped.push(e));
 
       adapter.setTrainingMode(TrainingMode.WeightTraining);
       adapter.setTrainingMode(TrainingMode.Damper);
 
-      expect(wrapped[0].from).toBeNull();
-      expect(wrapped[0].to).toBe(TrainingMode.WeightTraining);
-      expect(wrapped[1].from).toBe(TrainingMode.WeightTraining);
-      expect(wrapped[1].to).toBe(TrainingMode.Damper);
+      expect(wrapped[0].payload.from).toBeNull();
+      expect(wrapped[0].payload.to).toBe(TrainingMode.WeightTraining);
+      expect(wrapped[1].payload.from).toBe(TrainingMode.WeightTraining);
+      expect(wrapped[1].payload.to).toBe(TrainingMode.Damper);
     });
 
     it('raw frame: bare-value listener still fires alongside wrapper', () => {
@@ -166,9 +186,9 @@ describe('Phase 6 event wrappers', () => {
 
       expect(bare).toHaveLength(1);
       expect(wrapped).toHaveLength(1);
-      expect(wrapped[0].bytes).toBe(payload);
+      expect(wrapped[0].payload.bytes).toBe(payload);
       expect(wrapped[0].seq).toBeGreaterThan(0);
-      expect(typeof wrapped[0].ts).toBe('string');
+      expect(typeof wrapped[0].ts).toBe('number');
     });
   });
 
@@ -202,9 +222,9 @@ describe('Phase 6 event wrappers', () => {
 
       expect(bare).toEqual([72]);
       expect(wrapped).toHaveLength(1);
-      expect(wrapped[0].level).toBe(72);
+      expect(wrapped[0].payload.level).toBe(72);
       expect(wrapped[0].seq).toBeGreaterThan(0);
-      expect(typeof wrapped[0].ts).toBe('string');
+      expect(typeof wrapped[0].ts).toBe('number');
     });
   });
 
@@ -227,10 +247,10 @@ describe('Phase 6 event wrappers', () => {
       adapter.setTrainingMode(TrainingMode.Damper);
 
       expect(reverts).toHaveLength(1);
-      expect(reverts[0].expectedMode).toBe(TrainingMode.WeightTraining);
-      expect(reverts[0].to).toBe(TrainingMode.Damper);
+      expect(reverts[0].payload.expectedMode).toBe(TrainingMode.WeightTraining);
+      expect(reverts[0].payload.to).toBe(TrainingMode.Damper);
       expect(reverts[0].seq).toBeGreaterThan(0);
-      expect(typeof reverts[0].ts).toBe('string');
+      expect(typeof reverts[0].ts).toBe('number');
     });
 
     it('does NOT fire ModeRevertEvent when device confirms the requested mode', async () => {
@@ -271,14 +291,14 @@ describe('Phase 6 event wrappers', () => {
       try {
         await flushAndAwait(client2.connect(device));
 
-        const transitions = events.map((e) => `${e.from}->${e.to}`);
+        const transitions = events.map((e) => `${e.payload.from}->${e.payload.to}`);
         expect(transitions).toContain('disconnected->connecting');
         expect(transitions).toContain('connecting->authenticating');
         expect(transitions).toContain('authenticating->connected');
 
         for (const e of events) {
-          expect(e.deviceId).toBe(device.id);
-          expect(typeof e.ts).toBe('string');
+          expect(e.payload.deviceId).toBe(device.id);
+          expect(typeof e.ts).toBe('number');
         }
       } finally {
         client2.dispose();
@@ -295,12 +315,12 @@ describe('Phase 6 event wrappers', () => {
       await flushAndAwait(Promise.resolve());
 
       expect(losses).toHaveLength(1);
-      expect(losses[0].reason).toBe('gatt_disconnect');
-      expect(losses[0].deviceId).toBe(device.id);
-      expect(typeof losses[0].ts).toBe('string');
+      expect(losses[0].payload.reason).toBe('gatt_disconnect');
+      expect(losses[0].payload.deviceId).toBe(device.id);
+      expect(typeof losses[0].ts).toBe('number');
       // lastKnownSettings may be null (no settings cascade in mock) but the
-      // field MUST be present on the event shape.
-      expect('lastKnownSettings' in losses[0]).toBe(true);
+      // field MUST be present on the payload shape.
+      expect('lastKnownSettings' in losses[0].payload).toBe(true);
     });
 
     it('fires ConnectionLossEvent on write_failure path (link silently dies)', async () => {
@@ -311,8 +331,8 @@ describe('Phase 6 event wrappers', () => {
       await expect(client.setDamperLevel(2)).rejects.toThrow();
 
       expect(losses).toHaveLength(1);
-      expect(losses[0].reason).toBe('write_failure');
-      expect(losses[0].deviceId).toBe(device.id);
+      expect(losses[0].payload.reason).toBe('write_failure');
+      expect(losses[0].payload.deviceId).toBe(device.id);
     });
 
     it('does NOT fire ConnectionLossEvent on voluntary disconnect()', async () => {

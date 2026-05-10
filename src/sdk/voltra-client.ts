@@ -127,6 +127,13 @@ import type {
   ConnectionLossEventListener,
   GuidedLoadStateEventListener,
   ModeRevertEventListener,
+  BatteryUpdate,
+  RawFrame,
+  ModeChange,
+  ConnectionStateChange,
+  ConnectionLoss,
+  GuidedLoadStatePayload,
+  ModeRevert,
 } from './types';
 import type { DeviceSettings } from '../voltra/protocol/types';
 import {
@@ -2201,7 +2208,7 @@ export class VoltraClient {
         console.error('[VoltraClient] guided-load listener error:', e);
       }
     });
-    this.notifyGuidedLoadStateEvent(next.phase);
+    this.notifyGuidedLoadStateEvent(next);
   }
 
   /** Cancel the guided-load poll + end timers. Idempotent. */
@@ -2436,18 +2443,15 @@ export class VoltraClient {
     return ++this._eventSeq;
   }
 
-  /** Current ISO-8601 timestamp — extracted so tests can fake it via Date.now. */
-  private nowIso(): string {
-    return new Date().toISOString();
+  /** Current wall-clock timestamp in ms since epoch for envelope `ts` fields. */
+  private nowMs(): number {
+    return Date.now();
   }
 
   private notifyBatteryUpdateEvent(level: number): void {
     if (this.batteryUpdateEventListeners.size === 0) return;
-    const event: BatteryUpdateEvent = {
-      level,
-      seq: this.nextSeq(),
-      ts: this.nowIso(),
-    };
+    const payload: BatteryUpdate = { level };
+    const event: BatteryUpdateEvent = { seq: this.nextSeq(), ts: this.nowMs(), payload };
     this.batteryUpdateEventListeners.forEach((listener) => {
       try {
         listener(event);
@@ -2459,11 +2463,8 @@ export class VoltraClient {
 
   private notifyRawFrameEvent(bytes: Uint8Array): void {
     if (this.rawFrameEventListeners.size === 0) return;
-    const event: RawFrameEvent = {
-      bytes,
-      seq: this.nextSeq(),
-      ts: this.nowIso(),
-    };
+    const payload: RawFrame = { bytes };
+    const event: RawFrameEvent = { seq: this.nextSeq(), ts: this.nowMs(), payload };
     this.rawFrameEventListeners.forEach((listener) => {
       try {
         listener(event);
@@ -2482,12 +2483,8 @@ export class VoltraClient {
     this.detectModeRevert(previous, mode);
 
     if (this.modeChangeEventListeners.size === 0) return;
-    const event: ModeChangeEvent = {
-      from: previous,
-      to: mode,
-      seq: this.nextSeq(),
-      ts: this.nowIso(),
-    };
+    const payload: ModeChange = { from: previous, to: mode };
+    const event: ModeChangeEvent = { seq: this.nextSeq(), ts: this.nowMs(), payload };
     this.modeChangeEventListeners.forEach((listener) => {
       try {
         listener(event);
@@ -2519,13 +2516,8 @@ export class VoltraClient {
     // have one, otherwise the expected mode itself (we never saw the
     // confirmation, but we know what we asked for).
     const revertFrom = previous ?? expected;
-    const event: ModeRevertEvent = {
-      expectedMode: expected,
-      from: revertFrom,
-      to,
-      ts: this.nowIso(),
-      seq: this.nextSeq(),
-    };
+    const payload: ModeRevert = { expectedMode: expected, from: revertFrom, to };
+    const event: ModeRevertEvent = { seq: this.nextSeq(), ts: this.nowMs(), payload };
     this._expectedMode = null;
     this.modeRevertEventListeners.forEach((listener) => {
       try {
@@ -2541,15 +2533,14 @@ export class VoltraClient {
     to: VoltraConnectionState
   ): void {
     if (this.connectionStateChangeEventListeners.size === 0) return;
-    const event: ConnectionStateChangeEvent = {
+    const payload: ConnectionStateChange = {
       from,
       to,
       deviceId: this._connectedDeviceId ?? this._lastConnectedDevice?.id ?? 'unknown',
       deviceName: this._connectedDeviceName ?? this._lastConnectedDevice?.name ?? 'unknown',
       lastKnownSettings: this._lastDeviceSettings,
-      seq: this.nextSeq(),
-      ts: this.nowIso(),
     };
+    const event: ConnectionStateChangeEvent = { seq: this.nextSeq(), ts: this.nowMs(), payload };
     this.connectionStateChangeEventListeners.forEach((listener) => {
       try {
         listener(event);
@@ -2566,15 +2557,8 @@ export class VoltraClient {
     lastKnownSettings: DeviceSettings | null
   ): void {
     if (this.connectionLossEventListeners.size === 0) return;
-    const ts = this.nowIso();
-    const event: ConnectionLossEvent = {
-      deviceId,
-      deviceName,
-      reason,
-      lastKnownSettings,
-      ts,
-      seq: this.nextSeq(),
-    };
+    const payload: ConnectionLoss = { deviceId, deviceName, reason, lastKnownSettings };
+    const event: ConnectionLossEvent = { seq: this.nextSeq(), ts: this.nowMs(), payload };
     this.connectionLossEventListeners.forEach((listener) => {
       try {
         listener(event);
@@ -2584,14 +2568,14 @@ export class VoltraClient {
     });
   }
 
-  private notifyGuidedLoadStateEvent(phase: GuidedLoadState['phase']): void {
+  private notifyGuidedLoadStateEvent(state: GuidedLoadState): void {
     if (this.guidedLoadStateEventListeners.size === 0) return;
-    const event: GuidedLoadStateEvent = {
-      state: phase,
-      weightLbs: this._guidedLoadTargetWeightLbs,
-      seq: this.nextSeq(),
-      ts: this.nowIso(),
+    const payload: GuidedLoadStatePayload = {
+      phase: state.phase,
+      countdownRemainingMs: state.countdownRemainingMs,
+      fitnessModeRaw: state.fitnessModeRaw,
     };
+    const event: GuidedLoadStateEvent = { seq: this.nextSeq(), ts: this.nowMs(), payload };
     this.guidedLoadStateEventListeners.forEach((listener) => {
       try {
         listener(event);
