@@ -333,8 +333,12 @@ export interface ParamIdsConfig {
   trainingMode: string;
   /** Inverse chains parameter (0xb053) */
   inverseChains: string;
-  /** Unknown parameter observed in notifications */
-  unknown893e: string;
+  /**
+   * `BP_SET_FITNESS_MODE` (0x893e) — workout-state register controlling
+   * the device's primary mode/state machine (strength READY/ARMED/ACTIVE,
+   * direct-load STRENGTH_READY, rowing GO/ACTIVE, etc).
+   */
+  bpSetFitnessMode: string;
 }
 
 /**

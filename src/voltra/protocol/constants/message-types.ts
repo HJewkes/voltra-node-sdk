@@ -94,7 +94,7 @@ export const ParamIdHex = {
   ECCENTRIC: protocol.telemetry.paramIds.eccentric,
   TRAINING_MODE: protocol.telemetry.paramIds.trainingMode,
   INVERSE_CHAINS: protocol.telemetry.paramIds.inverseChains,
-  UNKNOWN_893E: protocol.telemetry.paramIds.unknown893e,
+  BP_SET_FITNESS_MODE: protocol.telemetry.paramIds.bpSetFitnessMode,
 } as const;
 
 /**
