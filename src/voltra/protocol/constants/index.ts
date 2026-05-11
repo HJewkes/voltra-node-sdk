@@ -16,6 +16,7 @@ export {
   NotificationConfigs,
   Uint16ParamIds,
   ParamIdHex,
+  ParameterCatalog,
   TrainingModeValues,
 } from './message-types';
 export {
