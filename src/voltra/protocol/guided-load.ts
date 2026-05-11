@@ -41,29 +41,24 @@ const FITNESS_MODE_DIRECT_LOAD_ACTIVE = 0x0027;
 /** STRENGTH_READY — used to exit guided-load cleanly (`exitGuidedLoad`). */
 const FITNESS_MODE_STRENGTH_READY = 0x0004;
 
-// Direct-load engagement safety-check register; populates VoltraReading during direct-load arming (per voltra-private/research A9 + A11)
-export const PARAM_DIRECT_LOAD_SAFETY_CHECK_PRIMARY = 0x538d;
-// Direct-load engagement safety-check register; populates VoltraReading during direct-load arming (per voltra-private/research A9 + A11)
-export const PARAM_DIRECT_LOAD_SAFETY_CHECK_FORCE = 0x53c7;
-// Direct-load engagement safety-check register; populates VoltraReading during direct-load arming (per voltra-private/research A9 + A11)
-export const PARAM_DIRECT_LOAD_SAFETY_CHECK_RANGE = 0x53c8;
-// Direct-load engagement safety-check register; populates VoltraReading during direct-load arming (per voltra-private/research A9 + A11)
-export const PARAM_DIRECT_LOAD_SAFETY_CHECK_RUNTIME = 0x53c9;
-
-/** @deprecated use PARAM_DIRECT_LOAD_SAFETY_CHECK_PRIMARY */
-export const PARAM_DIRECT_LOAD_PRIMARY_STATUS = PARAM_DIRECT_LOAD_SAFETY_CHECK_PRIMARY;
-/** @deprecated use PARAM_DIRECT_LOAD_SAFETY_CHECK_FORCE */
-export const PARAM_DIRECT_LOAD_FORCE_STATUS = PARAM_DIRECT_LOAD_SAFETY_CHECK_FORCE;
-/** @deprecated use PARAM_DIRECT_LOAD_SAFETY_CHECK_RANGE */
-export const PARAM_DIRECT_LOAD_RANGE_STATUS = PARAM_DIRECT_LOAD_SAFETY_CHECK_RANGE;
-/** @deprecated use PARAM_DIRECT_LOAD_SAFETY_CHECK_RUNTIME */
-export const PARAM_DIRECT_LOAD_RUNTIME_STATUS = PARAM_DIRECT_LOAD_SAFETY_CHECK_RUNTIME;
+// Direct-load engagement safety-check register (0x538D — `EP_DIRECT_LOAD_SAFETY_CHECK`,
+// uint8 arm bit). Per voltra-private parameters/ep/direct-load-safety-check.ts.
+export const PARAM_DIRECT_LOAD_SAFETY_CHECK = 0x538d;
+// Direct-load `ST` status register (0x53C7 — `EP_DIRECT_LOAD_ST`, uint8 phase enum).
+// Per voltra-private parameters/ep/direct-load-st.ts.
+export const PARAM_DIRECT_LOAD_ST = 0x53c7;
+// Direct-load countdown register (0x53C8 — `EP_DIRECT_LOAD_COUNTDOWN`, uint16 LE
+// countdown ms, max 3000). Per voltra-private parameters/ep/direct-load-countdown.ts.
+export const PARAM_DIRECT_LOAD_COUNTDOWN = 0x53c8;
+// Direct-load `CTRL` runtime control register (0x53C9 — `EP_DIRECT_LOAD_CTRL`, uint8).
+// Per voltra-private parameters/ep/direct-load-ctrl.ts.
+export const PARAM_DIRECT_LOAD_CTRL = 0x53c9;
 
 const STATUS_PARAM_IDS_LE = [
-  PARAM_DIRECT_LOAD_SAFETY_CHECK_PRIMARY,
-  PARAM_DIRECT_LOAD_SAFETY_CHECK_FORCE,
-  PARAM_DIRECT_LOAD_SAFETY_CHECK_RANGE,
-  PARAM_DIRECT_LOAD_SAFETY_CHECK_RUNTIME,
+  PARAM_DIRECT_LOAD_SAFETY_CHECK,
+  PARAM_DIRECT_LOAD_ST,
+  PARAM_DIRECT_LOAD_COUNTDOWN,
+  PARAM_DIRECT_LOAD_CTRL,
 ] as const;
 
 // Mode register 0x3E89 — write target = `[0x04, 0x00]` (LE) to exit cleanly.
@@ -192,13 +187,13 @@ export function buildGuidedLoadExitFrame(sequence: number = DEFAULT_SEQUENCE): U
  * 4 registers into a given response notification.
  */
 export interface GuidedLoadStatusFields {
-  /** SAFETY_CHECK_PRIMARY (`0x538D`, uint8) — bool-like state-machine arm bit. */
+  /** EP_DIRECT_LOAD_SAFETY_CHECK (`0x538D`, uint8) — bool-like state-machine arm bit. */
   primaryStatus?: number;
-  /** SAFETY_CHECK_FORCE (`0x53C7`, uint8) — phase enum. */
+  /** EP_DIRECT_LOAD_ST (`0x53C7`, uint8) — phase enum. */
   forceStatus?: number;
-  /** SAFETY_CHECK_RANGE (`0x53C8`, uint16 LE) — safety countdown remaining (ms). */
+  /** EP_DIRECT_LOAD_COUNTDOWN (`0x53C8`, uint16 LE) — safety countdown remaining (ms). */
   countdownMs?: number;
-  /** SAFETY_CHECK_RUNTIME (`0x53C9`, uint8) — runtime control byte. */
+  /** EP_DIRECT_LOAD_CTRL (`0x53C9`, uint8) — runtime control byte. */
   runtimeStatus?: number;
   /** Raw `BP_SET_FITNESS_MODE` (`0x3E89`, uint16 LE) — only present when
    *  the device echoes it in a settings/multi-param response. */
