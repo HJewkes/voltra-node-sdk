@@ -104,6 +104,26 @@ export const ParamIdHex = {
 export const Uint16ParamIds: ReadonlySet<string> = new Set(protocol.telemetry.uint16ParamIds ?? []);
 
 /**
+ * Generated parameter catalog (Phase 2.5). Keyed by `wireLE` (the form
+ * inbound cmd=0x10 / cmd=0x0F cascade decoders match against). Each entry
+ * carries `paramId`, `name`, `wireBE`, `wireLE`, `valueType`, `valueWidth`,
+ * `unit`, `register`, `validation` — sourced from voltra-private's
+ * `parameters/` registry via `protocol.telemetry.parameterCatalog`.
+ *
+ * Phase 2.5 promotes the catalog as authoritative metadata. The
+ * `telemetry-decoder.ts` `CMD_0F_KNOWN_PARAM_WIDTHS` table is NOT yet
+ * refactored to consume it — two paramIDs (`b04f`/FITNESS_WORKOUT_STATE,
+ * `b053`/FITNESS_INVERSE_CHAIN) have documented width disagreements
+ * (vp = uint16, SDK = uint8) that need Phase 2.7 on-device validation
+ * before the decoder can safely migrate.
+ *
+ * Empty record on older protocol-data versions (pre-Phase 2.5).
+ */
+export const ParameterCatalog: Readonly<
+  Record<string, NonNullable<ProtocolData['telemetry']['parameterCatalog']>[string]>
+> = protocol.telemetry.parameterCatalog ?? {};
+
+/**
  * Training mode values from protocol.json.
  * These map to the TrainingMode enum values.
  */
