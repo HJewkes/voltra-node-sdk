@@ -3,8 +3,8 @@
  *
  * - setEccentric(overloadLbs) writes the expected protocol bytes (rename is
  *   docstring-only at the function-signature level; behavior is unchanged).
- * - unloadDevice() emits the mode-bounce sequence (Damper → WeightTraining)
- *   in order, with the inter-frame delay observed.
+ * - unloadDevice() writes the Workout.STOP frame (canonical motor-disengage
+ *   primitive, paired with Workout.GO used by startRecording).
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { BaseBLEAdapter } from '../../bluetooth/adapters/base';
@@ -98,7 +98,7 @@ describe('VoltraClient — setEccentric (overloadLbs rename)', () => {
   });
 });
 
-describe('VoltraClient — unloadDevice (mode-bounce)', () => {
+describe('VoltraClient — unloadDevice (Workout.STOP)', () => {
   let adapter: RecordingAdapter;
   let client: VoltraClient;
 
@@ -115,42 +115,23 @@ describe('VoltraClient — unloadDevice (mode-bounce)', () => {
     vi.useRealTimers();
   });
 
-  it('emits the Damper → WeightTraining mode-bounce sequence in order', async () => {
-    const damperBytes = hexToBytes(protocol.commands.modes.damper);
-    const wtBytes = hexToBytes(protocol.commands.modes.weightTraining);
+  it('writes the Workout.STOP frame', async () => {
+    const stopBytes = hexToBytes(protocol.commands.workout.stop);
 
-    const promise = client.unloadDevice(0);
-    await flushAndAwait(promise);
+    await flushAndAwait(client.unloadDevice());
 
-    const damperIdx = findWriteIndex(adapter, damperBytes);
-    const wtIdx = findWriteIndex(adapter, wtBytes);
-
-    expect(damperIdx).toBeGreaterThanOrEqual(0);
-    expect(wtIdx).toBeGreaterThanOrEqual(0);
-    expect(damperIdx).toBeLessThan(wtIdx);
+    const stopIdx = findWriteIndex(adapter, stopBytes);
+    expect(stopIdx).toBeGreaterThanOrEqual(0);
   });
 
-  it('honors the interFrameDelayMs parameter between writes', async () => {
+  it('does not emit any mode-switch frames (no longer a mode-bounce)', async () => {
     const damperBytes = hexToBytes(protocol.commands.modes.damper);
     const wtBytes = hexToBytes(protocol.commands.modes.weightTraining);
 
-    // Start the unload — should write Damper immediately, then wait, then WT.
-    const promise = client.unloadDevice(500);
+    await flushAndAwait(client.unloadDevice());
 
-    // Let the first microtask resolve so the first write lands.
-    await Promise.resolve();
-    await Promise.resolve();
-
-    const damperIdx0 = findWriteIndex(adapter, damperBytes);
-    const wtIdx0 = findWriteIndex(adapter, wtBytes);
-    expect(damperIdx0).toBeGreaterThanOrEqual(0);
-    // WT write should NOT have happened yet — still in the delay window.
-    expect(wtIdx0).toBe(-1);
-
-    // Advance past the delay; the WT write should now happen.
-    await flushAndAwait(promise);
-    const wtIdx1 = findWriteIndex(adapter, wtBytes);
-    expect(wtIdx1).toBeGreaterThanOrEqual(0);
+    expect(findWriteIndex(adapter, damperBytes)).toBe(-1);
+    expect(findWriteIndex(adapter, wtBytes)).toBe(-1);
   });
 
   it('throws NotConnectedError when the client is not connected', async () => {

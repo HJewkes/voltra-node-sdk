@@ -1435,12 +1435,13 @@ export class VoltraClient {
   }
 
   // ===========================================================================
-  // Unload (mechanical unload via mode-bounce)
+  // Unload (disengage motor via Workout.STOP)
   // ===========================================================================
 
   /**
-   * Drive the device into a fully-unloaded mechanical state by bouncing
-   * the training mode (Damper → WeightTraining).
+   * Disengage the cable motor by sending `Workout.STOP` — the canonical
+   * "stop resistance/tracking" primitive paired with `Workout.GO` (the
+   * `startRecording` engage path).
    *
    * **Why this is needed.** The firmware's `startGuidedLoad` flow only
    * emits the visible "countdown" ceremony when the cable is fully
@@ -1449,48 +1450,24 @@ export class VoltraClient {
    * tension, so a subsequent `startGuidedLoad` short-circuits straight to
    * `phase: 'active'` with no countdown and no assisted-eccentric ramp.
    *
-   * **Mechanism — mode-bounce, not workout-state-zero.** We write
-   * `BP_SET_FITNESS_MODE = Damper` and then `BP_SET_FITNESS_MODE =
-   * WeightTraining`. Each write drives the firmware through its internal
-   * idle/unload transition and physically slackens the cable. The
-   * Damper → WeightTraining sequence was validated on hardware on
-   * 2026-05-12 (memory: `feedback_guided_load_needs_unloaded_state.md`).
+   * **Mechanism.** `Workout.STOP` is the canonical motor-disengage frame
+   * (`connection-commands.ts:104` — "Stop resistance/tracking"). It is
+   * the direct counterpart of `Workout.GO`, used by `stopRecording()`
+   * via the active-recording guard. This method bypasses the recording-
+   * state guard so it works as a generic pre-guided-load unload
+   * regardless of whether a recording was ever started.
    *
-   * A `FITNESS_WORKOUT_STATE = 0` write (which the rowing `exitWorkout()`
-   * flow uses as part of a larger 5-write sequence) was considered but
-   * not chosen — the rowing variant is part of an integrated exit, and
-   * the single-write workout-state-zero shape has not been verified to
-   * physically unload the cable for non-rowing modes. Mode-bounce is the
-   * safer choice given our current hardware coverage.
-   *
-   * Idempotent — calling on an already-unloaded device is a no-op-shaped
-   * "bounce" (the device is briefly placed in Damper mode and then
-   * returned to WeightTraining; the cable stays slack throughout).
-   *
-   * @param interFrameDelayMs Delay between the two mode writes
-   *   (default 250ms — matches the cadence observed in successful
-   *   mode-bounce sequences during the 2026-05-12 validation pass).
+   * Idempotent — safe to call when the cable is already slack; the
+   * firmware accepts repeated STOP frames.
    */
-  async unloadDevice(interFrameDelayMs = 250): Promise<void> {
+  async unloadDevice(): Promise<void> {
     this.ensureConnected();
 
-    const damperCmd = getModeCommand(TrainingMode.Damper);
-    const wtCmd = getModeCommand(TrainingMode.WeightTraining);
-    if (!damperCmd || !wtCmd) {
-      throw new CommandError(
-        'Mode-bounce commands not available in protocol data',
-        'unloadDevice'
-      );
-    }
-
     try {
-      await this.writeFrame(damperCmd);
-      this.armExpectedMode(TrainingMode.Damper);
-      if (interFrameDelayMs > 0) {
-        await delay(interFrameDelayMs);
+      await this.writeFrame(Workout.STOP);
+      if (this._recordingState !== 'idle') {
+        this.setRecordingState('idle');
       }
-      await this.writeFrame(wtCmd);
-      this.armExpectedMode(TrainingMode.WeightTraining);
     } catch (e) {
       if (e instanceof ConnectionError) throw e;
       throw new CommandError(`Failed to unload device: ${this.getErrorMessage(e)}`, 'unloadDevice');
