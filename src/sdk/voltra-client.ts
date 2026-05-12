@@ -696,21 +696,26 @@ export class VoltraClient {
   }
 
   /**
-   * Set eccentric load adjustment.
+   * Set eccentric overload weight (additional pounds applied during the
+   * eccentric phase, on top of `setWeight`). The historic param name was
+   * `percent`, which mis-described the unit — the value is pounds, not a
+   * percentage of the base weight.
    *
-   * @param percent Eccentric adjustment (-195 to +195)
+   * @param overloadLbs Eccentric overload in pounds (-195 to +195).
+   *   Positive values add load on the eccentric, negative values reduce
+   *   it (assisted eccentric).
    */
-  async setEccentric(percent: number): Promise<void> {
+  async setEccentric(overloadLbs: number): Promise<void> {
     this.ensureConnected();
 
-    const cmd = getEccentricCommand(percent);
+    const cmd = getEccentricCommand(overloadLbs);
     if (!cmd) {
-      throw new InvalidSettingError('eccentric', percent, getAvailableEccentricValues());
+      throw new InvalidSettingError('eccentric', overloadLbs, getAvailableEccentricValues());
     }
 
     try {
       await this.writeFrame(cmd);
-      this._settings.eccentric = percent;
+      this._settings.eccentric = overloadLbs;
     } catch (e) {
       if (e instanceof ConnectionError) throw e;
       throw new CommandError(`Failed to set eccentric: ${this.getErrorMessage(e)}`, 'setEccentric');
@@ -1427,6 +1432,69 @@ export class VoltraClient {
   /** Get available telemetry rates (Hz). @experimental */
   getAvailableTelemetryRates(): number[] {
     return getAvailableTelemetryRates();
+  }
+
+  // ===========================================================================
+  // Unload (mechanical unload via mode-bounce)
+  // ===========================================================================
+
+  /**
+   * Drive the device into a fully-unloaded mechanical state by bouncing
+   * the training mode (Damper → WeightTraining).
+   *
+   * **Why this is needed.** The firmware's `startGuidedLoad` flow only
+   * emits the visible "countdown" ceremony when the cable is fully
+   * unloaded at trigger time. `exitGuidedLoad` clears the software-side
+   * guided-load state but does NOT physically release residual cable
+   * tension, so a subsequent `startGuidedLoad` short-circuits straight to
+   * `phase: 'active'` with no countdown and no assisted-eccentric ramp.
+   *
+   * **Mechanism — mode-bounce, not workout-state-zero.** We write
+   * `BP_SET_FITNESS_MODE = Damper` and then `BP_SET_FITNESS_MODE =
+   * WeightTraining`. Each write drives the firmware through its internal
+   * idle/unload transition and physically slackens the cable. The
+   * Damper → WeightTraining sequence was validated on hardware on
+   * 2026-05-12 (memory: `feedback_guided_load_needs_unloaded_state.md`).
+   *
+   * A `FITNESS_WORKOUT_STATE = 0` write (which the rowing `exitWorkout()`
+   * flow uses as part of a larger 5-write sequence) was considered but
+   * not chosen — the rowing variant is part of an integrated exit, and
+   * the single-write workout-state-zero shape has not been verified to
+   * physically unload the cable for non-rowing modes. Mode-bounce is the
+   * safer choice given our current hardware coverage.
+   *
+   * Idempotent — calling on an already-unloaded device is a no-op-shaped
+   * "bounce" (the device is briefly placed in Damper mode and then
+   * returned to WeightTraining; the cable stays slack throughout).
+   *
+   * @param interFrameDelayMs Delay between the two mode writes
+   *   (default 250ms — matches the cadence observed in successful
+   *   mode-bounce sequences during the 2026-05-12 validation pass).
+   */
+  async unloadDevice(interFrameDelayMs = 250): Promise<void> {
+    this.ensureConnected();
+
+    const damperCmd = getModeCommand(TrainingMode.Damper);
+    const wtCmd = getModeCommand(TrainingMode.WeightTraining);
+    if (!damperCmd || !wtCmd) {
+      throw new CommandError(
+        'Mode-bounce commands not available in protocol data',
+        'unloadDevice'
+      );
+    }
+
+    try {
+      await this.writeFrame(damperCmd);
+      this.armExpectedMode(TrainingMode.Damper);
+      if (interFrameDelayMs > 0) {
+        await delay(interFrameDelayMs);
+      }
+      await this.writeFrame(wtCmd);
+      this.armExpectedMode(TrainingMode.WeightTraining);
+    } catch (e) {
+      if (e instanceof ConnectionError) throw e;
+      throw new CommandError(`Failed to unload device: ${this.getErrorMessage(e)}`, 'unloadDevice');
+    }
   }
 
   // ===========================================================================
