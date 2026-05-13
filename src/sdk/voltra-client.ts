@@ -32,6 +32,27 @@
  * // Cleanup
  * client.dispose();
  * ```
+ *
+ * ## Error behavior — every setter is connection-killing on failure
+ *
+ * Every device-facing setter (`setWeight`, `setChains`, `setEccentric`,
+ * `setMode`, the isokinetic and damper/assist/band setters, the recording
+ * primitives, the guided-load trigger, and `unloadDevice`) routes through
+ * the private `writeFrame()` method. **A `writeFrame` failure flips the
+ * client to `disconnected`, emits `ConnectionLossEvent`, and rethrows as
+ * `ConnectionError(CONNECTION_LOST)`.** That means:
+ *
+ * - Catching a setter's error and retrying the same setter is futile — the
+ *   client is no longer connected and the retry will throw with `'Not
+ *   connected'` before reaching the wire.
+ * - Recovery requires `await client.connect(...)` again (or `manager.connect`)
+ *   before any further setter calls.
+ * - Setters that mutate `_settings` only do so on the *success* path; the
+ *   cached settings always reflect the last successful write.
+ *
+ * Async device-side echoes (`onSettingsUpdate`, `onConnectionStateChange`)
+ * are the canonical way to confirm a setting landed — the SDK does not have
+ * a write-and-await (T4) primitive that round-trips a confirmation frame.
  */
 
 import type { BLEAdapter } from '../bluetooth/adapters/types';
@@ -753,20 +774,32 @@ export class VoltraClient {
   /**
    * Set training mode.
    *
-   * **Rowing is special**: it auto-routes to the two-stage
-   * {@link enterRowMode} + {@link startRow} (Just Row, no preset)
-   * sequence. Advanced callers who need a distance preset should call
-   * the two primitives directly.
+   * **Complexity (call-site surprises).**
    *
-   * Bug 22 rationale: Rowing is the only `FITNESS_WORKOUT_STATE`
+   * - **Rowing is a multi-step state machine.** Setting `TrainingMode.Rowing`
+   *   does NOT issue the strength-arm. It auto-routes to the two-stage
+   *   {@link enterRowMode} + {@link startRow} (Just Row, no preset) sequence,
+   *   then arms an internal reassert scheduler that re-issues the SCR_SWITCH +
+   *   vendor-refresh pair at `+750 / +1750 / +3000 ms`. Advanced callers who
+   *   need a distance preset must call the two primitives directly. Setting a
+   *   non-Rowing mode after Rowing cancels the scheduler and clears the
+   *   `_rowSubMenuOpen` / `_rowStarted` flags.
+   *
+   * - **Every call arms the 2s mode-revert latch.** The expected mode is
+   *   stashed via `armExpectedMode`; if the device confirms a different mode
+   *   within 2 seconds the SDK synthesizes a `ModeRevertEvent` (observable
+   *   via {@link onModeRevertEvent}). The latch self-clears after the window
+   *   so a user-initiated mode change via the device UI doesn't trip it.
+   *
+   * **Bug 22 rationale.** Rowing is the only `FITNESS_WORKOUT_STATE`
    * (`0x4FB0 = 3`) that does not respond to the strength-arm primitive
-   * (`BP_SET_FITNESS_MODE = 5`). Writing the strength-arm while the
-   * device is on the rowing screen is silently reinterpreted as a
-   * strength session, reverting the rowing flow — HIGH safety severity.
-   * The two-stage path commits via `EP_SCR_SWITCH` action codes, which
-   * is the only correct primitive for Rowing.
+   * (`BP_SET_FITNESS_MODE = 5`). Writing the strength-arm while the device is
+   * on the rowing screen is silently reinterpreted as a strength session,
+   * reverting the rowing flow — HIGH safety severity. The two-stage path
+   * commits via `EP_SCR_SWITCH` action codes, which is the only correct
+   * primitive for Rowing.
    *
-   * @param mode Training mode to set
+   * @param mode Training mode to set.
    */
   async setMode(mode: TrainingMode): Promise<void> {
     this.ensureConnected();
@@ -1499,16 +1532,45 @@ export class VoltraClient {
   /**
    * Trigger the firmware direct-load flow at the supplied target weight.
    *
-   * Performs (mirroring AndroidVoltraClient.directLoad):
-   *   1. setWeight(targetWeightLbs) — writes BP_BASE_WEIGHT (target)
-   *   2. write the `0xAA 0x12` direct-load trigger frame
-   *   3. start polling the 4 status registers every `pollIntervalMs`
-   *      (default 500ms) for `pollDurationMs` (default 18000ms)
-   *
-   * The promise resolves once the trigger has been written and the polling
-   * loop is armed; transitions are surfaced via `onGuidedLoadState`. Polling
+   * **This is a polled state machine, not a write-and-await.** The promise
+   * resolves once the trigger has been written and the polling loop is armed
+   * — observing the actual phase transitions requires subscribing to
+   * {@link onGuidedLoadState} (or its event-shaped counterpart). Polling
    * stops automatically after the duration elapses (`phase: 'timeout'` if
    * the device never reached ACTIVE).
+   *
+   * **Sequence (mirrors AndroidVoltraClient.directLoad).**
+   *
+   *   1. {@link setWeight}`(targetWeightLbs)` — writes BP_BASE_WEIGHT (target).
+   *   2. Write the `0xAA 0x12` direct-load trigger frame.
+   *   3. Transition `phase: 'idle' → 'armed'` synchronously so observers see
+   *      the armed state even if the first poll response is delayed.
+   *   4. `setInterval(pollGuidedLoadStatus, pollIntervalMs)` (default 500ms)
+   *      reads the 4 status registers (`0x538D`/`0x53C7`/`0x53C8`/`0x53C9`)
+   *      and advances the state machine.
+   *   5. `setTimeout(stopPolling, pollDurationMs)` (default 18000ms) closes
+   *      the window. The terminal phase is `'timeout'` if ACTIVE was never
+   *      observed; `'exited'` if {@link exitGuidedLoad} was called; `'active'`
+   *      on success.
+   *
+   * **Phase progression on a healthy run.** `armed → countdown → engaging →
+   * active`. On a failed run: `armed → timeout` (no countdown ever observed)
+   * or `armed → exited` (caller bailed via {@link exitGuidedLoad}).
+   *
+   * **Known firmware failure mode — idle-at-base-weight short-circuit
+   * (observed 2026-05-13 hardware).** If the cable is already mechanically
+   * loaded at the target weight when the trigger is written (e.g. the user
+   * called `exitGuidedLoad` without unloading, or `set_end` left residual
+   * tension), the firmware skips the countdown ceremony and reports
+   * `phase: 'armed' → 'active'` in well under a second. The polled state
+   * machine surfaces this faithfully, but the visible end-user ceremony
+   * (audible countdown, ramped engage) is lost. Workaround: call
+   * {@link unloadDevice} before `startGuidedLoad` to drive the cable to a
+   * mechanically-unloaded state via `Workout.STOP`. The MCP layer's
+   * `device.start_guided_load` does this by default (see `skipUnload`).
+   *
+   * **Concurrency.** Throws if a guided-load flow is already in progress —
+   * call {@link exitGuidedLoad} first.
    *
    * @experimental — register IDs and state-machine semantics derive from an
    * Android-repo deep-scrub (voltra-private/research/direct-load-protocol-
@@ -1516,7 +1578,7 @@ export class VoltraClient {
    * mirror the Android client exactly. The `0x53C7` enum and `0x53C8`
    * milliseconds-vs-seconds interpretation are not yet validated end-to-end.
    *
-   * @param opts Guided-load options
+   * @param opts Guided-load options.
    */
   async startGuidedLoad(opts: GuidedLoadOptions): Promise<void> {
     this.ensureConnected();
@@ -1619,8 +1681,21 @@ export class VoltraClient {
   // ===========================================================================
 
   /**
-   * Prepare for recording (sends PREPARE + SETUP commands).
-   * Call this before starting a set to minimize latency.
+   * Prepare for recording — sends `Workout.PREPARE` and `Workout.SETUP` so
+   * the device is staged to engage the motor on the next {@link startRecording}
+   * call.
+   *
+   * **Internal cadence.** Two BLE writes interleaved with two `delay()`
+   * calls — 200ms after PREPARE, 300ms after SETUP. This is the only
+   * consumer-facing SDK method that interleaves sleeps between writes. Call
+   * site cost: ~500ms of cumulative time-in-call even on a healthy link.
+   * `_recordingState` walks `idle → preparing → ready`; on failure it resets
+   * to `idle`. Calling this when already `'ready'` is allowed and re-runs
+   * the cycle.
+   *
+   * Call this before starting a set to keep `startRecording()` snappy — if
+   * recording starts cold, `startRecording` internally invokes
+   * `prepareRecording` first and absorbs the 500ms there instead.
    */
   async prepareRecording(): Promise<void> {
     this.ensureConnected();
@@ -1642,8 +1717,16 @@ export class VoltraClient {
   }
 
   /**
-   * Start recording (engage motor).
-   * If not prepared, will prepare first.
+   * Start recording — write `Workout.GO` to engage the motor.
+   *
+   * **Conditional cascade.** If `_recordingState` is not `'ready'`, this
+   * invokes {@link prepareRecording} first (PREPARE + 200ms + SETUP + 300ms),
+   * so the worst-case call site cost is 3 writes + 500ms of cumulative
+   * sleeps. If `prepareRecording` was already awaited and `_recordingState`
+   * is `'ready'`, this is a single `Workout.GO` write.
+   *
+   * Transitions `_recordingState` to `'active'` on the successful write.
+   * Pair with {@link stopRecording} (or {@link endSet}) to release the motor.
    */
   async startRecording(): Promise<void> {
     this.ensureConnected();
