@@ -259,8 +259,8 @@ export interface UseVoltraState extends VoltraScannerState, VoltraDeviceState {
   setWeight: (lbs: number) => Promise<void>;
   /** Set chains (shorthand) */
   setChains: (lbs: number) => Promise<void>;
-  /** Set eccentric (shorthand) */
-  setEccentric: (percent: number) => Promise<void>;
+  /** Set eccentric overload in pounds (shorthand) */
+  setEccentric: (overloadLbs: number) => Promise<void>;
   /** Start recording (shorthand) */
   startRecording: () => Promise<void>;
   /** Stop recording (shorthand) */
@@ -334,9 +334,9 @@ export function useVoltra(manager: VoltraManager | null): UseVoltraState {
   );
 
   const setEccentric = useCallback(
-    async (percent: number) => {
+    async (overloadLbs: number) => {
       if (!client) throw new Error('Not connected');
-      await client.setEccentric(percent);
+      await client.setEccentric(overloadLbs);
     },
     [client]
   );

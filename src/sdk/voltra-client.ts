@@ -696,21 +696,26 @@ export class VoltraClient {
   }
 
   /**
-   * Set eccentric load adjustment.
+   * Set eccentric overload weight (additional pounds applied during the
+   * eccentric phase, on top of `setWeight`). The historic param name was
+   * `percent`, which mis-described the unit — the value is pounds, not a
+   * percentage of the base weight.
    *
-   * @param percent Eccentric adjustment (-195 to +195)
+   * @param overloadLbs Eccentric overload in pounds (-195 to +195).
+   *   Positive values add load on the eccentric, negative values reduce
+   *   it (assisted eccentric).
    */
-  async setEccentric(percent: number): Promise<void> {
+  async setEccentric(overloadLbs: number): Promise<void> {
     this.ensureConnected();
 
-    const cmd = getEccentricCommand(percent);
+    const cmd = getEccentricCommand(overloadLbs);
     if (!cmd) {
-      throw new InvalidSettingError('eccentric', percent, getAvailableEccentricValues());
+      throw new InvalidSettingError('eccentric', overloadLbs, getAvailableEccentricValues());
     }
 
     try {
       await this.writeFrame(cmd);
-      this._settings.eccentric = percent;
+      this._settings.eccentric = overloadLbs;
     } catch (e) {
       if (e instanceof ConnectionError) throw e;
       throw new CommandError(`Failed to set eccentric: ${this.getErrorMessage(e)}`, 'setEccentric');
@@ -1427,6 +1432,46 @@ export class VoltraClient {
   /** Get available telemetry rates (Hz). @experimental */
   getAvailableTelemetryRates(): number[] {
     return getAvailableTelemetryRates();
+  }
+
+  // ===========================================================================
+  // Unload (disengage motor via Workout.STOP)
+  // ===========================================================================
+
+  /**
+   * Disengage the cable motor by sending `Workout.STOP` — the canonical
+   * "stop resistance/tracking" primitive paired with `Workout.GO` (the
+   * `startRecording` engage path).
+   *
+   * **Why this is needed.** The firmware's `startGuidedLoad` flow only
+   * emits the visible "countdown" ceremony when the cable is fully
+   * unloaded at trigger time. `exitGuidedLoad` clears the software-side
+   * guided-load state but does NOT physically release residual cable
+   * tension, so a subsequent `startGuidedLoad` short-circuits straight to
+   * `phase: 'active'` with no countdown and no assisted-eccentric ramp.
+   *
+   * **Mechanism.** `Workout.STOP` is the canonical motor-disengage frame
+   * (`connection-commands.ts:104` — "Stop resistance/tracking"). It is
+   * the direct counterpart of `Workout.GO`, used by `stopRecording()`
+   * via the active-recording guard. This method bypasses the recording-
+   * state guard so it works as a generic pre-guided-load unload
+   * regardless of whether a recording was ever started.
+   *
+   * Idempotent — safe to call when the cable is already slack; the
+   * firmware accepts repeated STOP frames.
+   */
+  async unloadDevice(): Promise<void> {
+    this.ensureConnected();
+
+    try {
+      await this.writeFrame(Workout.STOP);
+      if (this._recordingState !== 'idle') {
+        this.setRecordingState('idle');
+      }
+    } catch (e) {
+      if (e instanceof ConnectionError) throw e;
+      throw new CommandError(`Failed to unload device: ${this.getErrorMessage(e)}`, 'unloadDevice');
+    }
   }
 
   // ===========================================================================
