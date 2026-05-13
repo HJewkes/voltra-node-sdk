@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-05-13
+
+### Added
+
+- `VoltraClient.unloadDevice()` — disengages the cable motor by sending
+  `Workout.STOP` (the canonical "stop resistance/tracking" primitive paired
+  with `Workout.GO`). Needed before `startGuidedLoad` so the firmware emits
+  the visible countdown ceremony; `exitGuidedLoad` only clears software
+  state and leaves the cable mechanically loaded, which causes a subsequent
+  guided-load to short-circuit to `phase: 'active'` with no countdown.
+  Bypasses the recording-state guard so it works as a generic pre-guided-
+  load unload regardless of whether a recording was started. Idempotent.
+  Validated end-to-end on hardware 2026-05-13 (Workout.GO → unloadDevice
+  cleanly disengages both bilateral slots).
+
+### Changed
+
+- `setEccentric(overloadLbs)`: the param name and JSDoc now correctly
+  describe the unit as **pounds added to the eccentric phase**, not a
+  percentage of base weight. The previous `percent` name mis-described
+  the unit — firmware behavior is unchanged, this is a docstring + param-
+  name correction at the SDK seam. The function signature is a single
+  positional `number`, so no caller breaks at compile time. The
+  `useVoltra()` React hook's `setEccentric` callback mirrors the rename.
+
 ## [0.7.1] - 2026-05-09
 
 Restores two fixes that were originally written for 0.6.1 / 0.6.2 but never
