@@ -5,6 +5,9 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# npm pack output
+*.tgz
+
 # IDE
 .idea/
 .vscode/
