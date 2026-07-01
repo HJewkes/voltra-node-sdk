@@ -38,6 +38,7 @@
 // High-Level API
 // =============================================================================
 
+export { setMockActivation, isMockActivated } from './sdk/mock-activation';
 export {
   VoltraClient,
   VoltraManager,
