@@ -8,6 +8,14 @@
   "sideEffects": false,
   "exports": {
     ".": {
+      "react-native": {
+        "types": "./dist/types/index.d.ts",
+        "default": "./dist/cjs/index.js"
+      },
+      "browser": {
+        "types": "./dist/types/index.d.ts",
+        "default": "./dist/cjs/index.js"
+      },
       "import": {
         "types": "./dist/types/index.d.ts",
         "default": "./dist/esm/index.js"
