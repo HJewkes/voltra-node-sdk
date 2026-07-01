@@ -2402,6 +2402,17 @@ export class VoltraClient {
     this._reconnectAttempt = 0;
 
     const lastDevice = this._lastConnectedDevice;
+
+    // The link is dead, but the unexpected drop never flipped our state off
+    // `'connected'`. `connect()` guards its entry with an ALREADY_CONNECTED
+    // check, so without a clean-start teardown here every reconnect attempt
+    // would throw and fail silently (3× 'reconnecting' → give up). Tear down
+    // the dead connection and flip to `'disconnected'` — the same clean-start
+    // the non-reconnect branch performs — but WITHOUT the bare `'disconnected'`
+    // emit (we are reconnecting, not disconnecting).
+    this.cleanup();
+    this.setConnectionState('disconnected');
+
     const result = await attemptReconnect(this.options, {
       onReconnecting: (attempt, maxAttempts) => {
         this._reconnectAttempt = attempt;
