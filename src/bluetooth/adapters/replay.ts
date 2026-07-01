@@ -151,9 +151,14 @@ export class ReplayBLEAdapter extends BaseBLEAdapter {
    * emitted will be `frames[clampedIndex]`. If playback was active, the
    * pending timer is rescheduled relative to the new position; if
    * paused, the new index takes effect on the next `play()`.
+   *
+   * A non-integer index is floored and `NaN` is treated as `0` — otherwise
+   * a fractional/`NaN` index survives the clamp and later indexes
+   * `frames[x]` as `undefined`, crashing `scheduleNext()`.
    */
   seek(frameIndex: number): void {
-    const clamped = Math.max(0, Math.min(frameIndex, this.frames.length));
+    const normalized = Number.isNaN(frameIndex) ? 0 : Math.floor(frameIndex);
+    const clamped = Math.max(0, Math.min(normalized, this.frames.length));
     this.nextFrameIndex = clamped;
     if (this.playing) {
       this.clearPendingTimer();
