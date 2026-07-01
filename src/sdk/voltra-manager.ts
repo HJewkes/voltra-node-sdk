@@ -31,6 +31,7 @@
 import type { BLEAdapter, BluetoothHost, Discovery } from '../bluetooth/adapters/types';
 import { LegacyAdapterHost } from '../bluetooth/adapters/legacy-shim';
 import { MockBLEAdapter, type MockBLEConfig } from '../bluetooth/adapters/mock';
+import { isMockActivated } from './mock-activation';
 import type { DiscoveredDevice } from '../bluetooth/models/device';
 import { filterVoltraDevices } from '../voltra/models/device-filter';
 import { BLE } from '../voltra/protocol/constants';
@@ -614,6 +615,14 @@ export class VoltraManager {
   // ===========================================================================
 
   private detectPlatform(): Platform {
+    // Mock activation (VOLTRA_MOCK env var or setMockActivation()) forces
+    // the mock adapter regardless of the real runtime. This is how native
+    // and Node builds opt into mock without the web-only `?mock` URL param.
+    // An explicit platform/adapterFactory/host bypasses detection entirely.
+    if (isMockActivated()) {
+      return 'mock';
+    }
+
     // Check for browser environment
     if (
       typeof window !== 'undefined' &&
@@ -669,11 +678,10 @@ export class VoltraManager {
         };
 
       case 'mock':
-        return () => {
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          const { MockBLEAdapter } = require('../bluetooth/adapters/mock');
-          return new MockBLEAdapter();
-        };
+        // Mock has no platform-specific peer deps, so it's imported
+        // eagerly at module top (same as `forMock()`) rather than via a
+        // dynamic require.
+        return () => new MockBLEAdapter();
 
       case 'node-noble':
         // node-noble drives a `BluetoothHost` directly (built in
