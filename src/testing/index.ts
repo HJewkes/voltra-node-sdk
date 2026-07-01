@@ -29,3 +29,10 @@ export {
 } from '../bluetooth/adapters/mock';
 
 export { ReplayBLEAdapter, type ReplayBLEAdapterOptions } from '../bluetooth/adapters/replay';
+
+export {
+  loadCaptureFrames,
+  type LoadCaptureFramesOptions,
+  type CaptureSkip,
+  type CaptureSkipReason,
+} from './capture-loader';

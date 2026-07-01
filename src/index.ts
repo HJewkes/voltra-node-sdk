@@ -127,6 +127,15 @@ export {
 // ReplayBLEAdapter has no platform-specific peers either — value export OK.
 // Also reachable via the `@voltras/node-sdk/testing` subpath alongside Mock.
 export { ReplayBLEAdapter, type ReplayBLEAdapterOptions } from './bluetooth/adapters/replay';
+
+// Capture-file loader — turns recorded JSONL sessions into replayable
+// `TelemetryFrame[]`. Also reachable via `@voltras/node-sdk/testing`.
+export {
+  loadCaptureFrames,
+  type LoadCaptureFramesOptions,
+  type CaptureSkip,
+  type CaptureSkipReason,
+} from './testing/capture-loader';
 export { createBLEAdapter } from './bluetooth/adapters';
 
 // Adapter types (what consumers need to implement or use)
