@@ -157,6 +157,39 @@ describe('ReplayBLEAdapter', () => {
     expect(got).toHaveLength(1);
   });
 
+  it('seek() with a fractional index floors it and does not crash while playing', async () => {
+    const frames = buildFrames(8, 100);
+    const adapter = new ReplayBLEAdapter({ frames });
+    const got = collect(adapter);
+
+    await adapter.connect('replay-device');
+    await vi.advanceTimersByTimeAsync(0);
+
+    // 1.5 must floor to 1 rather than indexing frames[1.5] (undefined) and
+    // throwing inside scheduleNext().
+    expect(() => adapter.seek(1.5)).not.toThrow();
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(got).toHaveLength(2);
+    expect(decodeTelemetryFrame(got[1])!.sequence).toBe(1);
+  });
+
+  it('seek(NaN) is treated as 0 and does not crash while playing', async () => {
+    const frames = buildFrames(8, 100);
+    const adapter = new ReplayBLEAdapter({ frames });
+    const got = collect(adapter);
+
+    await adapter.connect('replay-device');
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(() => adapter.seek(Number.NaN)).not.toThrow();
+    // Seeking to 0 reschedules frame[0] with delay 0; flush just that emit.
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(got).toHaveLength(2);
+    expect(decodeTelemetryFrame(got[1])!.sequence).toBe(0);
+  });
+
   it('setSpeed() takes effect on the NEXT emit, not the in-flight one', async () => {
     const frames = buildFrames(4, 100);
     const adapter = new ReplayBLEAdapter({ frames });
