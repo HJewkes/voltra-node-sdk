@@ -614,11 +614,13 @@ export class VoltraClient {
 
     const deviceId = this._connectedDeviceId;
 
-    // Phase 6: suppress ConnectionLossEvent on voluntary disconnects. The
-    // adapter's `setConnectionState('disconnected')` (called inside
-    // `adapter.disconnect()`) will route through `setupDisconnectMonitor`
-    // → `handleUnexpectedDisconnect`; the latch lets that path skip the
-    // loss-event emit while still flipping observable state correctly.
+    // Mark this as a voluntary disconnect. The adapter's
+    // `setConnectionState('disconnected')` (called inside
+    // `adapter.disconnect()`) routes through `setupDisconnectMonitor` →
+    // `handleUnexpectedDisconnect` while our state is still `'connected'`.
+    // The latch makes that handler bail out entirely, so THIS method owns
+    // the teardown: no auto-reconnect, no ConnectionLossEvent, and exactly
+    // one `'disconnected'` emit (below).
     this._voluntaryDisconnectInFlight = true;
 
     try {
@@ -2372,19 +2374,26 @@ export class VoltraClient {
   }
 
   private async handleUnexpectedDisconnect(): Promise<void> {
+    // A voluntary `disconnect()` flips the adapter state itself, which
+    // routes back here through the always-on disconnect monitor. That path
+    // must NOT reconnect (the caller asked to disconnect) and must NOT emit
+    // a second `'disconnected'` — `disconnect()` owns the teardown, the
+    // single bare emit, and (by design) the suppressed loss-event. Bail out
+    // and let it finish.
+    if (this._voluntaryDisconnectInFlight) {
+      return;
+    }
+
     const deviceId = this._connectedDeviceId ?? 'unknown';
     const deviceName = this._connectedDeviceName ?? 'unknown';
     const lastSettings = this._lastDeviceSettings;
-    const isVoluntary = this._voluntaryDisconnectInFlight;
 
     if (!this.options.autoReconnect || !this._lastConnectedDevice) {
       this.cleanup();
       this.setConnectionState('disconnected');
       // Fire wrapper notification BEFORE the bare emit — see flipToDisconnected
       // for the manager-auto-dispose ordering hazard.
-      if (!isVoluntary) {
-        this.notifyConnectionLossEvent(deviceId, deviceName, 'gatt_disconnect', lastSettings);
-      }
+      this.notifyConnectionLossEvent(deviceId, deviceName, 'gatt_disconnect', lastSettings);
       this.emit({ type: 'disconnected', deviceId });
       return;
     }
@@ -2404,9 +2413,7 @@ export class VoltraClient {
         this.setConnectionState('disconnected');
         // Fire wrapper notification BEFORE the bare emit — see
         // flipToDisconnected for the manager-auto-dispose ordering hazard.
-        if (!isVoluntary) {
-          this.notifyConnectionLossEvent(deviceId, deviceName, 'gatt_disconnect', lastSettings);
-        }
+        this.notifyConnectionLossEvent(deviceId, deviceName, 'gatt_disconnect', lastSettings);
         this.emit({ type: 'disconnected', deviceId: this._connectedDeviceId ?? 'unknown' });
       },
     });
