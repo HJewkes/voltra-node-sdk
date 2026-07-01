@@ -44,13 +44,14 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import type { DiscoveredDevice } from '../bluetooth/models/device';
-import type { TelemetryFrame } from '../voltra/models/telemetry';
-import type { VoltraConnectionState } from '../voltra/models/connection';
-import { DEFAULT_SETTINGS } from '../voltra/models/device';
-import type { VoltraDeviceSettings, VoltraRecordingState } from '../voltra/models/device';
 import type { VoltraManager } from '../sdk/voltra-manager';
 import type { VoltraClient } from '../sdk/voltra-client';
 import type { ScanOptions } from '../sdk/types';
+import { DEFAULT_DEVICE_STATE, reduceVoltraDeviceEvent } from './device-state';
+import type { VoltraDeviceState } from './device-state';
+
+export type { VoltraDeviceState } from './device-state';
+export { reduceVoltraDeviceEvent } from './device-state';
 
 // =============================================================================
 // useVoltraScanner
@@ -139,47 +140,17 @@ export function useVoltraScanner(manager: VoltraManager | null): VoltraScannerSt
 // =============================================================================
 
 /**
- * Device state.
- */
-export interface VoltraDeviceState {
-  /** Current connection state */
-  connectionState: VoltraConnectionState;
-  /** Whether connected */
-  isConnected: boolean;
-  /** Current recording state */
-  recordingState: VoltraRecordingState;
-  /** Whether recording is active */
-  isRecording: boolean;
-  /** Current device settings */
-  settings: VoltraDeviceSettings;
-  /** Most recent telemetry frame */
-  currentFrame: TelemetryFrame | null;
-  /** Last error, if any */
-  error: Error | null;
-}
-
-const DEFAULT_STATE: VoltraDeviceState = {
-  connectionState: 'disconnected',
-  isConnected: false,
-  recordingState: 'idle',
-  isRecording: false,
-  settings: DEFAULT_SETTINGS,
-  currentFrame: null,
-  error: null,
-};
-
-/**
  * Hook for observing a Voltra device's state.
  *
  * @param client VoltraClient instance (or null if not connected)
  * @returns Device state
  */
 export function useVoltraDevice(client: VoltraClient | null): VoltraDeviceState {
-  const [state, setState] = useState<VoltraDeviceState>(DEFAULT_STATE);
+  const [state, setState] = useState<VoltraDeviceState>(DEFAULT_DEVICE_STATE);
 
   useEffect(() => {
     if (!client) {
-      setState(DEFAULT_STATE);
+      setState(DEFAULT_DEVICE_STATE);
       return;
     }
 
@@ -187,6 +158,7 @@ export function useVoltraDevice(client: VoltraClient | null): VoltraDeviceState 
     setState({
       connectionState: client.connectionState,
       isConnected: client.isConnected,
+      isReconnecting: client.isReconnecting,
       recordingState: client.recordingState,
       isRecording: client.isRecording,
       settings: client.settings,
@@ -196,43 +168,7 @@ export function useVoltraDevice(client: VoltraClient | null): VoltraDeviceState 
 
     // Subscribe to client events
     const unsubscribe = client.subscribe((event) => {
-      switch (event.type) {
-        case 'connectionStateChanged':
-          setState((prev) => ({
-            ...prev,
-            connectionState: event.state,
-            isConnected: event.state === 'connected',
-          }));
-          break;
-
-        case 'recordingStateChanged':
-          setState((prev) => ({
-            ...prev,
-            recordingState: event.state,
-            isRecording: event.state === 'active',
-          }));
-          break;
-
-        case 'frame':
-          setState((prev) => ({ ...prev, currentFrame: event.frame }));
-          break;
-
-        case 'error':
-          setState((prev) => ({ ...prev, error: event.error }));
-          break;
-
-        case 'connected':
-          setState((prev) => ({
-            ...prev,
-            settings: client.settings,
-            error: null,
-          }));
-          break;
-
-        case 'disconnected':
-          setState(DEFAULT_STATE);
-          break;
-      }
+      setState((prev) => reduceVoltraDeviceEvent(prev, event, client));
     });
 
     return unsubscribe;
