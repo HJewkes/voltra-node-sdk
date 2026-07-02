@@ -152,7 +152,7 @@ export class PeripheralAdapterBridge implements BLEAdapter {
       // existing VoltraClient.writeFrame error-handling still recognizes
       // the failure mode. (writeFrame catches any error and flips state.)
       if (e instanceof PeripheralLost) {
-        throw new Error(`Not connected to device: ${e.message}`);
+        throw new Error(`Not connected to device: ${e.message}`, { cause: e });
       }
       throw e;
     }
