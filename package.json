@@ -142,7 +142,7 @@
     "prettier": "^3.4.0",
     "tsc-alias": "^1.8.17",
     "typedoc": "^0.28.17",
-    "typescript": "~5.9.3",
+    "typescript": "~6.0.3",
     "typescript-eslint": "^8.62.1",
     "vitest": "^4.0.17"
   },
