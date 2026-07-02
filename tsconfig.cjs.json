@@ -3,6 +3,10 @@
   "compilerOptions": {
     "module": "CommonJS",
     "moduleResolution": "node",
+    // TS6 deprecates the classic node ("node10") resolution; acknowledge it so
+    // the CJS build keeps identical resolution behavior. Migrate to node16 when
+    // TS7 (which drops node10) is adopted.
+    "ignoreDeprecations": "6.0",
     "noEmit": false,
     "outDir": "./dist/cjs",
     "declaration": false,
