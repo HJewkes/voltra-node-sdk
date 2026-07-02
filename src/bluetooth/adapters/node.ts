@@ -138,7 +138,7 @@ export class NodeBLEAdapter extends WebBluetoothBase {
           }
 
           // Check if we should select this device
-          let shouldSelect = false;
+          let shouldSelect: boolean;
 
           if (this.deviceChooser) {
             // Use custom chooser
