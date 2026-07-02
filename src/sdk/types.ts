@@ -280,13 +280,7 @@ export interface InProgressEvent {
 
 /** Discrete guided-load lifecycle phases (see file-level state machine doc). */
 export type GuidedLoadPhase =
-  | 'idle'
-  | 'armed'
-  | 'countdown'
-  | 'engaging'
-  | 'active'
-  | 'exited'
-  | 'timeout';
+  'idle' | 'armed' | 'countdown' | 'engaging' | 'active' | 'exited' | 'timeout';
 
 /**
  * Snapshot of guided-load state surfaced by polling the 4 status registers.
@@ -528,13 +522,7 @@ export type ModeRevertEventListener = (event: ModeRevertEvent) => void;
  * does not currently emit a separate target-distance write.
  */
 export type RowingDistancePreset =
-  | 'JustRow'
-  | 'M50'
-  | 'M100'
-  | 'M500'
-  | 'M1000'
-  | 'M2000'
-  | 'M5000';
+  'JustRow' | 'M50' | 'M100' | 'M500' | 'M1000' | 'M2000' | 'M5000';
 // </Bug-22>
 
 /**

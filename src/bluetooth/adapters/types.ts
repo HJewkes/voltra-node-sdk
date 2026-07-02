@@ -187,11 +187,7 @@ declare const DiscoveryBrand: unique symbol;
  * reconciles its underlying-library truth against this single enum.
  */
 export type PeripheralStatus =
-  | 'connecting'
-  | 'connected'
-  | 'disconnecting'
-  | 'disconnected'
-  | 'lost';
+  'connecting' | 'connected' | 'disconnecting' | 'disconnected' | 'lost';
 
 /**
  * Status-change callback for a `Peripheral`.
