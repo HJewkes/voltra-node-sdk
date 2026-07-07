@@ -1683,21 +1683,31 @@ export class VoltraClient {
   // ===========================================================================
 
   /**
-   * Prepare for recording — sends `Workout.PREPARE` and `Workout.SETUP` so
-   * the device is staged to engage the motor on the next {@link startRecording}
-   * call.
+   * Prepare for recording — sends `Workout.SETUP` so the device is staged
+   * to engage the motor on the next {@link startRecording} call.
    *
-   * **Internal cadence.** Two BLE writes interleaved with two `delay()`
-   * calls — 200ms after PREPARE, 300ms after SETUP. This is the only
-   * consumer-facing SDK method that interleaves sleeps between writes. Call
-   * site cost: ~500ms of cumulative time-in-call even on a healthy link.
+   * **SDK-01.13:** the `Workout.PREPARE` write was removed. It is a
+   * single-param write of `FITNESS_WORKOUT_STATE = WeightTraining`
+   * (`0x4FB0 = 01`) and touches no other register — functionally
+   * `setMode(WeightTraining)`. Running it before GO silently reset the
+   * caller's selected fitness mode: Band survived (its `band_max_force`
+   * register is independent) but Damper/Isokinetic were clobbered back to
+   * WeightTraining because their coefficient registers only take effect
+   * while `0x4FB0` names that mode. The selected mode is already written by
+   * {@link setMode} before recording, so PREPARE was redundant for WT and
+   * harmful for every other mode. Hardware-confirmed 2026-07-07 bench:
+   * `setMode(Damper) → SETUP → GO` with PREPARE omitted holds damper-active
+   * and delivers real velocity-scaled force.
+   *
+   * **Internal cadence.** One BLE write (`Workout.SETUP`, a config/read
+   * frame) followed by a 300ms `delay()` so the device settles before GO.
    * `_recordingState` walks `idle → preparing → ready`; on failure it resets
    * to `idle`. Calling this when already `'ready'` is allowed and re-runs
    * the cycle.
    *
    * Call this before starting a set to keep `startRecording()` snappy — if
    * recording starts cold, `startRecording` internally invokes
-   * `prepareRecording` first and absorbs the 500ms there instead.
+   * `prepareRecording` first and absorbs the delay there instead.
    */
   async prepareRecording(): Promise<void> {
     this.ensureConnected();
@@ -1705,8 +1715,6 @@ export class VoltraClient {
     try {
       this.setRecordingState('preparing');
 
-      await this.writeFrame(Workout.PREPARE);
-      await delay(200);
       await this.writeFrame(Workout.SETUP);
       await delay(300);
 
@@ -1722,10 +1730,10 @@ export class VoltraClient {
    * Start recording — write `Workout.GO` to engage the motor.
    *
    * **Conditional cascade.** If `_recordingState` is not `'ready'`, this
-   * invokes {@link prepareRecording} first (PREPARE + 200ms + SETUP + 300ms),
-   * so the worst-case call site cost is 3 writes + 500ms of cumulative
-   * sleeps. If `prepareRecording` was already awaited and `_recordingState`
-   * is `'ready'`, this is a single `Workout.GO` write.
+   * invokes {@link prepareRecording} first (SETUP + 300ms), so the
+   * worst-case call site cost is 2 writes + 300ms of cumulative sleeps. If
+   * `prepareRecording` was already awaited and `_recordingState` is
+   * `'ready'`, this is a single `Workout.GO` write.
    *
    * Transitions `_recordingState` to `'active'` on the successful write.
    * Pair with {@link stopRecording} (or {@link endSet}) to release the motor.

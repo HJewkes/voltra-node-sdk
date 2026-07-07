@@ -72,11 +72,20 @@ export const Init = {
 /**
  * Workout control commands.
  *
- * To start: set weight -> PREPARE -> SETUP -> GO
+ * To start: set mode/weight -> SETUP -> GO
  * To stop: STOP
  */
 export const Workout = {
-  /** Prepare device for workout */
+  /**
+   * Legacy "prepare" frame — a single-param write of
+   * `FITNESS_WORKOUT_STATE = WeightTraining` (`0x4FB0 = 01`).
+   *
+   * **SDK-01.13:** no longer used by the recording path. It is functionally
+   * `setMode(WeightTraining)` and, run before GO, silently clobbered the
+   * caller's selected fitness mode (Damper/Iso reverted to WeightTraining).
+   * `prepareRecording()` now issues SETUP + GO only. Retained as a documented
+   * protocol primitive; do not reintroduce it into the recording sequence.
+   */
   PREPARE: hexToBytes(protocol.commands.workout.prepare),
   /**
    * Multi-paramID READ for `MC_DEFAULT_OFFLEN_CM` (`0x506a`, LE bytes `6a 50`)
