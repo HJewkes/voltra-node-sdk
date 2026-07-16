@@ -134,7 +134,9 @@ describe('MockBLEAdapter', () => {
 
       tickSamples(5);
       expect(notifications.length).toBeGreaterThan(0);
-      expect(isTelemetryFrame(notifications[0])).toBe(true);
+      // The connect-time settings-update seed lands first (deferred setTimeout);
+      // telemetry frames follow on the 91ms interval.
+      expect(notifications.some(isTelemetryFrame)).toBe(true);
     });
   });
 

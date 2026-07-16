@@ -24,7 +24,10 @@ import {
   buildRepBoundary,
   buildSetBoundary,
   buildModeConfirmation,
+  buildSettingsUpdate,
   detectModeCommand,
+  detectSettingCommand,
+  type DetectedSetting,
 } from './mock/notifications';
 import type {
   MockBLEConfig,
@@ -74,6 +77,7 @@ export class MockBLEAdapter extends BaseBLEAdapter {
   private currentBattery: number;
   private motorEngagedSince: number | null = null;
   private telemetryInterval: ReturnType<typeof setInterval> | null = null;
+  private settingsSeedTimer: ReturnType<typeof setTimeout> | null = null;
   private sequence = 0;
   private repInSet = 0;
   private totalReps = 0;
@@ -150,6 +154,7 @@ export class MockBLEAdapter extends BaseBLEAdapter {
     this.linkAlive = true;
     this.setConnectionState('connected');
     this._startTelemetry();
+    this._seedSettingsCascade();
 
     this.errorInjector.startTimers({
       triggerDisconnect: () => this._triggerDisconnect(),
@@ -169,7 +174,26 @@ export class MockBLEAdapter extends BaseBLEAdapter {
     const detectedMode = detectModeCommand(data);
     if (detectedMode !== null) {
       this.setTrainingMode(detectedMode);
+      return;
     }
+    const detectedSetting = detectSettingCommand(data);
+    if (detectedSetting !== null) {
+      this._applySetting(detectedSetting);
+    }
+  }
+
+  /**
+   * Honor a weight / chains write by updating simulated state and echoing the
+   * cmd=0x10 settings-update cascade real hardware sends — the same path the
+   * consumer reads user-set weight/chains from. Keeps mock faithful:
+   * `setWeight(x)` surfaces `weightLbs === x` downstream, and the new weight
+   * feeds telemetry force on subsequent frames.
+   */
+  private _applySetting(setting: DetectedSetting): void {
+    if (setting.baseWeight !== undefined) {
+      this.config.weight = setting.baseWeight;
+    }
+    this.emitNotification(buildSettingsUpdate(setting));
   }
 
   async disconnect(): Promise<void> {
@@ -539,7 +563,29 @@ export class MockBLEAdapter extends BaseBLEAdapter {
     }
   }
 
+  /**
+   * Emit the device's current weight setting as a cmd=0x10 settings-update
+   * cascade one tick after connect, mirroring how real hardware surfaces its
+   * persisted settings post-bootstrap. Deferred a tick because the consumer's
+   * notification handler is subscribed only AFTER `adapter.connect()` resolves
+   * (see `VoltraClient.connect`); a synchronous emit here would be dropped.
+   * Without this, `weightLbs` stays null under mock until an explicit
+   * setWeight, blocking no-hardware verification of mass/force readouts.
+   */
+  private _seedSettingsCascade(): void {
+    this.settingsSeedTimer = setTimeout(() => {
+      this.settingsSeedTimer = null;
+      if (this.linkAlive) {
+        this.emitNotification(buildSettingsUpdate({ baseWeight: this.config.weight }));
+      }
+    }, 0);
+  }
+
   private _stopTelemetry(): void {
+    if (this.settingsSeedTimer) {
+      clearTimeout(this.settingsSeedTimer);
+      this.settingsSeedTimer = null;
+    }
     if (this.telemetryInterval) {
       clearInterval(this.telemetryInterval);
       this.telemetryInterval = null;
@@ -569,6 +615,7 @@ export class MockBLEAdapter extends BaseBLEAdapter {
     this.linkAlive = true;
     this.setConnectionState('connected');
     this._startTelemetry();
+    this._seedSettingsCascade();
   }
 }
 
