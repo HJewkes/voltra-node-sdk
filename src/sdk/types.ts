@@ -227,7 +227,33 @@ export interface SetSummaryEvent {
   repCount: number;
   /** Duration of the final rep in milliseconds (frame[96..99], uint32 LE). */
   repDurationMs: number;
-  /** Raw frame bytes for downstream decoding. */
+  /**
+   * Peak force over the set in tenths of pounds (frame[28..29], uint16 LE).
+   *
+   * Corroborated offline against nine archived capture sessions: reads at or
+   * just above the set's target weight in every weight-mode capture across
+   * three target weights, and takes untargeted values in band / damper /
+   * isokinetic. Not vendor-confirmed.
+   */
+  peakForceTenths: number;
+  /**
+   * Peak power over the set, **units unverified** (frame[32..33], uint16 LE).
+   *
+   * The device emits this as its own field. Offline it scales with rep speed
+   * as power should (a deliberately fast rep reports ~7× a deliberately slow
+   * rep at identical load), but the magnitude has never been cross-checked
+   * against an instrumented reference — it may be watts, centiwatts or
+   * another scaling. Treat as a relative quantity until a hardware set pins
+   * the unit; do not present it to users as watts.
+   */
+  peakPowerRaw: number;
+  /**
+   * Raw frame bytes for downstream decoding.
+   *
+   * A time-to-peak field is believed to live in this frame, but the candidate
+   * offset is contradicted by capture evidence — it decodes to longer than the
+   * whole rep in a single-rep capture — so it is deliberately left undecoded.
+   */
   raw: Uint8Array;
 }
 
