@@ -102,6 +102,8 @@ function buildSetSummaryFrame(fields: {
   targetWeightTenths: number;
   repCount: number;
   repDurationMs: number;
+  peakForceTenths?: number;
+  peakPowerRaw?: number;
 }): Uint8Array {
   const cfg = VendorMessages.subTypes.setSummary;
   if (cfg.frameLength == null || !cfg.fields || cfg.schemaVersionByteOffset === undefined) {
@@ -139,6 +141,10 @@ function buildSetSummaryFrame(fields: {
   writeUint16LE(frame, frameOffsetOf(cfg.fields.repCount.payloadOffset), fields.repCount);
   // repDurationMs (uint32 LE).
   writeUint32LE(frame, frameOffsetOf(cfg.fields.repDurationMs.payloadOffset), fields.repDurationMs);
+  // Peak aggregates — hardcoded offsets (same as in telemetry-decoder.ts);
+  // the regen carries no `fields` entry for either.
+  writeUint16LE(frame, 28, fields.peakForceTenths ?? 0);
+  writeUint16LE(frame, 32, fields.peakPowerRaw ?? 0);
 
   refreshCrc(frame);
   return frame;
@@ -327,6 +333,8 @@ describe('decodeVendorSetSummary', () => {
       targetWeightTenths: 0,
       repCount: 5,
       repDurationMs: 4321,
+      peakForceTenths: 812,
+      peakPowerRaw: 77,
     });
 
     const event = decodeVendorSetSummary(frame);
@@ -336,6 +344,8 @@ describe('decodeVendorSetSummary', () => {
     expect(event!.targetWeightTenths).toBe(0);
     expect(event!.repCount).toBe(5);
     expect(event!.repDurationMs).toBe(4321);
+    expect(event!.peakForceTenths).toBe(812);
+    expect(event!.peakPowerRaw).toBe(77);
     expect(event!.raw).toBeInstanceOf(Uint8Array);
   });
 
@@ -363,6 +373,89 @@ describe('decodeVendorSetSummary', () => {
     const event = decodeVendorSetSummary(truncated);
 
     expect(event).toBeNull();
+  });
+});
+
+// =============================================================================
+// decodeVendorSetSummary — peak aggregates against real captures
+//
+// The peak-force / peak-power offsets are hypothesised, not vendor-confirmed.
+// These fixtures pin them against sets whose set-up conditions are known, so
+// the hypothesis is a standing regression rather than a one-off offline check.
+// Frames are inlined for CI portability (the capture files live in a sibling
+// repo that is not guaranteed to be checked out alongside this one).
+// =============================================================================
+
+/** Weight mode, 20.0 lb target, one deliberately fast rep. */
+const CAPTURE_WEIGHT_20LB_FAST =
+  '556e043c10aa14062000aa855f010203c80000000000000001000100e300de0a02010000d300650581000000d00046057b000000c900fb02430000007a0300009a010000d2000000e411000000000000530000004d000000540000004e0000008502000000000000830400009e6f';
+
+/** Weight mode, 20.0 lb target, one deliberately slow rep — same load as above. */
+const CAPTURE_WEIGHT_20LB_SLOW =
+  '556e043c10aaf9062000aa855f010203c80000000000000002000100ce00aa0126000000c900160118000000cd00bd0240000000c9002d011b0000000c08000090010000c8000000b626000051890200b2000000b7000000b3000000b8000000b61c000055000000a91a0000c2fb';
+
+/** Weight mode, 50.0 lb target, one rep. */
+const CAPTURE_WEIGHT_50LB =
+  '556e043c10aa8b072000aa855f010203f40100000000000003000100f9018203cb000000f501110275000000f8017b0156000000f50120013f00000052030000e8030000f40100004d170000d6ac0400bc000000b8000000bd000000b90000004a060000000000006d0b000034a5';
+
+/** Damper mode, three reps — no target weight. */
+const CAPTURE_DAMPER_3REPS =
+  '556e043c10aa88012000aa855f030203000000000000080001000300840221057f010000740151027f0000006900cb032d000000640061021a00000074090000870500005b0400002328000000000000fd01000069000000aa00000023000000a50f0000a0000000c80f0000a3d3';
+
+describe('decodeVendorSetSummary peak aggregates (real captures)', () => {
+  it('reads peak force at or just above the 20 lb target', () => {
+    const event = decodeVendorSetSummary(hexToBytes(CAPTURE_WEIGHT_20LB_FAST));
+
+    expect(event).not.toBeNull();
+    expect(event!.schemaVersion).toBe(VendorSchemaVersion.Weight);
+    expect(event!.targetWeightTenths).toBe(200); // 20.0 lb × 10
+    expect(event!.peakForceTenths).toBe(227); // 22.7 lb — overshoot above target
+    expect(event!.peakForceTenths).toBeGreaterThanOrEqual(event!.targetWeightTenths);
+  });
+
+  it('reads peak force at or just above the 50 lb target', () => {
+    const event = decodeVendorSetSummary(hexToBytes(CAPTURE_WEIGHT_50LB));
+
+    expect(event).not.toBeNull();
+    expect(event!.targetWeightTenths).toBe(500); // 50.0 lb × 10
+    expect(event!.peakForceTenths).toBe(505); // 50.5 lb
+    expect(event!.peakForceTenths).toBeGreaterThanOrEqual(event!.targetWeightTenths);
+  });
+
+  it('reads an untargeted peak force in damper mode', () => {
+    const event = decodeVendorSetSummary(hexToBytes(CAPTURE_DAMPER_3REPS));
+
+    expect(event).not.toBeNull();
+    expect(event!.schemaVersion).toBe(VendorSchemaVersion.Damper);
+    expect(event!.targetWeightTenths).toBe(0); // damper carries no target
+    expect(event!.repCount).toBe(3);
+    expect(event!.peakForceTenths).toBe(644); // 64.4 lb, set by the user's effort
+  });
+
+  it('reports a much larger peak power for a fast rep than a slow rep at the same load', () => {
+    const fast = decodeVendorSetSummary(hexToBytes(CAPTURE_WEIGHT_20LB_FAST));
+    const slow = decodeVendorSetSummary(hexToBytes(CAPTURE_WEIGHT_20LB_SLOW));
+
+    // Same target weight, same rep count — only rep speed differs.
+    expect(fast!.targetWeightTenths).toBe(slow!.targetWeightTenths);
+    expect(fast!.repCount).toBe(1);
+    expect(slow!.repCount).toBe(1);
+    expect(fast!.repDurationMs).toBeLessThan(slow!.repDurationMs);
+
+    // Magnitudes are in unverified units; the ratio is the assertable signal.
+    expect(fast!.peakPowerRaw).toBe(258);
+    expect(slow!.peakPowerRaw).toBe(38);
+    expect(fast!.peakPowerRaw / slow!.peakPowerRaw).toBeGreaterThan(5);
+  });
+
+  it('reports similar peak force for fast and slow reps at the same load', () => {
+    const fast = decodeVendorSetSummary(hexToBytes(CAPTURE_WEIGHT_20LB_FAST));
+    const slow = decodeVendorSetSummary(hexToBytes(CAPTURE_WEIGHT_20LB_SLOW));
+
+    // Peak force is load-bound, so it must not swing with speed the way
+    // peak power does — this guards against the two offsets being confused.
+    expect(fast!.peakForceTenths).toBe(227);
+    expect(slow!.peakForceTenths).toBe(206);
   });
 });
 
