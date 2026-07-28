@@ -187,6 +187,8 @@ export { getDeviceDisplayName, sortBySignalStrength } from './bluetooth/models/d
 
 export {
   VOLTRA_DEVICE_PREFIX,
+  DEVICE_NAME_PREFIX_ENV_VAR,
+  resolveDeviceNamePrefix,
   isVoltraDevice,
   filterVoltraDevices,
 } from './voltra/models/device-filter';

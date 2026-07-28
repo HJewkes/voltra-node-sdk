@@ -66,10 +66,22 @@ export interface ScanOptions {
   timeout?: number;
 
   /**
-   * Only return Voltra devices (filter by name prefix).
-   * Default: true
+   * Apply the device name prefix filter to scan results.
+   *
+   * Default: true — but a no-op unless a prefix was configured, since
+   * name filtering is off by default. Set false to also bypass a
+   * configured prefix for this one scan.
    */
   filterVoltra?: boolean;
+
+  /**
+   * Device name prefix for this scan only. Overrides the manager-level
+   * `deviceNamePrefix`. `null` or `''` disables name filtering.
+   *
+   * Honored by hosts that filter during the scan (`node-noble`); on the
+   * legacy adapter path it is applied to the returned results instead.
+   */
+  deviceNamePrefix?: string | null;
 }
 
 /**

@@ -34,6 +34,15 @@ The SDK provides three BLE adapters to support different runtime environments. E
 | **Background Mode** | Supported (with config) | No | Yes |
 | **Auto-reconnect** | Built-in | No | No |
 
+## Device Identification
+
+All three adapters filter scan results on the Voltra BLE service UUID —
+this is what identifies a Voltra device and it's always applied. Filtering
+by advertised name prefix (e.g. `VTR-`) is opt-in on top of that, via
+`deviceNamePrefix` on `VoltraManager` or `scan()` (plus, in Node,
+`VOLTRA_DEVICE_NAME_PREFIX`); it's off by default so a device renamed from
+the vendor app is still discovered.
+
 ## Native Adapter (React Native)
 
 For iOS and Android apps using React Native.

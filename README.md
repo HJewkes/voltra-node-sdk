@@ -494,14 +494,19 @@ Complete working examples for each platform:
 Main entry point - handles device discovery and connection management.
 
 ```typescript
-// Create with auto-detection
+// Create with auto-detection (Node resolves to the noble backend)
 const manager = new VoltraManager();
 
 // Or specify platform
 const manager = VoltraManager.forWeb();
-const manager = VoltraManager.forNode();
+const manager = VoltraManager.forNodeNoble(); // recommended for Node
+const manager = VoltraManager.forNode();      // legacy webbluetooth backend
 const manager = VoltraManager.forNative();
 ```
+
+`forNode()` cannot enumerate — its `requestDevice` selects the first matching
+device and stops scanning — and is not multi-peripheral-safe. Prefer the
+noble backend, which auto-detection now selects for you.
 
 | Method | Description |
 |--------|-------------|
@@ -514,6 +519,30 @@ const manager = VoltraManager.forNative();
 | `disconnect(deviceId)` | Disconnect specific device |
 | `disconnectAll()` | Disconnect all devices |
 | `dispose()` | Clean up all resources |
+| `resolvedPlatform` | Platform actually selected, after auto-detection |
+| `resolvedDeviceNamePrefix` | Effective name prefix, or `undefined` when unfiltered |
+
+The last two are getters, useful when a scan returns nothing and you need to
+know what the SDK actually chose:
+
+```typescript
+console.log(manager.resolvedPlatform, manager.resolvedDeviceNamePrefix);
+```
+
+See `examples/node/scan-diagnostics.ts` for a ready-made version that also
+prints everything the backend discovered.
+
+Devices are identified by BLE service UUID, so scanning finds every Voltra
+regardless of its advertised name (including one renamed from the vendor
+app). Name-prefix filtering is opt-in — pass `deviceNamePrefix` to the
+constructor or to `scan()` if you want to additionally restrict results to
+names starting with a given string:
+
+```typescript
+const manager = new VoltraManager({ deviceNamePrefix: 'VTR-' });
+// or per scan:
+const devices = await manager.scan({ deviceNamePrefix: 'VTR-' });
+```
 
 ### VoltraClient
 

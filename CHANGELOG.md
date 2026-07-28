@@ -7,6 +7,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-07-28
+
+### Changed
+
+- **BREAKING (behavioral)**: Node platform auto-detection now resolves to
+  `'node-noble'` instead of `'node'` (the Phase 4 promotion). A bare
+  `new VoltraManager()` in Node gets the noble backend, which enumerates
+  correctly and is multi-peripheral-safe. `VoltraManager.forNode()` still
+  selects the legacy `webbluetooth` backend explicitly.
+
+  The legacy backend is a picker, not a scanner: `requestDevice` selects the
+  first device passing the filter and stops, so `scan()` can never return
+  more than one device and, without a name filter, returns whatever
+  advertises first (observed on hardware returning a television).
+
+- **BREAKING (behavioral)**: device name-prefix filtering during scan is now
+  **off by default**, except on the legacy `'node'` backend where the picker
+  model makes the `VTR-` prefix load-bearing.
+
+  Previously the `VTR-` prefix was hardcoded with no override. A Voltra
+  renamed through the vendor app stops advertising `VTR-`, so it was silently
+  undiscoverable — `scan()` returned an empty array with no diagnostic, and
+  the only workaround was to supply a custom `host`/`adapterFactory`.
+
+  Consumers relying on scan results being name-filtered should pass an
+  explicit prefix (see below). Most should not: the advertised name is
+  user-editable, so it is a poor identity signal.
+
+### Fixed
+
+- **The package could not be bundled for browsers at all.** Two independent
+  causes, both confirmed with a real `vite build`:
+  - `exports["."].browser` pointed at the CJS build, so Rollup could not read
+    its named exports (`"VoltraManager" is not exported by dist/cjs/index.js`).
+  - The ESM root pulls `voltra-manager.js`, which carries an injected
+    `import { createRequire } from 'node:module'` shim (needed for its
+    `require()` platform switch). Bundlers externalize `node:module`, so the
+    build died on `"createRequire" is not exported by __vite-browser-external`
+    — after transforming 215 modules and dragging in `@serialport/bindings-cpp`,
+    `node-gyp-build`, and `stream`/`fs`/`path`/`os`.
+
+  Platform-agnostic manager logic moved to `VoltraManagerCore`
+  (`src/sdk/manager-core.ts`), which contains no `require()`. `VoltraManager`
+  now extends it and holds only `detectPlatform` / `createAdapterFactory` /
+  `createHost`, so the shim stays confined to that one module. A browser
+  bundle built from the new `./web` entry transforms 41 modules and pulls no
+  Node dependencies. Public API is unchanged.
+
+- `NobleHost.scan()` returned every advertising device, not just Voltras.
+  noble accepts the service-UUID filter passed to `startScanningAsync` but
+  does not enforce it (verified on hardware: 39 devices back, including
+  headphones and household appliances). Discoveries are now checked against
+  the advertised service list in JS.
+
+- `NobleHost.scan()` evaluated each peripheral at first discovery, when noble
+  has not yet populated `advertisement.serviceUuids` — that field is filled
+  in from the scan response, and noble mutates the advertisement object in
+  place. Scanning now collects candidates for the full window and filters
+  once it closes.
+
+### Added
+
+- `VoltraManagerOptions.deviceNamePrefix` — opt back in to name filtering,
+  e.g. `new VoltraManager({ deviceNamePrefix: VOLTRA_DEVICE_PREFIX })`.
+  `null` or `''` explicitly disables it.
+- `ScanOptions.deviceNamePrefix` — per-scan override of the above. Forwarded
+  to `BluetoothHost.scan()`, whose `HostScanOptions.deviceNamePrefix` the
+  manager previously never populated.
+- `VOLTRA_DEVICE_NAME_PREFIX` environment variable (Node only), consulted
+  when no explicit prefix is given.
+- New exports: `resolveDeviceNamePrefix`, `DEVICE_NAME_PREFIX_ENV_VAR`.
+- `VoltraManager.resolvedPlatform` and `VoltraManager.resolvedDeviceNamePrefix`
+  getters, for diagnosing discovery problems.
+- `examples/node/scan-diagnostics.ts` — prints what a Node backend discovers
+  and which devices a given prefix would filter out. Run one backend per
+  invocation; initializing both native BLE stacks in one process segfaults.
+
+`isVoltraDevice(device, prefix?)` and `filterVoltraDevices(devices, prefix?)`
+now take an optional already-resolved prefix and pass everything through when
+it is absent. They do NOT consult the environment — resolution happens once,
+in `VoltraManager`, so an explicit opt-out cannot be resurrected by the env
+var. `VOLTRA_DEVICE_PREFIX` still exports `'VTR-'` but is no longer applied
+automatically.
+
 ## [0.11.0] - 2026-05-13
 
 ### Added

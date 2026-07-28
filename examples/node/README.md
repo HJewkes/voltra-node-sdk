@@ -118,6 +118,21 @@ WORKOUT SUMMARY
   Peak force: 61
 ```
 
+### Scan Diagnostics (`npx tsx scan-diagnostics.ts`)
+
+Run this first whenever a scan comes back empty or wrong. It connects to
+nothing and writes nothing to the device — it just reports what a backend
+actually discovered, and which devices a given name prefix would filter out.
+
+```bash
+npx tsx scan-diagnostics.ts                    # node-noble (the default)
+npx tsx scan-diagnostics.ts --platform node    # legacy webbluetooth backend
+npx tsx scan-diagnostics.ts --prefix VTR-      # show what a prefix would drop
+```
+
+Run **one backend per invocation**: initializing both native BLE stacks
+(SimpleBLE via `webbluetooth`, and noble) in a single process segfaults.
+
 ## Customization
 
 Edit the example files to try different scenarios:

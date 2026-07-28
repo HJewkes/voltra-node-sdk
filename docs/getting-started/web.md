@@ -41,6 +41,34 @@ npm install @voltras/node-sdk
 npm install
 ```
 
+### Which entry your bundler gets
+
+The SDK ships a dedicated browser entry containing only the Web Bluetooth
+code path — no Node or React Native dependencies. Bundlers that honor the
+`browser` export condition (Vite, webpack, Rollup, Parcel) resolve the
+package root to it automatically, so this works unchanged:
+
+```typescript
+import { VoltraManager } from '@voltras/node-sdk';
+```
+
+In the browser entry, `VoltraManager` is an alias for `VoltraWebManager`. It
+carries `forWeb()` and `forMock()` but deliberately not `forNode()`,
+`forNative()`, or `forNodeNoble()` — those platforms do not exist in a
+browser.
+
+If your toolchain does **not** apply the `browser` condition, or you would
+rather be explicit, import the entry directly:
+
+```typescript
+import { VoltraWebManager } from '@voltras/node-sdk/web';
+```
+
+> Importing the package root **without** the `browser` condition pulls in the
+> platform-switching manager, which uses `require()` and cannot be bundled for
+> a browser. If your build fails with `"createRequire" is not exported by
+> "__vite-browser-external"`, use the `@voltras/node-sdk/web` import above.
+
 ---
 
 ## Your First App
@@ -264,6 +292,12 @@ The `connectFirst()` method is actually the most natural for web apps:
 // This opens the browser picker and connects to whatever user selects
 const client = await manager.connectFirst();
 ```
+
+The picker is scoped to the Voltra BLE service UUID, so it lists Voltra
+devices regardless of their advertised name (a device renamed from the
+Beyond+ app still shows up). Pass `deviceNamePrefix` to `VoltraManager` if
+you want the picker additionally restricted to names starting with a given
+string.
 
 ---
 

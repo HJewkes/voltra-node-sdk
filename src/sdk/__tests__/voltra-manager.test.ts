@@ -15,7 +15,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { BaseBLEAdapter } from '../../bluetooth/adapters/base';
-import type { Device } from '../../bluetooth/adapters/types';
+import type { BluetoothHost, Device } from '../../bluetooth/adapters/types';
 import { VoltraManager } from '../voltra-manager';
 
 class RecordingAdapter extends BaseBLEAdapter {
@@ -127,6 +127,163 @@ describe('VoltraManager', () => {
       const adapterAfterSecond = manager.getAdapter();
 
       expect(adapterAfterSecond).toBe(adapterAfterFirst);
+    });
+  });
+
+  // ===========================================================================
+  // Device name prefix (0.12.0)
+  //
+  // Name filtering is off by default: a Voltra renamed via the vendor app
+  // stops advertising "VTR-" and was silently invisible before 0.12.0.
+  // Identity comes from the service-UUID filter applied during the scan.
+  // ===========================================================================
+
+  describe('device name prefix', () => {
+    const renamed: Device = { id: 'device-r', name: 'Voltra 1', rssi: -55 };
+
+    /** Minimal BluetoothHost that records scan options and finds nothing. */
+    function stubHost(onScan?: (options: { deviceNamePrefix?: string }) => void): BluetoothHost {
+      return {
+        scan: async (options: { deviceNamePrefix?: string }) => {
+          onScan?.(options);
+          return [];
+        },
+        dial: async () => {
+          throw new Error('stubHost.dial is not used');
+        },
+        getKnownDiscoveries: async () => [],
+        dispose: async () => {},
+      } as unknown as BluetoothHost;
+    }
+
+    // 'web' is used as a neutral platform: name filtering is off by
+    // default everywhere EXCEPT the legacy 'node' backend, which is
+    // covered separately below.
+    function managerWith(
+      options: ConstructorParameters<typeof VoltraManager>[0],
+      devices: Device[] = [deviceA, renamed]
+    ): VoltraManager {
+      return new VoltraManager({
+        platform: 'web',
+        adapterFactory: () => new RecordingAdapter(devices),
+        ...options,
+      });
+    }
+
+    afterEach(() => {
+      delete process.env.VOLTRA_DEVICE_NAME_PREFIX;
+    });
+
+    it('surfaces a renamed device by default', async () => {
+      const m = managerWith({});
+      const devices = await flushAndAwait(m.scan({ timeout: 100 }));
+
+      expect(devices.map((d) => d.id)).toEqual(['device-a', 'device-r']);
+    });
+
+    it('filters to a configured prefix', async () => {
+      const m = managerWith({ deviceNamePrefix: 'VTR-' });
+      const devices = await flushAndAwait(m.scan({ timeout: 100 }));
+
+      expect(devices.map((d) => d.id)).toEqual(['device-a']);
+    });
+
+    it('matches a renamed device against a custom prefix', async () => {
+      const m = managerWith({ deviceNamePrefix: 'Voltra' });
+      const devices = await flushAndAwait(m.scan({ timeout: 100 }));
+
+      expect(devices.map((d) => d.id)).toEqual(['device-r']);
+    });
+
+    it('honors the VOLTRA_DEVICE_NAME_PREFIX environment variable', async () => {
+      process.env.VOLTRA_DEVICE_NAME_PREFIX = 'Voltra';
+      const m = managerWith({});
+      const devices = await flushAndAwait(m.scan({ timeout: 100 }));
+
+      expect(devices.map((d) => d.id)).toEqual(['device-r']);
+    });
+
+    it('lets an explicit prefix override the environment variable', async () => {
+      process.env.VOLTRA_DEVICE_NAME_PREFIX = 'Voltra';
+      const m = managerWith({ deviceNamePrefix: 'VTR-' });
+      const devices = await flushAndAwait(m.scan({ timeout: 100 }));
+
+      expect(devices.map((d) => d.id)).toEqual(['device-a']);
+    });
+
+    it('lets an explicit null disable the environment variable', async () => {
+      process.env.VOLTRA_DEVICE_NAME_PREFIX = 'Voltra';
+      const m = managerWith({ deviceNamePrefix: null });
+      const devices = await flushAndAwait(m.scan({ timeout: 100 }));
+
+      expect(devices.map((d) => d.id)).toEqual(['device-a', 'device-r']);
+    });
+
+    it('lets a per-scan prefix override the manager-level one', async () => {
+      const m = managerWith({ deviceNamePrefix: 'VTR-' });
+      const devices = await flushAndAwait(m.scan({ timeout: 100, deviceNamePrefix: 'Voltra' }));
+
+      expect(devices.map((d) => d.id)).toEqual(['device-r']);
+    });
+
+    it('lets a per-scan null disable a configured prefix', async () => {
+      const m = managerWith({ deviceNamePrefix: 'VTR-' });
+      const devices = await flushAndAwait(m.scan({ timeout: 100, deviceNamePrefix: null }));
+
+      expect(devices.map((d) => d.id)).toEqual(['device-a', 'device-r']);
+    });
+
+    /**
+     * The legacy 'node' backend is a picker, not a scanner: it selects the
+     * first device that passes the filter and stops. With no name filter it
+     * returned a television on hardware (2026-07-28), so the VTR- prefix
+     * stays on by default there — and only there.
+     */
+    it('defaults the prefix ON for the legacy node backend', async () => {
+      const m = new VoltraManager({
+        platform: 'node',
+        adapterFactory: () => new RecordingAdapter([deviceA, renamed]),
+      });
+      const devices = await flushAndAwait(m.scan({ timeout: 100 }));
+
+      expect(devices.map((d) => d.id)).toEqual(['device-a']);
+    });
+
+    it('still honors an explicit opt-out on the legacy node backend', async () => {
+      const m = new VoltraManager({
+        platform: 'node',
+        deviceNamePrefix: null,
+        adapterFactory: () => new RecordingAdapter([deviceA, renamed]),
+      });
+      const devices = await flushAndAwait(m.scan({ timeout: 100 }));
+
+      expect(devices.map((d) => d.id)).toEqual(['device-a', 'device-r']);
+    });
+
+    /**
+     * Phase 4 promotion (2026-07-28): bare `new VoltraManager()` in Node
+     * resolves to 'node-noble'. The legacy 'node' backend cannot
+     * enumerate — it returns only the first device that advertises.
+     */
+    it('auto-detects node-noble in Node, not the legacy node backend', () => {
+      const m = new VoltraManager({ host: stubHost() });
+
+      expect(m.resolvedPlatform).toBe('node-noble');
+      expect(m.resolvedDeviceNamePrefix).toBeUndefined();
+    });
+
+    it('forwards the resolved prefix to the host scan call', async () => {
+      const scanCalls: (string | undefined)[] = [];
+      const m = new VoltraManager({
+        platform: 'node',
+        deviceNamePrefix: 'Voltra',
+        host: stubHost((options) => scanCalls.push(options.deviceNamePrefix)),
+      });
+
+      await flushAndAwait(m.scan({ timeout: 100 }));
+      await flushAndAwait(m.scan({ timeout: 100, deviceNamePrefix: 'VTR-' }));
+
+      expect(scanCalls).toEqual(['Voltra', 'VTR-']);
     });
   });
 
