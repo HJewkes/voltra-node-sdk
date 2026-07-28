@@ -265,6 +265,12 @@ The `connectFirst()` method is actually the most natural for web apps:
 const client = await manager.connectFirst();
 ```
 
+The picker is scoped to the Voltra BLE service UUID, so it lists Voltra
+devices regardless of their advertised name (a device renamed from the
+Beyond+ app still shows up). Pass `deviceNamePrefix` to `VoltraManager` if
+you want the picker additionally restricted to names starting with a given
+string.
+
 ---
 
 ## Advanced Patterns

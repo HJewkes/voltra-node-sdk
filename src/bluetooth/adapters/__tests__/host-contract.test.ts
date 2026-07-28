@@ -587,7 +587,7 @@ class MockNoblePeripheral implements NoblePeripheralLike {
   /** Mutable so tests can simulate the underlying-library handle rebound. */
   id: string;
   readonly address: string;
-  readonly advertisement: { localName?: string };
+  readonly advertisement: { localName?: string; serviceUuids?: string[] };
   readonly rssi: number;
   state: 'error' | 'connecting' | 'connected' | 'disconnecting' | 'disconnected' = 'disconnected';
 
@@ -596,10 +596,20 @@ class MockNoblePeripheral implements NoblePeripheralLike {
 
   private listeners: Map<string, Array<(...args: unknown[]) => void>> = new Map();
 
-  constructor(id: string, name: string, rssi: number = -50) {
+  /**
+   * @param serviceUuids Advertised services, in noble's dash-less
+   *   lower-case form. Defaults to the Voltra service — real hardware
+   *   always advertises it, and NobleHost.scan() now requires it.
+   */
+  constructor(
+    id: string,
+    name: string,
+    rssi: number = -50,
+    serviceUuids: string[] = [VOLTRA_SERVICE_UUID.toLowerCase().replace(/-/g, '')]
+  ) {
     this.id = id;
     this.address = id;
-    this.advertisement = { localName: name };
+    this.advertisement = { localName: name, serviceUuids };
     this.rssi = rssi;
     this.notifyChar = new MockNobleCharacteristic(VOLTRA_NOTIFY_CHAR_UUID, ['notify']);
     this.writeChar = new MockNobleCharacteristic(VOLTRA_WRITE_CHAR_UUID, ['write']);
@@ -716,6 +726,37 @@ describe('BluetoothHost contract — NobleHost (Phase 1, mocked @stoprocent/nobl
     for (const d of discoveries) {
       expect(d._origin).toBe(fixture.host);
     }
+  });
+
+  /**
+   * Regression (2026-07-28, on hardware): noble accepts the service-UUID
+   * filter passed to startScanningAsync but does NOT enforce it — a real
+   * scan came back with 38 peripherals including AirPods and household
+   * appliances. NobleHost must therefore do its own advertised-services
+   * check, or non-Voltra devices reach the caller as discoveries.
+   */
+  it('excludes peripherals that do not advertise the Voltra service', async () => {
+    const impostor = new MockNoblePeripheral('noble-x', 'Henry’s AirPods Pro', -53, [
+      '0000fe2c00001000800000805f9b34fb',
+    ]);
+    const silent = new MockNoblePeripheral('noble-y', 'Dryer', -67, []);
+    fixture.noble.peripherals = [fixture.peripheralA, impostor, silent];
+
+    const discoveries = await fixture.host.scan({ timeout: 50 });
+
+    expect(discoveries.map((d) => d.id)).toEqual(['noble-a']);
+  });
+
+  it('matches the advertised service UUID irrespective of case and dashes', async () => {
+    // noble reports dash-less lower-case; BLE.SERVICE_UUID is dashed upper-case.
+    const dashedUpper = new MockNoblePeripheral('noble-z', 'VTR-CCCCCC', -55, [
+      VOLTRA_SERVICE_UUID,
+    ]);
+    fixture.noble.peripherals = [dashedUpper];
+
+    const discoveries = await fixture.host.scan({ timeout: 50 });
+
+    expect(discoveries.map((d) => d.id)).toEqual(['noble-z']);
   });
 
   it('dial() rejects a discovery from a different host (origin mismatch)', async () => {

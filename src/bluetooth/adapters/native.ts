@@ -282,9 +282,11 @@ export class NativeBLEAdapter extends BaseBLEAdapter {
     const prefix = this.bleConfig.deviceNamePrefix;
 
     return new Promise((resolve, _reject) => {
-      // Scan for all devices (filtering is done by name prefix if configured)
+      // Filter at the BLE stack by service UUID — that, not the
+      // advertised name, is what identifies a Voltra. A name prefix
+      // narrows further only when explicitly configured.
       this.manager.startDeviceScan(
-        null, // No service filter - scan for all devices
+        [this.bleConfig.serviceUUID],
         { allowDuplicates: false },
         (error, device) => {
           if (error) {

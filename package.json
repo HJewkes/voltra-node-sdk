@@ -13,8 +13,8 @@
         "default": "./dist/cjs/index.js"
       },
       "browser": {
-        "types": "./dist/types/index.d.ts",
-        "default": "./dist/cjs/index.js"
+        "types": "./dist/types/entries/web.d.ts",
+        "default": "./dist/esm/entries/web.js"
       },
       "import": {
         "types": "./dist/types/index.d.ts",
@@ -67,12 +67,12 @@
     },
     "./web": {
       "import": {
-        "types": "./dist/types/bluetooth/adapters/web.d.ts",
-        "default": "./dist/esm/bluetooth/adapters/web.js"
+        "types": "./dist/types/entries/web.d.ts",
+        "default": "./dist/esm/entries/web.js"
       },
       "require": {
-        "types": "./dist/types/bluetooth/adapters/web.d.ts",
-        "default": "./dist/cjs/bluetooth/adapters/web.js"
+        "types": "./dist/types/entries/web.d.ts",
+        "default": "./dist/cjs/entries/web.js"
       }
     },
     "./testing": {

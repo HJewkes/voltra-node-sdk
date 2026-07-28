@@ -64,7 +64,7 @@ import { VoltraManager, type TelemetryFrame, type DiscoveredDevice } from '@volt
 async function main() {
   console.log('Voltra SDK - Node.js Tutorial\n');
 
-  // Create manager (auto-detects Node.js platform)
+  // Create manager (auto-detects Node.js → the noble backend)
   const manager = new VoltraManager();
 
   try {
@@ -190,6 +190,27 @@ const client = await manager.connectByName('VTR-123456', {
   matchMode: 'exact' 
 });
 ```
+
+### Restricting Scan Results by Name
+
+`scan()` identifies Voltra devices by BLE service UUID, so it finds every
+device regardless of its advertised name — including one renamed from the
+Beyond+ app. If you want to additionally narrow results to a known naming
+scheme, opt in to name-prefix filtering:
+
+```typescript
+const manager = new VoltraManager({ deviceNamePrefix: 'VTR-' });
+```
+
+Or set it for the process via the `VOLTRA_DEVICE_NAME_PREFIX` environment
+variable (Node only) instead of hardcoding it:
+
+```bash
+VOLTRA_DEVICE_NAME_PREFIX=VTR- npm start
+```
+
+A `deviceNamePrefix` passed to the `VoltraManager` constructor or to
+`scan()` takes precedence over the environment variable.
 
 ### Interactive Device Selection
 

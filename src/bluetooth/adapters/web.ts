@@ -61,12 +61,16 @@ export class WebBLEAdapter extends WebBluetoothBase {
     }
 
     try {
-      // Request device from browser - this shows the native picker
+      // Request device from browser - this shows the native picker.
+      // Filter on the service UUID so the picker only offers Voltras
+      // regardless of what the user renamed them to; narrow further by
+      // name only when a prefix was explicitly configured.
       const device = await navigator.bluetooth.requestDevice({
-        filters: this.config.deviceNamePrefix
-          ? [{ namePrefix: this.config.deviceNamePrefix }]
-          : undefined,
-        acceptAllDevices: !this.config.deviceNamePrefix,
+        filters: [
+          this.config.deviceNamePrefix
+            ? { services: [this.config.serviceUUID], namePrefix: this.config.deviceNamePrefix }
+            : { services: [this.config.serviceUUID] },
+        ],
         optionalServices: [this.config.serviceUUID],
       });
 

@@ -2,11 +2,11 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "module": "CommonJS",
+    // Classic node ("node10") resolution, to keep CJS resolution behavior
+    // identical. TS 6.0 no longer accepts an `ignoreDeprecations` value here —
+    // passing one fails with TS5103 — so the acknowledgement is dropped.
+    // Migrate to node16 when TS7 (which drops node10) is adopted.
     "moduleResolution": "node",
-    // TS6 deprecates the classic node ("node10") resolution; acknowledge it so
-    // the CJS build keeps identical resolution behavior. Migrate to node16 when
-    // TS7 (which drops node10) is adopted.
-    "ignoreDeprecations": "6.0",
     "noEmit": false,
     "outDir": "./dist/cjs",
     "declaration": false,

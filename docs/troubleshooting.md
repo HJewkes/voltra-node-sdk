@@ -15,8 +15,39 @@ Common issues and solutions when working with the Voltra SDK.
 | Device not powered on | Ensure the Voltra is turned on (LED should be visible) |
 | Device already connected | Only one connection at a time - disconnect from Beyond+ app or other clients |
 | Out of Bluetooth range | Move closer to the device (within ~10 meters) |
-| Wrong name filter | Voltra devices start with `VTR-` prefix |
+| Renamed device hidden by a name filter | Only applies if you opted in to `deviceNamePrefix`. Devices ship as `VTR-…`, but renaming one in the vendor app changes what it advertises. Drop the prefix, or match the new name: `new VoltraManager({ deviceNamePrefix: 'Voltra' })` |
 | Scan too short | Increase timeout: `scan({ timeout: 15000 })` |
+
+> **Changed in 0.12.0**: name-prefix filtering is off by default. Devices are
+> identified by their BLE service UUID instead, so a renamed Voltra is found
+> without any configuration. Before 0.12.0 the `VTR-` prefix was hardcoded and
+> a renamed device was silently invisible with no way to override it.
+
+### `scan()` returns only one device (Node)
+
+`VoltraManager.forNode()` uses the legacy `webbluetooth` backend, whose
+`requestDevice` selects the **first** device that passes the filter and stops
+scanning. It cannot enumerate, so `scan()` never returns more than one device.
+The `VTR-` name prefix stays on by default there for that reason — without it,
+the backend returns whatever device advertises first.
+
+Use the noble backend instead, which enumerates properly and identifies
+devices by advertised service UUID:
+
+```typescript
+const manager = new VoltraManager();              // auto-detects node-noble
+const manager = VoltraManager.forNodeNoble();     // or be explicit
+```
+
+Since 0.12.0, bare `new VoltraManager()` in Node already resolves to
+`node-noble`. Check what you actually got with:
+
+```typescript
+console.log(manager.resolvedPlatform, manager.resolvedDeviceNamePrefix);
+```
+
+`examples/node/scan-diagnostics.ts` prints this plus everything the backend
+discovered — run it first when a scan comes back empty or wrong.
 
 **Platform-specific**:
 - **Web**: Must be triggered by user gesture (click/tap)

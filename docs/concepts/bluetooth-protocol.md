@@ -40,7 +40,10 @@ All communication happens through a single BLE service with two characteristics:
 - **Notify characteristic** — device sends telemetry, settings updates, status
 - **Write characteristic** — app sends commands (auth, init, settings, workout control)
 
-UUIDs and device name prefix are defined in `src/voltra/protocol/constants/ble-config.ts`.
+UUIDs and the factory-default device name prefix are defined in
+`src/voltra/protocol/constants/ble-config.ts`. Devices are identified by
+the service UUID; the name prefix is only applied if a caller opts in via
+`deviceNamePrefix`.
 
 ## Message Types
 
@@ -87,7 +90,7 @@ Protocol constants are organized in `src/voltra/protocol/constants/`:
 
 | File | Contents |
 |------|----------|
-| `ble-config.ts` | Service UUID, characteristic UUIDs, device prefix |
+| `ble-config.ts` | Service UUID, characteristic UUIDs, factory-default device prefix (opt-in, not applied automatically) |
 | `timing.ts` | Command delays, auth timeout |
 | `connection-commands.ts` | Auth, init, and workout command bytes |
 | `message-types.ts` | Notification headers, telemetry offsets, param IDs |

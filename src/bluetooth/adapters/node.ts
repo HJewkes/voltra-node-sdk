@@ -116,7 +116,10 @@ export class NodeBLEAdapter extends WebBluetoothBase {
       // This is required for the callback to fire reliably in webbluetooth
       const bluetooth = new BluetoothClass({
         deviceFound: (device: BluetoothDevice, selectFn: () => void) => {
-          // Apply name prefix filter manually (more reliable than built-in filter)
+          // Service-UUID matching happens in the requestDevice filter
+          // below. Only narrow by name when a prefix was explicitly
+          // configured — applied manually because webbluetooth's
+          // built-in namePrefix filter is unreliable.
           if (
             this.config.deviceNamePrefix &&
             !device.name?.startsWith(this.config.deviceNamePrefix)
@@ -163,8 +166,12 @@ export class NodeBLEAdapter extends WebBluetoothBase {
 
       bluetooth
         .requestDevice({
-          // Always use acceptAllDevices - we filter manually in deviceFound
-          // The built-in namePrefix filter doesn't work reliably
+          // acceptAllDevices + manual filtering in deviceFound. Neither
+          // built-in filter is usable here: `namePrefix` is unreliable,
+          // and `filters: [{ services }]` makes requestDevice reject with
+          // "no devices found" even for devices that do advertise the
+          // service (verified on hardware 2026-07-28). Prefer the
+          // 'node-noble' backend, which filters on advertised services.
           acceptAllDevices: true,
           optionalServices: [this.config.serviceUUID],
         })

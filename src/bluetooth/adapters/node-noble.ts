@@ -56,11 +56,27 @@ const log = createLogger('NobleHost');
 // resolved via a dynamic import inside `ensureNobleLoaded()`.
 // =============================================================================
 
+/**
+ * Whether a peripheral's advertisement carries the given service UUID.
+ *
+ * This is the real identity check on the noble path — noble accepts a
+ * service-UUID filter in `startScanningAsync` but does not reliably
+ * enforce it, so every advertising device reaches the discovery loop.
+ *
+ * Peripherals that advertise no service list at all are excluded: a
+ * Voltra always advertises its service (verified on hardware
+ * 2026-07-28), so an empty list means "not a Voltra", not "unknown".
+ */
+function advertisesService(peripheral: NoblePeripheralLike, serviceUUID: string): boolean {
+  const advertised = peripheral.advertisement.serviceUuids ?? [];
+  return advertised.some((uuid) => uuidsEqual(uuid, serviceUUID));
+}
+
 /** Subset of `@stoprocent/noble`'s `Peripheral` we use. */
 export interface NoblePeripheralLike {
   readonly id: string;
   readonly address: string;
-  readonly advertisement: { localName?: string };
+  readonly advertisement: { localName?: string; serviceUuids?: string[] };
   readonly rssi: number;
   readonly state: 'error' | 'connecting' | 'connected' | 'disconnecting' | 'disconnected';
   connectAsync(): Promise<void>;
@@ -283,8 +299,12 @@ export class NobleHost implements BluetoothHost {
     const seen = new Set<string>();
 
     try {
-      // Filter at the BLE-stack level by service UUID — fewer events on
-      // the wire. The name-prefix filter happens in JS as a second pass.
+      // Ask the BLE stack to filter by service UUID — fewer events on the
+      // wire where it is honored. It is NOT reliably enforced: on macOS
+      // this returns every advertising device regardless (verified on
+      // hardware 2026-07-28 — 38 devices back, including AirPods and
+      // household appliances). The authoritative check is the
+      // advertised-services pass in JS below.
       await noble.startScanningAsync([this.config.serviceUUID], false);
 
       const deadline = Date.now() + timeout;
@@ -301,25 +321,41 @@ export class NobleHost implements BluetoothHost {
         return result;
       };
 
+      // Collect first, filter after the window closes. noble MUTATES the
+      // advertisement object as further packets arrive — `serviceUuids`
+      // is typically absent from the initial advertising packet and only
+      // appears once the scan response lands. Testing it at first
+      // discovery therefore rejected every device, Voltras included
+      // (observed on hardware 2026-07-28).
+      const candidates: NoblePeripheralLike[] = [];
+
       let peripheral: NoblePeripheralLike | null;
       while ((peripheral = await next()) !== null) {
         if (Date.now() >= deadline) break;
         if (seen.has(peripheral.id)) continue;
 
-        const name = peripheral.advertisement.localName ?? null;
+        seen.add(peripheral.id);
+        candidates.push(peripheral);
+      }
+
+      for (const candidate of candidates) {
+        if (!advertisesService(candidate, this.config.serviceUUID)) {
+          continue;
+        }
+
+        const name = candidate.advertisement.localName ?? null;
         if (namePrefix && !(name?.startsWith(namePrefix) ?? false)) {
           continue;
         }
 
-        seen.add(peripheral.id);
-        this.discoveredPeripherals.set(peripheral.id, peripheral);
+        this.discoveredPeripherals.set(candidate.id, candidate);
 
         const discovery: Discovery = {
-          id: peripheral.id,
+          id: candidate.id,
           name,
-          rssi: peripheral.rssi,
+          rssi: candidate.rssi,
           _origin: this,
-          _payload: { peripheral },
+          _payload: { peripheral: candidate },
         };
         discoveries.push(discovery);
       }
