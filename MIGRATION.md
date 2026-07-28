@@ -2,6 +2,54 @@
 
 Breaking changes and migration steps for consumers upgrading to the latest version of `@voltras/node-sdk`.
 
+## Migrating to 0.12.0
+
+No API signatures changed. Three behavioral changes may affect you.
+
+### Device name filtering is off by default
+
+Scans previously kept only devices whose advertised name started with `VTR-`,
+hardcoded with no override — so a Voltra renamed in the vendor app was
+silently undiscoverable. Devices are now identified by advertised BLE service
+UUID, and name filtering is opt-in:
+
+```typescript
+new VoltraManager({ deviceNamePrefix: VOLTRA_DEVICE_PREFIX }) // manager-level
+manager.scan({ deviceNamePrefix: 'VTR-' })                    // per-scan
+VOLTRA_DEVICE_NAME_PREFIX=VTR-                                // env var (Node)
+```
+
+`null` or `''` disables filtering explicitly. **Action:** if you relied on
+scan results being name-filtered, pass a prefix. Most consumers should not —
+the advertised name is user-editable and a poor identity signal.
+
+### Node auto-detection now selects `node-noble`
+
+`new VoltraManager()` in Node resolves to `'node-noble'` instead of `'node'`.
+The noble backend enumerates correctly and is multi-peripheral-safe.
+
+The legacy backend is a picker, not a scanner: `webbluetooth`'s
+`requestDevice` selects the first device passing the filter and stops, so
+`scan()` can never return more than one device, and without a name filter it
+returns whatever advertises first. That is why it alone keeps the `VTR-`
+prefix on by default.
+
+**Action:** none for most consumers. `VoltraManager.forNode()` still selects
+the legacy backend explicitly if you need it. Requires `@stoprocent/noble`,
+already an optional dependency.
+
+### Browser consumers get a dedicated entry
+
+The package root previously could not be bundled for a browser at all. The
+`browser` export condition now resolves to a Web-Bluetooth-only entry with no
+Node dependencies, so `import { VoltraManager } from '@voltras/node-sdk'`
+works unchanged in Vite/webpack/Rollup. In that entry `VoltraManager` aliases
+`VoltraWebManager` and does not carry `forNode()` / `forNative()` /
+`forNodeNoble()`.
+
+**Action:** none if your bundler applies the `browser` condition. Otherwise
+import `@voltras/node-sdk/web` directly.
+
 ## Migrating from 0.5.x to 0.6.0
 
 ### `onRepBoundary` removed — use `onPerRep` instead

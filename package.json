@@ -102,7 +102,7 @@
     "format": "prettier --write \"src/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\"",
     "typecheck": "tsc --noEmit",
-    "docs:api": "typedoc --out docs/api src/index.ts",
+    "docs:api": "typedoc --out docs/api src/index.ts src/entries/web.ts",
     "generate:protocol": "npx tsx ../voltra-private/build.ts",
     "ci:local": "npm run lint && npm run format:check && npm run typecheck && npm run test && npm run build",
     "audit:privacy": "bash scripts/audit-privacy.sh",

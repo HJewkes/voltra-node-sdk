@@ -519,6 +519,18 @@ noble backend, which auto-detection now selects for you.
 | `disconnect(deviceId)` | Disconnect specific device |
 | `disconnectAll()` | Disconnect all devices |
 | `dispose()` | Clean up all resources |
+| `resolvedPlatform` | Platform actually selected, after auto-detection |
+| `resolvedDeviceNamePrefix` | Effective name prefix, or `undefined` when unfiltered |
+
+The last two are getters, useful when a scan returns nothing and you need to
+know what the SDK actually chose:
+
+```typescript
+console.log(manager.resolvedPlatform, manager.resolvedDeviceNamePrefix);
+```
+
+See `examples/node/scan-diagnostics.ts` for a ready-made version that also
+prints everything the backend discovered.
 
 Devices are identified by BLE service UUID, so scanning finds every Voltra
 regardless of its advertised name (including one renamed from the vendor
