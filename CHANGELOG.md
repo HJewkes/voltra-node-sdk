@@ -53,13 +53,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bundle built from the new `./web` entry transforms 41 modules and pulls no
   Node dependencies. Public API is unchanged.
 
-- `npm run build` failed at `build:cjs` with
-  `TS5103: Invalid value for '--ignoreDeprecations'` after the TypeScript
-  5.9→6.0 upgrade — TS 6.0 no longer accepts a value there. The flag is
-  dropped; `moduleResolution: "node"` needs no acknowledgement. Releases cut
-  since that upgrade would have shipped without `dist/cjs` (which is what the
-  `require` and `react-native` conditions resolve to).
-
 - `NobleHost.scan()` returned every advertising device, not just Voltras.
   noble accepts the service-UUID filter passed to `startScanningAsync` but
   does not enforce it (verified on hardware: 39 devices back, including
