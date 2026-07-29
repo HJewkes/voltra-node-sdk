@@ -3,8 +3,8 @@
  * to client connection state even when `autoReconnect=false`.
  *
  * Background:
- *   `coordination/bug-investigations/ble-slot-routing-2026-05-08.md`
- *   `coordination/bug-investigations/sdk-slot-routing-code-trace-2026-05-08.md`
+ *   `sources/audits/ble-slot-routing-2026-05-08.md`
+ *   `sources/audits/sdk-slot-routing-code-trace-2026-05-08.md`
  *
  * The "Fix C" case: previously `setupDisconnectMonitor` short-circuited with
  * `return null` when `options.autoReconnect === false`, so adapter-level

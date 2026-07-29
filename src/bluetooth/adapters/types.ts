@@ -13,7 +13,7 @@
  * The legacy `BLEAdapter` interface remains supported via a shim
  * (`LegacyAdapterPeripheral`) and will be removed in Phase 3.
  *
- * See: coordination/architecture/ble-adapter-refactor-2026-05-08.md
+ * See: sources/architecture/ble-adapter-refactor-2026-05-08.md
  */
 
 import { type DiscoveredDevice } from '../models/device';
@@ -405,7 +405,7 @@ export class PeripheralLost extends Error {
  * been silently rebound to a DIFFERENT device since this `Peripheral`
  * was dialed. The canonical reproducer is the upstream `webbluetooth`
  * `SimplebleAdapter` singleton bug
- * (`coordination/bug-investigations/sdk-fresh-connect-cross-talk-2026-05-08.md`):
+ * (`sources/audits/sdk-fresh-connect-cross-talk-2026-05-08.md`):
  * a second scan re-discovers an already-connected address and overwrites
  * the singleton's `peripherals` Map entry, so subsequent writes through
  * the old handle resolve to a fresh disconnected shell.

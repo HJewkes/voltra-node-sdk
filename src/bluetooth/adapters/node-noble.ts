@@ -6,7 +6,7 @@
  * legacy `BLEAdapter` shim — Phase 1's whole point is to offer a Node
  * backend that is multi-peripheral-safe at the library layer, fixing the
  * upstream `webbluetooth` `SimplebleAdapter` singleton cross-talk bug
- * (see `coordination/bug-investigations/sdk-fresh-connect-cross-talk-2026-05-08.md`).
+ * (see `sources/audits/sdk-fresh-connect-cross-talk-2026-05-08.md`).
  *
  * Ships as `platform: 'node-noble'` opt-in. The default `'node'` platform
  * remains on `webbluetooth` until Phase 4 promotes this backend.
@@ -29,8 +29,8 @@
  * envelope), so no `requestMtu()` call is needed. Linux HCI may differ;
  * not exercised here.
  *
- * See: coordination/bug-investigations/ble-library-migration-research-2026-05-08.md
- *      coordination/architecture/ble-adapter-refactor-2026-05-08.md
+ * See: sources/audits/ble-library-migration-research-2026-05-08.md
+ *      sources/architecture/ble-adapter-refactor-2026-05-08.md
  */
 
 import type {
@@ -517,7 +517,7 @@ export class NoblePeripheral implements Peripheral {
    * first ACK fires it, and subsequent ACKs are silently dropped — so
    * the first caller's promise hangs forever despite the device having
    * received and applied the bytes. See
-   * `coordination/FINDING-2026-05-10-cascade-write-hang.md` for the
+   * `sources/archive/handoffs/FINDING-2026-05-10-cascade-write-hang.md` for the
    * source-level diagnosis and
    * `__tests__/noble-once-exclusive-bug.test.ts` for the regression
    * pin against the noble package itself.

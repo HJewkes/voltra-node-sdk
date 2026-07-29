@@ -55,7 +55,7 @@ export interface ReconnectState {
  * which left `client._connectionState` stuck at `'connected'` after a
  * `gattserverdisconnected` event — the root cause of the slot-routing
  * cross-talk documented in
- * `coordination/bug-investigations/ble-slot-routing-2026-05-08.md`
+ * `sources/audits/ble-slot-routing-2026-05-08.md`
  * (specifically Q6 / "always-on disconnect monitor" of
  * `sdk-slot-routing-code-trace-2026-05-08.md`).
  *

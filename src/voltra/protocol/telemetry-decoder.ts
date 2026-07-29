@@ -944,7 +944,7 @@ export function decodeCmd0x0FResponse(data: Uint8Array): Cmd0x0FBulkResponse | n
  * comes via paramID `2d4e` through the cmd=0x10 settings cascade, so the
  * `deviceInit` branch no longer emits a `device_status` event. The `5523`
  * frame falls through to `unknown` until a proper decoder lands. See
- * `coordination/integration-plans/voltra-private-codegen/inventory-inbound.md`
+ * `sources/integration-plans/voltra-private-codegen/inventory-inbound.md`
  * §2.12 for the canonical `5523` byte layout.
  *
  * The `statusBattery` (`5534`) branch is kept intact for any non-state-dump
