@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-07-29
+
 ### Fixed
 
 - React Native bundles no longer pull the Node BLE backends. `VoltraManager`
@@ -25,8 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   No behavior change on Node: same modules, same laziness, same platform
   selection (`new VoltraManager()` still resolves `node-noble`). Verified by
-  running Metro 0.84's own `collectDependencies` over the built CJS artifact
-  and by constructing every adapter from both the CJS and ESM builds.
+  running Metro's own `collectDependencies` (checked on both 0.83.3 and
+  0.84.4) over the built CJS artifact — which is what the `react-native`
+  export condition resolves to — and by constructing every adapter from both
+  the CJS and ESM builds.
   Guarded by `src/sdk/__tests__/platform-require-opacity.test.ts`.
 
 ## [0.12.0] - 2026-07-28
