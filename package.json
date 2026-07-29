@@ -1,6 +1,6 @@
 {
   "name": "@voltras/node-sdk",
-  "version": "0.12.1",
+  "version": "0.12.2",
   "description": "SDK for connecting to and controlling Voltra fitness devices",
   "main": "./dist/cjs/index.js",
   "module": "./dist/esm/index.js",
@@ -9,8 +9,8 @@
   "exports": {
     ".": {
       "react-native": {
-        "types": "./dist/types/index.d.ts",
-        "default": "./dist/cjs/index.js"
+        "types": "./dist/types/entries/react-native.d.ts",
+        "default": "./dist/cjs/entries/react-native.js"
       },
       "browser": {
         "types": "./dist/types/entries/web.d.ts",
@@ -83,6 +83,16 @@
       "require": {
         "types": "./dist/types/testing/index.d.ts",
         "default": "./dist/cjs/testing/index.js"
+      }
+    },
+    "./react-native": {
+      "import": {
+        "types": "./dist/types/entries/react-native.d.ts",
+        "default": "./dist/esm/entries/react-native.js"
+      },
+      "require": {
+        "types": "./dist/types/entries/react-native.d.ts",
+        "default": "./dist/cjs/entries/react-native.js"
       }
     }
   },

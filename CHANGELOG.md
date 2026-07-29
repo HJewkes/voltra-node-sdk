@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.2] - 2026-07-29
+
+### Added
+
+- **React Native entry point** (`src/entries/react-native.ts`), wired to the
+  `react-native` export condition so the package ROOT resolves there under
+  Metro. App code keeps writing `from '@voltras/node-sdk'`. Exposes
+  `VoltraNativeManager` (aliased as `VoltraManager`), the native adapter,
+  the mock adapter, the client, and the full protocol/type surface — and
+  never reaches `bluetooth/adapters/node`, `node-noble`, or the adapters
+  barrel. Mirrors the existing `browser`-condition entry, including its
+  guard test. Also available explicitly as `@voltras/node-sdk/react-native`.
+
+  **Non-breaking**: Node and browser consumers resolve exactly as before.
+
+### Fixed
+
+- **0.12.1 did not actually let React Native bundle the SDK — this does.**
+  Making `voltra-manager.ts`'s `require()` calls opaque was necessary but
+  NOT sufficient: the package root had a SECOND path to the Node backends.
+  `index.ts` value-exports `createBLEAdapter` from `../bluetooth/adapters`,
+  and that barrel statically re-exports `NobleHost` from `./node-noble`, so
+  a Metro bundle still reached `@stoprocent/noble` -> `node:os` and still
+  failed with "Unable to resolve module os". Fixing one door does not help
+  while the other stands open.
+
+  Verified the only way that counts: `expo export --platform ios` against a
+  real app with its Metro resolver stub REMOVED. Bundles, 2124 modules. The
+  sourcemap's module list shows `entries/react-native.js` present and
+  `voltra-manager.js`, `adapters/node.js`, `adapters/node-noble.js`,
+  `@stoprocent/noble` and `webbluetooth` all absent, with
+  `react-native-ble-plx` present as a positive control. A module-graph
+  argument is not evidence; bundle the app.
+
 ## [0.12.1] - 2026-07-29
 
 ### Fixed
