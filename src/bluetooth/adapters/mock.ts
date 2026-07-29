@@ -215,7 +215,7 @@ export class MockBLEAdapter extends BaseBLEAdapter {
    * fires `onConnectionStateChange` listeners) and the link is killed.
    *
    * Used by the slot-routing regression test
-   * (`coordination/bug-investigations/ble-slot-routing-2026-05-08.md`,
+   * (`sources/audits/ble-slot-routing-2026-05-08.md`,
    * Fix C in `sdk-slot-routing-code-trace-2026-05-08.md`) to verify that
    * `VoltraClient` observes adapter-level disconnects even when
    * `autoReconnect=false`.

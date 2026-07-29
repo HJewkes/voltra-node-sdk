@@ -13,8 +13,8 @@
  * on every scan, including for already-connected addresses. Those cases are
  * marked `it.fails()` until Phase 1 swaps the library. Mock must pass green.
  *
- * See: coordination/architecture/ble-adapter-refactor-2026-05-08.md §6
- *      coordination/bug-investigations/sdk-fresh-connect-cross-talk-2026-05-08.md
+ * See: sources/architecture/ble-adapter-refactor-2026-05-08.md §6
+ *      sources/audits/sdk-fresh-connect-cross-talk-2026-05-08.md
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -175,7 +175,7 @@ const backends: Array<{
   //     host. CI doesn't have one. The legacy webbluetooth backend would
   //     ALSO fail the `'rescan'` invariant against real hardware due to
   //     the upstream `SimplebleAdapter` singleton bug
-  //     (`coordination/bug-investigations/sdk-fresh-connect-cross-talk-2026-05-08.md`).
+  //     (`sources/audits/sdk-fresh-connect-cross-talk-2026-05-08.md`).
   //     Phase 1's noble migration provides a backend that passes; until
   //     then this case is hardware-only.
   //   - NativeBLEAdapter: needs `react-native-ble-plx` + a running Android

@@ -2,7 +2,7 @@
  * Regression: `@stoprocent/noble`'s `onceExclusive` corruption under
  * concurrent operations.
  *
- * Filed 2026-05-11 alongside `coordination/FINDING-2026-05-10-cascade-write-hang.md`.
+ * Filed 2026-05-11 alongside `sources/archive/handoffs/FINDING-2026-05-10-cascade-write-hang.md`.
  *
  * Root cause: `Characteristic.write()` registers its result callback via
  * `onceExclusive('write', cb)`. `onceExclusive` REMOVES any previously
@@ -25,7 +25,7 @@
  *     on whichever ACK arrives FIRST regardless of which write that ACK was
  *     for — is a property of `once` semantics and is implicit here.)
  *
- * See: coordination/FINDING-2026-05-10-cascade-write-hang.md §"Root cause"
+ * See: sources/archive/handoffs/FINDING-2026-05-10-cascade-write-hang.md §"Root cause"
  *      voltra-node-sdk/src/bluetooth/adapters/node-noble.ts:write()
  */
 
