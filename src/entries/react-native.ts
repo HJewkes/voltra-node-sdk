@@ -35,7 +35,7 @@ import { VoltraManagerCore } from '../sdk/manager-core';
 import type { BluetoothHost } from '../bluetooth/adapters/types';
 import { LegacyAdapterHost } from '../bluetooth/adapters/legacy-shim';
 import { NativeBLEAdapter } from '../bluetooth/adapters/native';
-import { MockBLEAdapter } from '../bluetooth/adapters/mock';
+import { MockBLEAdapter, type MockBLEConfig } from '../bluetooth/adapters/mock';
 import { BLE } from '../voltra/protocol/constants';
 
 // =============================================================================
@@ -62,6 +62,21 @@ export class VoltraNativeManager extends VoltraManagerCore {
    */
   static forNative(options?: Omit<VoltraManagerOptions, 'platform'>): VoltraNativeManager {
     return new VoltraNativeManager({ ...options, platform: 'native' });
+  }
+
+  /**
+   * Create a manager with a mock adapter for testing / visual development.
+   * Simulates a connected Voltra device with realistic telemetry.
+   *
+   * Present on this entry deliberately: mock-driven work on a simulator (and
+   * the app's `?mock` escape hatch) is a real workflow, and the mock adapter
+   * has no peer dependencies to drag in.
+   */
+  static forMock(config?: MockBLEConfig): VoltraNativeManager {
+    return new VoltraNativeManager({
+      platform: 'mock',
+      adapterFactory: () => new MockBLEAdapter(config),
+    });
   }
 
   protected detectPlatform(): Platform {

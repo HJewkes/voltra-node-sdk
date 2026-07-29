@@ -48,6 +48,26 @@ describe('react-native entry', () => {
     });
   });
 
+  describe('forMock', () => {
+    it('builds a mock-platform manager', () => {
+      const manager = VoltraNativeManager.forMock();
+
+      expect(manager.resolvedPlatform).toBe('mock');
+    });
+
+    it('actually connects to a simulated device, with no BLE stack present', async () => {
+      // The real assertion. `createAdapterFactory` used to ignore the platform
+      // and hand back the platform adapter regardless, so `forMock()` reached
+      // for hardware and could not connect in a bare test process. If this
+      // regresses, this throws rather than quietly passing.
+      const manager = VoltraNativeManager.forMock();
+      const client = await manager.connectFirst();
+
+      expect(client).toBeDefined();
+      await manager.disconnect();
+    });
+  });
+
   describe('export surface', () => {
     it('aliases VoltraManager to VoltraNativeManager', () => {
       // package.json's `react-native` condition resolves the package ROOT

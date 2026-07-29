@@ -38,6 +38,26 @@ describe('web entry', () => {
     });
   });
 
+  describe('forMock', () => {
+    it('builds a mock-platform manager', () => {
+      const manager = VoltraWebManager.forMock();
+
+      expect(manager.resolvedPlatform).toBe('mock');
+    });
+
+    it('actually connects to a simulated device, with no BLE stack present', async () => {
+      // The real assertion. `createAdapterFactory` used to ignore the platform
+      // and hand back the platform adapter regardless, so `forMock()` reached
+      // for hardware and could not connect in a bare test process. If this
+      // regresses, this throws rather than quietly passing.
+      const manager = VoltraWebManager.forMock();
+      const client = await manager.connectFirst();
+
+      expect(client).toBeDefined();
+      await manager.disconnect();
+    });
+  });
+
   describe('export surface', () => {
     it('aliases VoltraManager to VoltraWebManager', () => {
       // package.json's `browser` condition resolves the package ROOT here,
