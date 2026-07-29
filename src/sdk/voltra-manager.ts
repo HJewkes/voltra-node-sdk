@@ -10,6 +10,10 @@
  * the `require()` calls confined here is what lets `manager-core.ts` (and
  * the browser entry built on it) bundle without Node dependencies.
  *
+ * Confinement is not sufficient for React Native, which bundles this file:
+ * see `NODE_ONLY_ADAPTER_MODULES` below for why the Node-only specifiers
+ * must also be opaque to static analysis.
+ *
  * @example
  * ```typescript
  * import { VoltraManager } from '@voltras/node-sdk';
@@ -35,12 +39,66 @@
  */
 
 import type { BluetoothHost } from '../bluetooth/adapters/types';
+import type { NodeBLEAdapter } from '../bluetooth/adapters/node';
+import type { NobleHost } from '../bluetooth/adapters/node-noble';
 import { LegacyAdapterHost } from '../bluetooth/adapters/legacy-shim';
 import { MockBLEAdapter, type MockBLEConfig } from '../bluetooth/adapters/mock';
 import { isMockActivated } from './mock-activation';
 import { BLE } from '../voltra/protocol/constants';
 import { VoltraManagerCore, type Platform, type AdapterFactory } from './manager-core';
 import type { VoltraManagerOptions } from './manager-core';
+
+/**
+ * Module specifiers for the platform adapters that drag in Node-only
+ * dependencies: `node` pulls `webbluetooth`, `node-noble` pulls
+ * `@stoprocent/noble`, which reaches `node:os`.
+ *
+ * They live in a table because bundlers resolve `require()` by
+ * constant-folding its argument, and a folded specifier is bundled whether
+ * or not its branch can ever execute. Metro's dependency collector uses
+ * Babel's `path.evaluate()`, which folds `const p = '…'; require(p)` in the
+ * same scope exactly as readily as a string literal — verified against
+ * Metro 0.84's `collectDependencies` — so plain indirection is not enough.
+ * A lookup keyed by a *parameter* is not foldable, so a React Native bundle
+ * never reaches these files or their Node dependency chains.
+ *
+ * The `web` and `native` adapters stay on literal `require()` deliberately:
+ * `native` is the branch React Native actually executes, and Metro compiles
+ * an unresolvable `require()` into a runtime throw, so hiding it would
+ * break the one platform this change exists to serve. `web` is
+ * bundler-safe everywhere.
+ */
+const NODE_ONLY_ADAPTER_MODULES = {
+  node: '../bluetooth/adapters/node',
+  'node-noble': '../bluetooth/adapters/node-noble',
+} as const;
+
+/**
+ * The slice of each Node-only adapter module this file constructs. Built
+ * from `import type` bindings, which `tsc` erases — a `typeof import('…')`
+ * would keep a foldable specifier in the source for a bundler (or a
+ * source-level guard) to find.
+ */
+type NodeOnlyAdapterModules = {
+  node: { NodeBLEAdapter: typeof NodeBLEAdapter };
+  'node-noble': { NobleHost: typeof NobleHost };
+};
+
+/**
+ * Lazily load a Node-only adapter module, opaquely to static analysis.
+ *
+ * `platform` is a parameter, so the specifier passed to `require()` cannot
+ * be resolved at build time. Runtime behavior is identical to the literal
+ * `require()` this replaced: same module, same laziness, same resolution
+ * base (this file).
+ */
+function requireNodeOnlyAdapter<K extends keyof NodeOnlyAdapterModules>(
+  platform: K
+): NodeOnlyAdapterModules[K] {
+  const specifier = NODE_ONLY_ADAPTER_MODULES[platform];
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return require(specifier) as NodeOnlyAdapterModules[K];
+}
 
 // Shared manager types live in `manager-core` now; re-exported here so
 // existing `from './voltra-manager'` import sites keep working.
@@ -176,8 +234,7 @@ export class VoltraManager extends VoltraManagerCore {
 
       case 'node':
         return () => {
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          const { NodeBLEAdapter } = require('../bluetooth/adapters/node');
+          const { NodeBLEAdapter } = requireNodeOnlyAdapter('node');
           return new NodeBLEAdapter({ ble: bleConfig });
         };
 
@@ -233,8 +290,7 @@ export class VoltraManager extends VoltraManagerCore {
       writeCharUUID: BLE.WRITE_CHAR_UUID,
       deviceNamePrefix: this.deviceNamePrefix,
     };
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { NobleHost } = require('../bluetooth/adapters/node-noble');
+    const { NobleHost } = requireNodeOnlyAdapter('node-noble');
     return new NobleHost({ ble: bleConfig });
   }
 }

@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- React Native bundles no longer pull the Node BLE backends. `VoltraManager`
+  loaded `../bluetooth/adapters/node` and `../bluetooth/adapters/node-noble`
+  through literal `require()` calls, and Metro resolves every literal
+  specifier regardless of which runtime branch executes — so an RN bundle
+  reached `@stoprocent/noble` -> `node:os` and failed with "Unable to
+  resolve module os". Both now load through a lookup table keyed by a
+  function parameter, which Babel's `evaluate()` (Metro's resolver) cannot
+  constant-fold. Note that the obvious `const p = '…'; require(p)`
+  indirection does **not** work: Metro folds it exactly like a literal.
+
+  The `web` and `native` adapters deliberately keep literal `require()`s —
+  `native` is the branch React Native actually executes, and Metro compiles
+  an unresolvable `require()` into a runtime throw.
+
+  No behavior change on Node: same modules, same laziness, same platform
+  selection (`new VoltraManager()` still resolves `node-noble`). Verified by
+  running Metro 0.84's own `collectDependencies` over the built CJS artifact
+  and by constructing every adapter from both the CJS and ESM builds.
+  Guarded by `src/sdk/__tests__/platform-require-opacity.test.ts`.
+
 ## [0.12.0] - 2026-07-28
 
 ### Changed
