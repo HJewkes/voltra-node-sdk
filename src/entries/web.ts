@@ -26,6 +26,7 @@ import { VoltraManagerCore } from '../sdk/manager-core';
 import type { BluetoothHost } from '../bluetooth/adapters/types';
 import { LegacyAdapterHost } from '../bluetooth/adapters/legacy-shim';
 import { WebBLEAdapter } from '../bluetooth/adapters/web';
+import { MockBLEAdapter, type MockBLEConfig } from '../bluetooth/adapters/mock';
 import { BLE } from '../voltra/protocol/constants';
 
 // =============================================================================
@@ -45,6 +46,23 @@ export class VoltraWebManager extends VoltraManagerCore {
    */
   static forWeb(options?: Omit<VoltraManagerOptions, 'platform'>): VoltraWebManager {
     return new VoltraWebManager({ ...options, platform: 'web' });
+  }
+
+  /**
+   * Create a manager with a mock adapter for testing / visual development.
+   *
+   * This class documented `forMock()` as working from 0.12.0 but never
+   * declared it — `forMock` was a static on the CONCRETE `VoltraManager`
+   * only, so calling it through the `browser` export condition was a type
+   * error, and `new VoltraWebManager({ platform: 'mock' })` silently built a
+   * Web Bluetooth adapter because `createAdapterFactory` ignored the
+   * platform. Both halves fixed here.
+   */
+  static forMock(config?: MockBLEConfig): VoltraWebManager {
+    return new VoltraWebManager({
+      platform: 'mock',
+      adapterFactory: () => new MockBLEAdapter(config),
+    });
   }
 
   protected detectPlatform(): Platform {

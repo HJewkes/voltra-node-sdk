@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.3] - 2026-07-29
+
+### Fixed
+
+- **`forMock()` now exists on the per-platform entries — and actually returns
+  a mock.** `entries/web.ts` has documented `forMock()` as working since
+  0.12.0, but `forMock` was a static on the CONCRETE `VoltraManager` only, so
+  calling it through the `browser` (or the new `react-native`) export
+  condition was a type error. Worse, the obvious workaround
+  `new VoltraWebManager({ platform: 'mock' })` silently built a **Web
+  Bluetooth** adapter, because the entry's `createAdapterFactory` ignored the
+  platform entirely. Both halves are fixed, on both entries.
+
+  Surfaced while migrating a React Native consumer onto 0.12.2; the
+  `?mock` / visual-dev path depends on it. Regression-tested behaviourally
+  (`forMock()` connects to a simulated device in a bare test process with no
+  BLE stack present), and the test is mutation-verified — reverting the
+  adapter factory turns it red.
+
 ## [0.12.2] - 2026-07-29
 
 ### Added
