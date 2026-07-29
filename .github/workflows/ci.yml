@@ -19,7 +19,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # Security: npm audit
-  # Note: webbluetooth has transitive high-severity vuln in tar (upstream issue)
+  # Note: webbluetooth pulls tar in transitively via cmake-js; package.json
+  # pins a `tar` override until cmake-js ships a bumped range upstream.
   security-audit:
     runs-on: ubuntu-latest
     steps:
