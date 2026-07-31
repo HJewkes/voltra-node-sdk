@@ -460,6 +460,16 @@ export function decodeVendorSummary(data: Uint8Array): SummaryEvent | null {
   };
 }
 
+// setSummary peak-aggregate offsets are not carried by the regen's `fields`
+// block, so they are hardcoded here in the same style as the inProgress
+// offsets below. Both are corroborated against archived captures rather than
+// vendor-confirmed — see `SetSummaryEvent` for the evidence and for the
+// units caveat on peak power. A time-to-peak field is believed to live in this
+// frame, but its candidate offset decodes to longer than the entire rep in a
+// single-rep capture, so it is deliberately left undecoded.
+const SET_SUMMARY_PEAK_FORCE_OFFSET = 28;
+const SET_SUMMARY_PEAK_POWER_OFFSET = 32;
+
 /**
  * Decode a vendor `aa 85 5f` set-summary frame (110 B). Per-set close marker
  * in WT/RB/Damper modes; emitted by the device after all reps complete.
@@ -484,6 +494,8 @@ export function decodeVendorSetSummary(data: Uint8Array): SetSummaryEvent | null
     ),
     repCount: readUint16LE(data, frameOffsetOf(cfg.fields.repCount.payloadOffset)),
     repDurationMs: readUint32LE(data, frameOffsetOf(cfg.fields.repDurationMs.payloadOffset)),
+    peakForceTenths: readUint16LE(data, SET_SUMMARY_PEAK_FORCE_OFFSET),
+    peakPowerRaw: readUint16LE(data, SET_SUMMARY_PEAK_POWER_OFFSET),
     raw: data.slice(),
   };
 }

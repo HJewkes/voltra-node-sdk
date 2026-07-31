@@ -210,6 +210,8 @@ describe('notification-dispatcher', () => {
       targetWeightTenths: 0,
       repCount: 5,
       repDurationMs: 1234,
+      peakForceTenths: 812,
+      peakPowerRaw: 77,
       raw: new Uint8Array(110),
     };
     mockDecode.mockReturnValue({ type: 'setSummary', event });
