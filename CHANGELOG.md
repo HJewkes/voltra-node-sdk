@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-09-08
+
+### Added
+
+- **`SetSummaryEvent` now carries the device's own per-set peak numbers**, so
+  consumers can cross-check the peaks they derive from telemetry themselves.
+
+  `peakForceTenths` is peak force in tenths of a pound. Corroborated offline
+  across nine archived capture sessions — it reads at or just above the set's
+  target weight in every weight-mode capture, across three target weights, and
+  takes sensible untargeted values in band, damper and isokinetic. Not
+  vendor-confirmed.
+
+  `peakPowerRaw` is deliberately **not** labelled watts. The device emits the
+  field and it scales with rep speed the way power should, but the magnitude
+  has never been checked against an instrumented reference, so it may be watts,
+  centiwatts or another scaling. Treat it as a relative quantity and do not
+  present it to users as watts until a hardware measurement pins the unit.
+
+### Security
+
+- Pin `tar` to `^7.5.21` via a package override, clearing a critical advisory
+  that reached the production tree through an optional native dependency's
+  build toolchain. Resolution-only; no other dependency versions changed.
+
 ## [0.12.3] - 2026-07-29
 
 ### Fixed
