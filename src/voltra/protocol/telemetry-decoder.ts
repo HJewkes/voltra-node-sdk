@@ -383,6 +383,7 @@ export function decodeTelemetryFrame(data: Uint8Array): TelemetryFrame | null {
   }
 
   // Sensor data
+  // Position is uint16 (mm, 0=rest).
   // Force is uint16 (tenths of pounds, always non-negative).
   // Velocity is int16 (mm/s, sign flips with direction: eccentric/return is negative).
   const position = readUint16LE(data, TelemetryOffsets.POSITION);

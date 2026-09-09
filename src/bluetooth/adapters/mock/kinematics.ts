@@ -8,6 +8,16 @@
 import { MovementPhase } from '../../../voltra/protocol/constants/enums';
 import type { KinematicsValues, KinematicsProfile, ModeConstants, PhaseDef } from './types';
 
+/**
+ * Velocity constants in this file (ModeConstants fields and the damper/isokinetic
+ * builders' inline peaks) are authored in cm/s, the unit the vendor's own
+ * `InProgressEvent.velocityCmPerSec` field uses. The telemetry frame's `velocity`
+ * is mm/s (see protocol/telemetry-decoder.ts's `decodeTelemetryFrame` comment), so
+ * every velocity computed here is scaled by this cm-to-mm factor before it is
+ * returned.
+ */
+export const VELOCITY_UNIT_FACTOR = 10;
+
 function buildStandardValues(
   constants: ModeConstants,
   phase: MovementPhase,
@@ -21,7 +31,10 @@ function buildStandardValues(
       return {
         position: Math.round(progress * maxPosition),
         velocity: Math.round(
-          Math.sin(progress * Math.PI) * constants.concentricVelocityPeak * fatigue
+          Math.sin(progress * Math.PI) *
+            constants.concentricVelocityPeak *
+            VELOCITY_UNIT_FACTOR *
+            fatigue
         ),
         force: Math.round(constants.concentricForce(progress, baseForce, fatigue)),
       };
@@ -35,7 +48,10 @@ function buildStandardValues(
       return {
         position: Math.round((1 - progress) * maxPosition),
         velocity: Math.round(
-          Math.sin(progress * Math.PI) * constants.eccentricVelocityPeak * fatigue
+          Math.sin(progress * Math.PI) *
+            constants.eccentricVelocityPeak *
+            VELOCITY_UNIT_FACTOR *
+            fatigue
         ),
         force: Math.round(constants.eccentricForce(progress, baseForce, fatigue)),
       };
@@ -67,21 +83,24 @@ export function damperBuildValues(
 ): KinematicsValues {
   switch (phase) {
     case MovementPhase.CONCENTRIC: {
-      const velocity = Math.round(Math.sin(progress * Math.PI) * 75 * fatigue);
+      // rawVelocity is the cm/s magnitude the force curve is calibrated
+      // against; only the emitted velocity is scaled to the frame's mm/s
+      // (see VELOCITY_UNIT_FACTOR).
+      const rawVelocity = Math.round(Math.sin(progress * Math.PI) * 75 * fatigue);
       return {
         position: Math.round(progress * maxPosition),
-        velocity,
-        force: Math.round(velocity * baseForce * 0.02 * fatigue),
+        velocity: rawVelocity * VELOCITY_UNIT_FACTOR,
+        force: Math.round(rawVelocity * baseForce * 0.02 * fatigue),
       };
     }
     case MovementPhase.HOLD:
       return { position: maxPosition, velocity: 0, force: Math.round(baseForce * 0.1) };
     case MovementPhase.ECCENTRIC: {
-      const velocity = Math.round(Math.sin(progress * Math.PI) * 38 * fatigue);
+      const rawVelocity = Math.round(Math.sin(progress * Math.PI) * 38 * fatigue);
       return {
         position: Math.round((1 - progress) * maxPosition),
-        velocity,
-        force: Math.round(velocity * baseForce * 0.015 * fatigue),
+        velocity: rawVelocity * VELOCITY_UNIT_FACTOR,
+        force: Math.round(rawVelocity * baseForce * 0.015 * fatigue),
       };
     }
     default:
@@ -97,7 +116,8 @@ export function isokineticBuildValues(
   baseForce: number,
   maxPosition: number
 ): KinematicsValues {
-  const constantVelocity = 45;
+  // 45 cm/s, scaled to the frame's mm/s (see VELOCITY_UNIT_FACTOR).
+  const constantVelocity = 45 * VELOCITY_UNIT_FACTOR;
   switch (phase) {
     case MovementPhase.CONCENTRIC:
       return {
