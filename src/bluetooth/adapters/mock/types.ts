@@ -115,7 +115,9 @@ export interface PlannedRepProfile {
 }
 
 export interface KinematicsValues {
+  /** Cable extension in mm, matching TelemetryFrame.position. */
   position: number;
+  /** Movement velocity in mm/s, matching TelemetryFrame.velocity. */
   velocity: number;
   force: number;
 }
@@ -128,7 +130,9 @@ export interface PhaseDef {
 export type ForceCurve = (progress: number, baseForce: number, fatigue: number) => number;
 
 export interface ModeConstants {
+  /** Peak concentric velocity magnitude in cm/s; kinematics.ts scales it to mm/s before emitting. */
   concentricVelocityPeak: number;
+  /** Peak eccentric velocity magnitude in cm/s; kinematics.ts scales it to mm/s before emitting. */
   eccentricVelocityPeak: number;
   holdForceMultiplier: number;
   concentricForce: ForceCurve;
