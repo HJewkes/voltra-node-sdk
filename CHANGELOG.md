@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-09-08
+
+### Fixed
+
+- **Mock telemetry now emits velocity in the same unit as the real device.**
+  `TelemetryFrame.velocity` is mm/s (the decoder has documented this all
+  along), but the mock's `ModeConstants` and its damper/isokinetic builders
+  were emitting an unlabelled magnitude with no defined unit. Consumers that
+  convert frame velocity from mm/s (e.g. `voltras-mcp`'s bridge) got peak
+  speeds off by an order of magnitude in mock-driven tests. The frame type's
+  JSDoc now names the unit for both `velocity` and `position`, and the mock
+  scales its internal cm/s magnitudes to mm/s before returning them.
+
 ## [0.13.0] - 2026-09-08
 
 ### Added
