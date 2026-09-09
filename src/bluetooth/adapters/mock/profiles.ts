@@ -6,7 +6,7 @@
  */
 
 import { MovementPhase, TrainingMode } from '../../../voltra/protocol/constants/enums';
-import type { KinematicsProfile, PhaseDef } from './types';
+import type { KinematicsProfile, ModeConstants, PhaseDef } from './types';
 import {
   standardProfile,
   damperBuildValues,
@@ -21,13 +21,16 @@ const STANDARD_PHASES: PhaseDef[] = [
   { phase: MovementPhase.ECCENTRIC, count: 16 },
 ];
 
-const WEIGHT_TRAINING_PROFILE = standardProfile(STANDARD_PHASES, 600, {
+/** Exported so tests can derive expectations from the real constants instead of re-hardcoding them. */
+export const WEIGHT_TRAINING_CONSTANTS: ModeConstants = {
   concentricVelocityPeak: 80,
   eccentricVelocityPeak: 40,
   holdForceMultiplier: 0.5,
   concentricForce: (p, bf, f) => bf * (1 - p * 0.3) * f,
   eccentricForce: (p, bf, f) => bf * 0.8 * (1 - p * 0.2) * f,
-});
+};
+
+const WEIGHT_TRAINING_PROFILE = standardProfile(STANDARD_PHASES, 600, WEIGHT_TRAINING_CONSTANTS);
 
 export const KINEMATICS_PROFILES: Record<TrainingMode, KinematicsProfile> = {
   // Idle uses weight training as the default profile — the device boots into

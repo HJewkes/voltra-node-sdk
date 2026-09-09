@@ -639,10 +639,11 @@ describe('MockBLEAdapter', () => {
       const concentric = frames.filter((f) => f.phase === MovementPhase.CONCENTRIC);
       const eccentric = frames.filter((f) => f.phase === MovementPhase.ECCENTRIC);
 
-      // All concentric velocity values should be the same constant (45)
+      // All concentric velocity values should be the same constant
+      // (45 cm/s scaled to the frame's mm/s — see kinematics.ts's VELOCITY_UNIT_FACTOR)
       const conVelocities = new Set(concentric.map((f) => f.velocity));
       expect(conVelocities.size).toBe(1);
-      expect(concentric[0].velocity).toBe(45);
+      expect(concentric[0].velocity).toBe(450);
 
       // All eccentric velocity values should also be constant
       const eccVelocities = new Set(eccentric.map((f) => f.velocity));
