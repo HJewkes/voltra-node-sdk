@@ -82,11 +82,17 @@ export function setupDisconnectMonitor(
 }
 
 /**
- * Attempt to reconnect with exponential backoff.
+ * Attempt to reconnect, retrying up to `options.maxReconnectAttempts`
+ * times with a constant delay between attempts. `options.reconnectDelayMs`
+ * is awaited before every attempt, including the first — this is a fixed
+ * delay, not exponential backoff.
  *
- * @param options Reconnect options
- * @param callbacks Reconnect callbacks
- * @returns Final reconnect state
+ * @param options Reconnect options.
+ * @param callbacks Reconnect callbacks.
+ * @returns Final reconnect state. `isReconnecting` is `false` in both the
+ *   success and exhausted-attempts case; distinguish them by comparing
+ *   `reconnectAttempt` to `options.maxReconnectAttempts`, or by whether
+ *   `callbacks.onReconnectFailed` fired.
  */
 export async function attemptReconnect(
   options: ReconnectOptions,

@@ -269,8 +269,17 @@ export abstract class VoltraManagerCore {
   }
 
   /**
-   * Get the underlying BLE adapter (for mock adapter debug access).
-   * Returns null if no adapter has been created yet.
+   * Get the underlying BLE adapter from the most recent scan.
+   *
+   * **Legacy accessor.** Retained for mock-adapter debug callers that need
+   * direct adapter access; the Phase 0 `host`/`Peripheral` flow does not
+   * depend on this field. The returned adapter is cleared as soon as
+   * {@link connect} consumes it, so a call after connecting reflects the
+   * adapter for the next pending connection, not the one just established.
+   *
+   * @returns The most recent scan adapter, or `null` if no scan has run
+   *   yet or the last discovered adapter has already been consumed by
+   *   `connect`.
    */
   getAdapter(): BLEAdapter | null {
     return this.scanAdapter;
@@ -281,21 +290,38 @@ export abstract class VoltraManagerCore {
   // ===========================================================================
 
   /**
-   * Get a connected device client by ID.
+   * Look up a connected device's client by id.
+   *
+   * @param deviceId Id of a device returned by {@link scan} or a prior
+   *   {@link connect} call.
+   * @returns The connected `VoltraClient`, or `undefined` if no client is
+   *   connected under that id (never connected, or already disconnected).
    */
   getClient(deviceId: string): VoltraClient | undefined {
     return this.clients.get(deviceId);
   }
 
   /**
-   * Get all connected device clients.
+   * List every currently connected device client.
+   *
+   * @returns A snapshot array of connected `VoltraClient` instances.
+   *   Later connects/disconnects do not mutate an already-returned array.
    */
   getAllClients(): VoltraClient[] {
     return Array.from(this.clients.values());
   }
 
   /**
-   * Check if a device is connected.
+   * Check whether a device currently has a connected client.
+   *
+   * Reflects manager-level bookkeeping (the tracked client set), not a
+   * live BLE read — a device that has dropped at the radio level but has
+   * not yet fired its disconnect event still reports `true` here.
+   *
+   * @param deviceId Id of a device returned by {@link scan} or a prior
+   *   {@link connect} call.
+   * @returns `true` if a client for `deviceId` is currently tracked as
+   *   connected.
    */
   isConnected(deviceId: string): boolean {
     return this.clients.has(deviceId);
@@ -519,6 +545,15 @@ export abstract class VoltraManagerCore {
 
   /**
    * Disconnect a specific device.
+   *
+   * **Side effects.** Unsubscribes the client's event listener, calls
+   * `client.disconnect()` then `client.dispose()`, removes the client
+   * from the manager's tracked set, and emits a `deviceDisconnected`
+   * event. A no-op — no error, no event — if `deviceId` is not currently
+   * connected.
+   *
+   * @param deviceId Id of the device to disconnect.
+   * @returns Resolves once the client has disconnected and been disposed.
    */
   async disconnect(deviceId: string): Promise<void> {
     const client = this.clients.get(deviceId);
@@ -536,7 +571,13 @@ export abstract class VoltraManagerCore {
   }
 
   /**
-   * Disconnect all devices.
+   * Disconnect every currently connected device.
+   *
+   * **Side effects.** Runs {@link disconnect} for each tracked device id
+   * concurrently via `Promise.all`; each disconnect emits its own
+   * `deviceDisconnected` event.
+   *
+   * @returns Resolves once every device has finished disconnecting.
    */
   async disconnectAll(): Promise<void> {
     const deviceIds = Array.from(this.clients.keys());
@@ -548,7 +589,15 @@ export abstract class VoltraManagerCore {
   // ===========================================================================
 
   /**
-   * Subscribe to manager events.
+   * Subscribe to every manager event (connect, disconnect, error, scan
+   * start/stop).
+   *
+   * **Side effects.** Adds `listener` to the manager's internal listener
+   * set; it stays registered until the returned function is called or
+   * the manager is {@link dispose}d.
+   *
+   * @param listener Called synchronously for every `VoltraManagerEvent`.
+   * @returns Unsubscribe function. Safe to call more than once.
    */
   subscribe(listener: VoltraManagerEventListener): () => void {
     this.listeners.add(listener);
@@ -556,7 +605,16 @@ export abstract class VoltraManagerCore {
   }
 
   /**
-   * Subscribe to device connected events.
+   * Subscribe to `deviceConnected` events only.
+   *
+   * **Side effects.** Convenience wrapper over {@link subscribe} that
+   * registers its own filtering listener; each call adds a new listener
+   * rather than sharing one across callers.
+   *
+   * @param callback Called with the connected client, its device id, and
+   *   its advertised name (or `null` if unnamed) whenever a device
+   *   connects.
+   * @returns Unsubscribe function. Safe to call more than once.
    */
   onDeviceConnected(
     callback: (client: VoltraClient, deviceId: string, deviceName: string | null) => void
@@ -571,7 +629,16 @@ export abstract class VoltraManagerCore {
   }
 
   /**
-   * Subscribe to device disconnected events.
+   * Subscribe to `deviceDisconnected` events only.
+   *
+   * **Side effects.** Convenience wrapper over {@link subscribe} that
+   * registers its own filtering listener; each call adds a new listener
+   * rather than sharing one across callers.
+   *
+   * @param callback Called with the device id whenever a device
+   *   disconnects, whether initiated by {@link disconnect} or by an
+   *   unexpected link drop.
+   * @returns Unsubscribe function. Safe to call more than once.
    */
   onDeviceDisconnected(callback: (deviceId: string) => void): () => void {
     const listener: VoltraManagerEventListener = (event) => {
@@ -588,7 +655,16 @@ export abstract class VoltraManagerCore {
   // ===========================================================================
 
   /**
-   * Dispose of the manager and all connected devices.
+   * Dispose the manager: disconnect every device and release its host.
+   *
+   * **Side effects.** Idempotent — a second call is a no-op. Sets the
+   * disposed flag (after which every other public method throws via
+   * `ensureNotDisposed`), fires {@link disconnectAll} and `host.dispose()`
+   * without awaiting them (failures are swallowed, not surfaced), and
+   * clears all listeners and cached scan/discovery state.
+   *
+   * @returns Nothing; the underlying disconnect and host-dispose work
+   *   continues in the background after this call returns.
    */
   dispose(): void {
     if (this.disposed) return;
