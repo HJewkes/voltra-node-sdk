@@ -15,7 +15,7 @@ export interface TelemetryFrame {
   sequence: number;
   /** Current movement phase */
   phase: MovementPhase;
-  /** Cable extension in mm (0=rest, ~600=full pull); see protocol/constants/message-types.ts's TelemetryOffsets.POSITION */
+  /** Cable extension in mm (0=rest, ~600=full pull); see protocol/telemetry-decoder.ts's decodeTelemetryFrame comment */
   position: number;
   /** Force reading in lbs (positive=concentric, negative=eccentric) */
   force: number;
