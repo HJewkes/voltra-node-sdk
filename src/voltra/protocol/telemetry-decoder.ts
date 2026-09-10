@@ -213,12 +213,14 @@ export type MessageType =
   | 'vendor_rowing_summary'
   | 'vendor_rowing_status'
   | 'vendor_waveform_chunk'
+  // eslint-disable-next-line voltras/no-private-provenance -- exported `MessageType` member; renaming it is a breaking API change (VW-214, see CONTRIBUTING.md)
   | 'cmd10_async_state'
   | 'status_update'
   | 'mode_confirmation'
   | 'multi_param'
   | 'settings_update'
   // <Bug-17> bulk-read response (e.g. bootstrap step 10).
+  // eslint-disable-next-line voltras/no-private-provenance -- exported `MessageType` member; renaming it is a breaking API change (VW-214, see CONTRIBUTING.md)
   | 'cmd_0f_bulk_response'
   | 'device_init'
   | 'unknown';
@@ -256,6 +258,7 @@ export function identifyMessageType(data: Uint8Array): MessageType {
   // dispatch because this response's length varies with param count and
   // value widths, so it cannot use a fixed-length header match.
   if (isBulkParamResponse(data)) {
+    // eslint-disable-next-line voltras/no-private-provenance -- exported `MessageType` member; renaming it is a breaking API change (VW-214, see CONTRIBUTING.md)
     return 'cmd_0f_bulk_response';
   }
 
@@ -304,6 +307,7 @@ export function identifyMessageType(data: Uint8Array): MessageType {
     data.length >= ASYNC_STATE_FIRST_PARAM_OFFSET + 3 &&
     data[CMD_BYTE_OFFSET] === CMD_ASYNC_STATE
   ) {
+    // eslint-disable-next-line voltras/no-private-provenance -- exported `MessageType` member; renaming it is a breaking API change (VW-214, see CONTRIBUTING.md)
     return 'cmd10_async_state';
   }
 
@@ -1009,6 +1013,7 @@ export function decodeNotification(data: Uint8Array): DecodeResult {
     case 'multi_param':
       return decodeSettingsUpdate(data);
 
+    // eslint-disable-next-line voltras/no-private-provenance -- exported `MessageType` member; renaming it is a breaking API change (VW-214, see CONTRIBUTING.md)
     case 'cmd_0f_bulk_response': {
       // <Bug-17> Reuse the `settings_update` dispatch path so existing
       // `onSettingsUpdate` listeners (and `syncSettingsFromDevice`) populate
@@ -1023,6 +1028,7 @@ export function decodeNotification(data: Uint8Array): DecodeResult {
       return decodeDeviceStatus(data);
 
     // <Decoder-statedump-asyncstate>
+    // eslint-disable-next-line voltras/no-private-provenance -- exported `MessageType` member; renaming it is a breaking API change (VW-214, see CONTRIBUTING.md)
     case 'cmd10_async_state':
       return decodeAsyncStateToResult(data);
 
