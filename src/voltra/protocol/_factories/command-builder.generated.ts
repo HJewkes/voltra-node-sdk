@@ -2,18 +2,13 @@
 /**
  * Generic Command Builder
  *
- * Builds parametric commands following the official frame structure from Beyond Power:
- *   [Header 10B][CmdID 1B][Reserved 2B][Param_id 2B][Val NB][CRC16 2B]
- *   N = 2 for uint16/int16, 4 for uint32/int32
- *   Total = 17 + N
+ * Builds parametric commands from a parameter definition and a value.
  */
 
 import { calculateCRC8, calculateCRC16 } from './checksum.generated';
-// bytesToHex inlined from the private toolchain's shared utilities:
 function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
-// Inlined from the private toolchain's protocol enums (type-only, no runtime impact).
 type ValueType = 'uint8' | 'uint16' | 'int16' | 'uint32' | 'int32';
 interface ParamDefinition {
   readonly id: number;
@@ -26,15 +21,10 @@ interface ParamDefinition {
 // Frame Constants
 // =============================================================================
 
-// Universal header: [0x55, frameLength, category, CRC8(bytes 0-2)]
-// Byte 0: 0x55 start marker (fixed)
-// Byte 1: total frame length (derived at build time)
-// Byte 2: command category (0x04 for standard parametric commands)
-// Byte 3: CRC8 of bytes 0-2 (header integrity checksum, computed at build time)
 const START_MARKER = 0x55;
-const CATEGORY = 0x04; // standard command category
+const CATEGORY = 0x04;
 const HEADER_BYTES_4_5 = [0xaa, 0x10] as const;
-const HEADER_SUFFIX = [0x20, 0x00] as const; // bytes 8-9
+const HEADER_SUFFIX = [0x20, 0x00] as const;
 const CMD_ID = 0x11;
 const RESERVED = [0x01, 0x00] as const;
 
@@ -52,7 +42,7 @@ function valSize(vt: ValueType): 1 | 2 | 4 {
 }
 
 /**
- * Build the shared command frame: header + CmdID + reserved + param + value + CRC16.
+ * Build the frame shared by every parametric command variant.
  */
 function buildFrame(
   param: ParamDefinition,
@@ -101,11 +91,9 @@ function buildFrame(
 /**
  * Build a parametric command hex string.
  *
- * Uses CmdID 0x11 (set parameter) with reserved [0x01, 0x00].
- *
- * @param param - Parameter definition (register ID + value type)
+ * @param param - Parameter definition (id + value type)
  * @param value - Value to encode (handles signed via two's complement)
- * @param sequence - Sequence number (bytes 6-7, LE uint16)
+ * @param sequence - Sequence number for this command
  * @returns Lowercase hex string of the complete command
  */
 export function buildCommand(
@@ -128,14 +116,12 @@ export function buildCommandBytes(
 }
 
 /**
- * Build a "configure" command using CmdID 0x0f and reserved [0x02, 0x00].
+ * Build a "configure" command — the variant used to set up a workout, rather
+ * than the standard parametric setter.
  *
- * Observed in the workout SETUP command targeting register 0x6a50.
- * Different from standard parametric commands which use CmdID 0x11.
- *
- * @param param - Parameter definition (register ID + value type)
+ * @param param - Parameter definition (id + value type)
  * @param value - Value to encode
- * @param sequence - Sequence number (bytes 6-7, LE uint16)
+ * @param sequence - Sequence number for this command
  * @returns Command bytes
  */
 export function buildConfigCommand(

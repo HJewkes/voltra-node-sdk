@@ -1,11 +1,8 @@
 // @generated — do not edit. Regenerate: npm run build (from voltra-private)
 /**
- * Voltra Protocol Checksum Implementation (Private)
+ * Checksum Implementation
  *
- * CRC8 and CRC16 checksum calculation functions for Voltra BLE protocol.
- * Used for generating and validating command bytes.
- *
- * This is internal/private code - not exported in the public SDK.
+ * CRC8 and CRC16 checksum calculation functions.
  */
 
 // =============================================================================
@@ -32,7 +29,7 @@ const CRC8_TABLE: readonly number[] = [
 ] as const;
 
 // =============================================================================
-// CRC16 Lookup Table (256 entries) - From BP reference implementation (bp_checksum.py)
+// CRC16 Lookup Table (256 entries)
 // =============================================================================
 
 const CRC16_TABLE: readonly number[] = [
