@@ -21,7 +21,7 @@ import type { PerRepEvent, SummaryEvent, SetSummaryEvent, InProgressEvent } from
  *
  * 0.6.2 adds `onRawFrame` — fires for every inbound notification BEFORE
  * decode, including frames that decode to `'unknown'`. Diagnostic / capture
- * surface for byte-level work (cmd=0x10 reconnaissance, bootstrap parity).
+ * surface for byte-level work (frame reconnaissance, bootstrap parity).
  */
 export interface NotificationCallbacks {
   onRawFrame: (data: Uint8Array) => void;
@@ -46,7 +46,7 @@ export function createNotificationHandler(callbacks: NotificationCallbacks): Not
   return (data: Uint8Array) => {
     // Fire raw-frame callback first so consumers can capture bytes for
     // every inbound notification, including frames the decoder cannot
-    // classify (e.g. `cmd=0x10` async-update family until 1a lands).
+    // classify (e.g. async-update family until 1a lands).
     callbacks.onRawFrame(data);
 
     const result = decodeNotification(data);

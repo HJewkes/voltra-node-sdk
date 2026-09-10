@@ -582,7 +582,7 @@ export class VoltraClient {
       this._connectedDeviceName = device.name ?? null;
       // Bug 17 fix: do NOT blanket-reset `_settings` here. The bootstrap
       // step-10 query (`MODE_FEATURE_STATE_18PARAM_QUERY_HEX`) sent inside
-      // `initialize()` triggers a `cmd=0x0F` response that populates
+      // `initialize()` triggers a bulk-read response that populates
       // `_settings` via `syncSettingsFromDevice`. Resetting _settings here
       // would wipe whatever step-10 just populated. On the disconnect side,
       // `cleanup()` also no longer resets, so last-known settings persist
@@ -1806,7 +1806,7 @@ export class VoltraClient {
    * inbound notification — typed frames, vendor frames, async-updates,
    * and frames the decoder cannot classify (returns `'unknown'`).
    *
-   * Diagnostic / capture surface: byte-level work (cmd=0x10 reconnaissance,
+   * Diagnostic / capture surface: byte-level work (frame reconnaissance,
    * bootstrap parity, capture-replay regression). Consumers needing typed
    * events should use the typed listeners (`onFrame`, `onPerRep`, etc.).
    *
@@ -1979,7 +1979,7 @@ export class VoltraClient {
   }
 
   /**
-   * Subscribe to `cmd=0x07` state-dump events.
+   * Subscribe to state-dump events.
    *
    * The payload exposes fields that the legacy `settings_update` decode does
    * NOT surface — chains-active flag, fitness-assist toggle, chain target
@@ -2428,7 +2428,7 @@ export class VoltraClient {
     // The previous reset (`this._settings = { ...DEFAULT_SETTINGS };`) was
     // the proximate cause of post-reconnect SDK reading defaults — the
     // 3-packet init produced no settings cascade, leaving `_settings`
-    // stuck at `DEFAULT_SETTINGS` until a write triggered an async cmd=0x10
+    // stuck at `DEFAULT_SETTINGS` until a write triggered an async-state
     // update. The bootstrap step-10 query now refreshes `_settings` on
     // every connect; keeping last-known settings here gives `getState()`
     // callers stable values across the brief reconnect window.

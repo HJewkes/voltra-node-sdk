@@ -68,8 +68,8 @@ const CMD10_PARAM_COUNT_OFFSET = 11;
 /** Offset of the first param; the byte before it is reserved and always zero. */
 const CMD10_FIRST_PARAM_OFFSET = 13;
 /**
- * Sub-type bytes of the Phase-1a state-dump frame, called "cmd=0x07"
- * elsewhere in this decoder. Its frame header aliases the legacy
+ * Sub-type bytes of the Phase-1a state-dump frame. Its frame header
+ * aliases the legacy
  * `statusBattery` notification length, so this dispatch must precede the
  * 2-byte header check.
  */
@@ -89,20 +89,20 @@ const WAVEFORM_SUBTYPE_0 = 0x93;
  */
 const WAVEFORM_VARIANT_MARKERS: ReadonlySet<number> = new Set([0xcc, 0x82, 0xa8]);
 
-// <Bug-17> Begin — cmd=0x0F bulk-read response framing constants.
+// <Bug-17> Begin — bulk-read response framing constants.
 /** Frame-type byte for device-originated response frames. */
 const RESPONSE_FRAME_TYPE = 0x08;
 /** Extended-length variant of {@link RESPONSE_FRAME_TYPE}. */
 const RESPONSE_FRAME_TYPE_EXTENDED = 0x09;
 /** Cmd byte for the multi-paramID read response. */
 const CMD_PARAM_READ = 0x0f;
-/** Frame offset of the param-count u16 LE in a cmd=0x0F response. */
+/** Frame offset of the param-count u16 LE in a bulk-read response. */
 const CMD_0F_COUNT_OFFSET = 12;
-/** Frame offset of the first param pair in a cmd=0x0F response. */
+/** Frame offset of the first param pair in a bulk-read response. */
 const CMD_0F_FIRST_PARAM_OFFSET = 14;
 
 /**
- * Per-paramId value width (bytes) for params decoded from cmd=0x0F bulk
+ * Per-paramId value width (bytes) for params decoded from bulk-read
  * responses. Only the params surfaced through `DeviceSettings` are listed —
  * the decoder uses {@link Uint16ParamIds} for everything else, falling back
  * to abort decoding if neither table covers the paramId. Bootstrap step 10
@@ -218,7 +218,7 @@ export type MessageType =
   | 'mode_confirmation'
   | 'multi_param'
   | 'settings_update'
-  // <Bug-17> cmd=0x0F bulk-read response (e.g. bootstrap step 10).
+  // <Bug-17> bulk-read response (e.g. bootstrap step 10).
   | 'cmd_0f_bulk_response'
   | 'device_init'
   | 'unknown';
@@ -251,7 +251,7 @@ export function identifyMessageType(data: Uint8Array): MessageType {
     return 'vendor_set_summary';
   }
 
-  // <Bug-17> cmd=0x0F bulk-read response: matched on the frame-type byte
+  // <Bug-17> bulk-read response: matched on the frame-type byte
   // (plain or extended) AND the cmd byte. Tested before the 2-byte header
   // dispatch because this response's length varies with param count and
   // value widths, so it cannot use a fixed-length header match.
@@ -555,7 +555,7 @@ function decodeSettingsUpdate(data: Uint8Array): DecodeResult {
 }
 
 // <Decoder-cmd07-cmd10> ==========================================================
-// Generic cmd=0x10 async-state decoder.
+// Generic async-state decoder.
 //
 // Every async-state frame shares one payload structure: a param count, a
 // reserved byte, then that many `<paramID-LE><value>` pairs, followed by the
@@ -571,7 +571,7 @@ function decodeSettingsUpdate(data: Uint8Array): DecodeResult {
 // rather than mis-routing the frame to `unknown`.
 // ==========================================================
 /**
- * Decode the param list of a cmd=0x10 async-state frame. Stops parsing at
+ * Decode the param list of a async-state frame. Stops parsing at
  * the first truncated/malformed param so callers can rely on returned
  * params being well-formed.
  */
@@ -589,7 +589,7 @@ export function decodeCmd10(data: Uint8Array): Cmd10AsyncState | null {
 }
 
 /**
- * Walk the `<paramID-LE><value>` triplets of a cmd=0x10-shaped frame. Used
+ * Walk the `<paramID-LE><value>` triplets of a async-state-shaped frame. Used
  * by both the async-state path and the legacy `settingsUpdate` header path;
  * both share the same count / reserved / param-list encoding starting at
  * `firstParamOffset`.
@@ -649,7 +649,7 @@ function paramsToSettings(params: Cmd10Param[]): DeviceSettings {
 }
 
 /**
- * Decode a cmd=0x10 async-state frame to a high-level `DecodeResult`.
+ * Decode a async-state frame to a high-level `DecodeResult`.
  *
  * Single-param frames (paramCount=1) carrying TRAINING_MODE surface as
  * `mode_confirmation`; everything else surfaces as `settings_update` so
@@ -670,7 +670,7 @@ function decodeCmd10ToResult(data: Uint8Array): DecodeResult {
 }
 
 // =============================================================================
-// State-dump decoder (cmd=0x07)
+// State-dump decoder
 // =============================================================================
 
 /**
@@ -816,9 +816,9 @@ export function decodeWaveformChunk(data: Uint8Array): WaveformChunkEvent | null
   };
 }
 
-// <Bug-17> Begin — cmd=0x0F bulk-read response classification + decode.
+// <Bug-17> Begin — bulk-read response classification + decode.
 /**
- * Returns true when `data` looks like a cmd=0x0F bulk-read response. Matches
+ * Returns true when `data` looks like a bulk-read response. Matches
  * the frame-type byte (plain or extended) and the cmd byte at their
  * documented offsets. Bootstrap step 10's response is the canonical instance.
  */
@@ -833,7 +833,7 @@ function isCmd0x0FResponse(data: Uint8Array): boolean {
 }
 
 /**
- * Resolve the wire width (in bytes) of a paramId's value field in a cmd=0x0F
+ * Resolve the wire width (in bytes) of a paramId's value field in a bulk-read
  * response, or `null` if the SDK does not model this paramId yet. Falls back
  * to {@link Uint16ParamIds} for params present in `protocol.json`.
  */
@@ -892,7 +892,7 @@ function applyCmd0x0FParamToSettings(
 }
 
 /**
- * Decode a cmd=0x0F bulk-read response into a {@link Cmd0x0FBulkResponse}.
+ * Decode a bulk-read response into a {@link Cmd0x0FBulkResponse}.
  *
  * Walks the `[count, ...(paramId + value)]` payload using
  * {@link CMD_0F_KNOWN_PARAM_WIDTHS} to size each value. Stops gracefully
@@ -938,7 +938,7 @@ export function decodeCmd0x0FResponse(data: Uint8Array): Cmd0x0FBulkResponse | n
  * Phase 0.5.2 hotfix: the byte the `deviceInit` frame was being read for
  * battery is a sub-command marker, not a battery percentage. Reading it as
  * battery produced impossible values, well over 100%. Battery now arrives
- * through the cmd=0x10 settings cascade under its own paramID, so the
+ * through the async-state settings cascade under its own paramID, so the
  * `deviceInit` branch no longer emits a `device_status` event and the frame
  * falls through to `unknown` until a proper decoder lands.
  *
@@ -1011,7 +1011,7 @@ export function decodeNotification(data: Uint8Array): DecodeResult {
       // <Bug-17> Reuse the `settings_update` dispatch path so existing
       // `onSettingsUpdate` listeners (and `syncSettingsFromDevice`) populate
       // `_settings` automatically — the bulk response carries the same
-      // DeviceSettings shape as an async cmd=0x10 update.
+      // DeviceSettings shape as an async-state update.
       const decoded = decodeCmd0x0FResponse(data);
       return decoded ? { type: 'settings_update', settings: decoded.settings } : null;
     }

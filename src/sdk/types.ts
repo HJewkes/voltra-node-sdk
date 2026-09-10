@@ -150,7 +150,7 @@ export type SettingsUpdateListener = (settings: DeviceSettings) => void;
 export type BatteryUpdateListener = (battery: number) => void;
 
 /**
- * State-dump listener (called when the device emits a `cmd=0x07` frame
+ * State-dump listener (called when the device emits a state-dump frame
  * carrying chains-active flag, fitness-assist toggle, and chain target
  * weight).
  *

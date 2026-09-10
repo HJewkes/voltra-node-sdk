@@ -161,7 +161,7 @@ export interface TelemetryConfig {
   paramIds: ParamIdsConfig;
   /**
    * Generated parameter catalog keyed by `wireLE` (the form inbound
-   * cmd=0x10 / cmd=0x0F cascade decoders match against). Source-of-truth
+   * async-state / bulk-read cascade decoders match against). Source-of-truth
    * for paramID metadata — supersedes the hand-authored
    * `CMD_0F_KNOWN_PARAM_WIDTHS` lookup in `telemetry-decoder.ts`.
    *
@@ -437,7 +437,7 @@ export interface DeviceSettings {
 }
 
 // <Decoder-cmd07-cmd10> ==========================================================
-// State-dump (cmd=0x07) parsed payload.
+// State-dump parsed payload.
 //
 // Field offsets validated on-device 2026-05-07. The earlier "variable-layout
 // / discriminator byte" hypothesis was disproved: the payload has a fixed
@@ -465,19 +465,19 @@ export interface StateDumpEvent {
   assistMode: number;
   /**
    * Active weight setting in tenths of pounds (uint16 LE). Mirrors the
-   * cmd=0x10 cascade `baseWeight` × 10. Zero in non-WeightTraining modes.
+   * async-state cascade `baseWeight` × 10. Zero in non-WeightTraining modes.
    */
   weightLbsTenths: number;
   /**
    * Effective chain target force at the cable in tenths of pounds (uint16
    * LE). Equals `min(chains, weight) × 10` — the device silently caps the
-   * chain setting at the active weight. Use the cmd=0x10 cascade `chains`
+   * chain setting at the active weight. Use the async-state cascade `chains`
    * field for the user-set chain value.
    */
   chainTargetForceTenths: number;
   /**
    * Eccentric overload setting in tenths of percent (uint16 LE). Mirrors
-   * the cmd=0x10 cascade `eccentric` × 10.
+   * the async-state cascade `eccentric` × 10.
    */
   eccentricPercentTenths: number;
   /** Raw payload after the sub-type prefix (excludes CRC). */
@@ -550,7 +550,7 @@ export interface WaveformChunkEvent {
 }
 
 /**
- * Single decoded parameter from a `cmd=0x10` async-state cascade frame.
+ * Single decoded parameter from a async-state cascade frame.
  */
 export interface Cmd10Param {
   /** Parameter ID as a 4-char hex string (little-endian on the wire). */
@@ -562,7 +562,7 @@ export interface Cmd10Param {
 }
 
 /**
- * Decoded `cmd=0x10` async-state cascade frame.
+ * Decoded async-state cascade frame.
  *
  * The payload is a param count, a reserved byte, then that many
  * `<paramID-LE><value>` pairs. The count doubles as a discriminator: one
@@ -576,9 +576,9 @@ export interface Cmd10AsyncState {
   params: Cmd10Param[];
 }
 
-// <Bug-17> Begin — cmd=0x0F bulk-read response payload (additive, do not modify).
+// <Bug-17> Begin — bulk-read response payload (additive, do not modify).
 /**
- * Parsed cmd=0x0F bulk-read response.
+ * Parsed bulk-read response.
  *
  * The device returns one of these in response to bootstrap step 10 (the
  * 18-param mode-feature-state query) and to any other multi-paramID read.
