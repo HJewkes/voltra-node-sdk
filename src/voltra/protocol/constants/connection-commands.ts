@@ -92,8 +92,8 @@ export const Workout = {
    * cable position.
    *
    * Kept under `Workout` for now to preserve the bootstrap-sequence
-   * call-site contract; Phase 1 of the codegen refactor will relocate
-   * read-class commands to a dedicated `Reads` / `ReadCmd` module.
+   * call-site contract; a later codegen refactor will relocate read-class
+   * commands to a dedicated `Reads` / `ReadCmd` module.
    */
   SETUP: hexToBytes(protocol.commands.workout.setup),
   /** Start resistance/tracking */

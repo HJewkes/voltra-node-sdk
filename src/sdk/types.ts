@@ -555,7 +555,7 @@ export type ModeRevertEventListener = (event: ModeRevertEvent) => void;
  *
  * Note: row distance presets are a client-side construct (`50m=10×5`,
  * `5000m=1000×5`) — the device does not receive a native target-distance
- * register. the screen-switch only selects the preset *screen*; the SDK
+ * register. The screen-switch write only selects the preset *screen*; the SDK
  * does not currently emit a separate target-distance write.
  */
 export type RowingDistancePreset =

@@ -32,18 +32,16 @@ const CMD_PARAM_READ = 0x0f;
  */
 const FITNESS_MODE_DIRECT_LOAD_READY = 0x0026;
 const FITNESS_MODE_DIRECT_LOAD_ACTIVE = 0x0027;
-/** Used to exit guided-load cleanly (`exitGuidedLoad`). */
+/** Strength-ready mode — used to exit guided-load cleanly (`exitGuidedLoad`). */
 const FITNESS_MODE_STRENGTH_READY = 0x0004;
 
-// Direct-load engagement safety-check register (
-// uint8 arm bit).
+// Direct-load engagement safety-check register (uint8 arm bit).
 export const PARAM_DIRECT_LOAD_SAFETY_CHECK = 0x538d;
-// Direct-load `ST` status register ( uint8 phase enum).
+// Direct-load status register (uint8 phase enum).
 export const PARAM_DIRECT_LOAD_ST = 0x53c7;
-// Direct-load countdown register ( uint16 LE
-// countdown in ms).
+// Direct-load countdown register (uint16 LE countdown in ms).
 export const PARAM_DIRECT_LOAD_COUNTDOWN = 0x53c8;
-// Direct-load `CTRL` runtime control register ( uint8).
+// Direct-load runtime control register (uint8).
 export const PARAM_DIRECT_LOAD_CTRL = 0x53c9;
 
 const STATUS_PARAM_IDS_LE = [
