@@ -147,7 +147,7 @@ export interface WorkoutCommands {
  * Telemetry parsing configuration.
  */
 export interface TelemetryConfig {
-  /** Message type identifiers (first 4 bytes) */
+  /** Message type identifiers */
   messageTypes: MessageTypeConfig;
   /** Byte offsets for parsing telemetry stream */
   offsets: OffsetConfig;
@@ -163,7 +163,7 @@ export interface TelemetryConfig {
    * Generated parameter catalog keyed by `wireLE` (the form inbound
    * async-state / bulk-read cascade decoders match against). Source-of-truth
    * for paramID metadata — supersedes the hand-authored
-   * `CMD_0F_KNOWN_PARAM_WIDTHS` lookup in `telemetry-decoder.ts`.
+   * `KNOWN_PARAM_WIDTHS` lookup in `telemetry-decoder.ts`.
    *
    * Emitted by the protocol-data generator. Optional for backward compat
    * with older protocol-data versions.
@@ -183,7 +183,7 @@ export interface TelemetryConfig {
 export interface ParameterCatalogEntry {
   /** Canonical 16-bit paramID for the register named by `name`. */
   paramId: number;
-  /** Canonical name (e.g. `BP_BASE_WEIGHT`). */
+  /** Canonical name . */
   name: string;
   /** Big-endian wire form (4-char lowercase hex; outbound writes). */
   wireBE: string;
@@ -213,14 +213,14 @@ export interface ParameterCatalogEntry {
 }
 
 /**
- * Message type header bytes (4-byte hex strings).
+ * Message type header bytes (hex strings).
  *
  * On-device validation (2026-05-05, 1369 frames) confirmed that
  * the previously-documented `repSummary`, `setSummary`, and `statusUpdate`
- * 4-byte signatures were aliases for vendor sub-type frames (perRep,
- * inProgress) and the 2-byte statusBattery notification respectively.
+ * signatures were aliases for vendor sub-type frames (perRep,
+ * inProgress) and the statusBattery notification respectively.
  * They were collapsed into a single classification path; only the
- * telemetry stream remains as a distinct 4-byte signature.
+ * telemetry stream remains as a distinct signature.
  */
 export interface MessageTypeConfig {
   /** Real-time telemetry stream (~11 Hz) */
@@ -242,11 +242,11 @@ export interface VendorMessagesConfig {
 }
 
 export interface VendorSubTypesConfig {
-  /** Per-rep boundary frame (74 B). Fires at pull start and return start. */
+  /** Per-rep boundary frame. Fires at pull start and return start. */
   perRep: VendorSubTypeConfig;
-  /** End-of-workout summary frame (140 B). Fires once after STOP. */
+  /** End-of-workout summary frame. Fires once after STOP. */
   summary: VendorSubTypeConfig;
-  /** Recurring in-progress telemetry (79 B). Was previously aliased as setSummary. */
+  /** Recurring in-progress telemetry. Was previously aliased as setSummary. */
   inProgress: VendorSubTypeConfig;
   /**
    * Set-summary frame. Device emits one per set in
@@ -281,8 +281,8 @@ export interface VendorSubTypeConfig {
   motionPhases?: { pull: number; return: number };
   /**
    * Optional payload offset of the per-mode schema-version byte.
-   * Only present on `summary` and `setSummary` whose 4-byte sub-type is
-   * the vendor cmd, a 2-byte fixed identifier, then this byte.
+   * Only present on `summary` and `setSummary`, whose sub-type is
+   * the vendor cmd, a fixed identifier, then this byte.
    */
   schemaVersionByteOffset?: number;
   /** Optional sample unit metadata (isometricWaveform only) */
@@ -295,15 +295,15 @@ export interface VendorSubTypeConfig {
  * Byte offsets for parsing telemetry stream messages.
  */
 export interface OffsetConfig {
-  /** Sequence number (2 bytes, little-endian) */
+  /** Sequence number */
   sequence: number;
-  /** Movement phase (1 byte) */
+  /** Movement phase */
   phase: number;
-  /** Position (2 bytes, little-endian unsigned) */
+  /** Position, in millimetres */
   position: number;
-  /** Force (2 bytes, little-endian signed) */
+  /** Force, in tenths of pounds */
   force: number;
-  /** Velocity (2 bytes, little-endian unsigned) */
+  /** Velocity, in mm/s */
   velocity: number;
 }
 
@@ -380,9 +380,8 @@ export interface ParamIdsConfig {
   /** Inverse chains parameter */
   inverseChains: string;
   /**
-   * `BP_SET_FITNESS_MODE` — workout-state register controlling
-   * the device's primary mode/state machine (strength READY/ARMED/ACTIVE,
-   * direct-load STRENGTH_READY, rowing GO/ACTIVE, etc).
+   * The workout-state register controlling the device's primary mode/state
+   * machine, across the strength, direct-load and rowing flows.
    */
   bpSetFitnessMode: string;
 }
@@ -550,7 +549,7 @@ export interface WaveformChunkEvent {
 /**
  * Single decoded parameter from a async-state cascade frame.
  */
-export interface Cmd10Param {
+export interface AsyncStateParam {
   /** Parameter ID as a 4-char hex string (little-endian on the wire). */
   paramIdHex: string;
   /** Decoded value (uint8 or uint16 depending on `paramIdHex`). */
@@ -566,11 +565,11 @@ export interface Cmd10Param {
  * update, two is a structural / mode-switch update, and a full cascade
  * carries the whole settings bag.
  */
-export interface Cmd10AsyncState {
+export interface AsyncStateFrame {
   /** Parameter count; also serves as the inner-cmd discriminator. */
   paramCount: number;
   /** Decoded parameters in wire order. */
-  params: Cmd10Param[];
+  params: AsyncStateParam[];
 }
 
 // <Bug-17> Begin — bulk-read response payload (additive, do not modify).
@@ -584,7 +583,7 @@ export interface Cmd10AsyncState {
  * (`baseWeight`, `chains`, `eccentric`, `trainingMode`, `inverseChains`,
  * `damperLevel`) and ignores params with unknown widths. Per-paramId value-width tables remain an open question.
  */
-export interface Cmd0x0FBulkResponse {
+export interface BulkParamResponse {
   /** Number of paramId+value pairs successfully parsed */
   paramCount: number;
   /** Decoded device settings extracted from the response */

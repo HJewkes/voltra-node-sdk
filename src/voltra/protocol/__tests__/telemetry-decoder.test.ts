@@ -951,7 +951,7 @@ describe('decodeNotification – device_status (deviceInit & statusBattery)', ()
   // Phase 0.5.2 hotfix: byte [11] of the 35-byte `5523` deviceInit frame is
   // a sub-cmd byte (`0xa7` in observed captures), NOT a battery percentage.
   // The decoder no longer emits `device_status` for `5523` frames; battery
-  // arrives via paramID `2d4e` through the cmd=0x10 settings cascade.
+  // arrives via paramID `2d4e` through the settings cascade.
   it('does NOT emit device_status from a deviceInit (5523) notification', () => {
     // byte [11] = 0xa7 (the actual on-wire sub-cmd byte) — must NOT be
     // surfaced as a 167% battery reading.

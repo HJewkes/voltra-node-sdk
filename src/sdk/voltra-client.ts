@@ -781,8 +781,8 @@ export class VoltraClient {
    * - **Rowing is a multi-step state machine.** Setting `TrainingMode.Rowing`
    *   does NOT issue the strength-arm. It auto-routes to the two-stage
    *   {@link enterRowMode} + {@link startRow} (Just Row, no preset) sequence,
-   *   then arms an internal reassert scheduler that re-issues the SCR_SWITCH +
-   *   vendor-refresh pair at `+750 / +1750 / +3000 ms`. Advanced callers who
+   *   then arms an internal reassert scheduler that re-issues the
+   *   screen-switch and vendor-refresh pair at `+750 / +1750 / +3000 ms`. Advanced callers who
    *   need a distance preset must call the two primitives directly. Setting a
    *   non-Rowing mode after Rowing cancels the scheduler and clears the
    *   `_rowSubMenuOpen` / `_rowStarted` flags.
@@ -793,12 +793,12 @@ export class VoltraClient {
    *   via {@link onModeRevertEvent}). The latch self-clears after the window
    *   so a user-initiated mode change via the device UI doesn't trip it.
    *
-   * **Bug 22 rationale.** Rowing is the only `FITNESS_WORKOUT_STATE` that
+   * **Bug 22 rationale.** Rowing is the only workout state that
    * does not respond to the strength-arm primitive. Writing it while the
    * device is
    * on the rowing screen is silently reinterpreted as a strength session,
    * reverting the rowing flow — HIGH safety severity. The two-stage path
-   * commits via `EP_SCR_SWITCH` action codes, which is the only correct
+   * commits via the screen-switch action codes, which is the only correct
    * primitive for Rowing.
    *
    * @param mode Training mode to set.
@@ -854,7 +854,7 @@ export class VoltraClient {
   // Rowing Two-Stage Entry (Bug 22)
   // ===========================================================================
   //
-  // Rowing commits via `EP_SCR_SWITCH` followed by a vendor state-refresh
+  // Rowing commits via a screen-switch write followed by a vendor state-refresh
   // pulse, NOT via the strength-mode GO. The original SDK's `setMode(Rowing)` +
   // `startRecording()` flow silently issued the strength-mode GO during
   // session_start, which caused the device to revert out of rowing mid-
@@ -871,9 +871,9 @@ export class VoltraClient {
    * Stage 1 of Rowing entry — open the rowing sub-menu (Just Row /
    * Distance presets) without engaging resistance.
    *
-   * Sends the existing `FITNESS_WORKOUT_STATE = ROWING` frame. After this
+   * Sends the existing set-Rowing-mode frame. After this
    * returns successfully the device is on the rowing screen but
-   * `BP_SET_FITNESS_MODE` still reads READY; the cable must NOT engage. Call
+   * the mode register still reads ready; the cable must NOT engage. Call
    * {@link startRow} to commit into a live rowing session.
    *
    * Idempotent — calling repeatedly is safe.
@@ -902,18 +902,17 @@ export class VoltraClient {
   /**
    * Stage 2 of Rowing entry — commit into a live rowing session.
    *
-   * Writes `EP_SCR_SWITCH` with the action that picks the preset screen,
+   * Writes the screen-switch with the action that picks the preset screen,
    * followed by the vendor state-refresh pulse. Schedules three reassert
    * ticks at +750 / +1750 / +3000 ms to recover from BLE-flake drops where
    * the device silently fails to enter rowing-active.
    *
    * Successful commit (verified externally — the SDK does not yet decode
-   * the confirmation frames) moves `BP_SET_FITNESS_MODE` to
-   * FITNESS_MODE_ROWING_ACTIVE, advances the current-screen and ongoing-UI
-   * registers, and starts rowing telemetry.
+   * the confirmation frames) the device reports rowing-active, moves to the
+   * rowing screen, and starts rowing telemetry.
    *
    * Note on distance presets: the device does not receive a native
-   * target-distance register — `EP_SCR_SWITCH` only selects the preset
+   * target-distance register — the screen-switch only selects the preset
    * *screen*. The client app enforces stroke targets
    * (`50m=10×5`, `5000m=1000×5`); SDK consumers are expected to do the
    * same comparing live distance from the rowing summary stream.
@@ -955,7 +954,7 @@ export class VoltraClient {
       throw new CommandError(`Failed to start row: ${this.getErrorMessage(e)}`, 'startRow');
     }
 
-    // Schedule reassert ticks. Each tick re-issues the same EP_SCR_SWITCH +
+    // Schedule reassert ticks. Each tick re-issues the same screen-switch +
     // vendor refresh pair. Cancellation happens automatically on the next
     // arm() / cancel() / mode-change. The action code is captured by
     // closure so a subsequent startRow() with a different distance only
@@ -1526,7 +1525,7 @@ export class VoltraClient {
    *
    * **Sequence.**
    *
-   *   1. {@link setWeight}`(targetWeightLbs)` — writes BP_BASE_WEIGHT (target).
+   *   1. {@link setWeight}`(targetWeightLbs)` — writes the target weight.
    *   2. Write the direct-load trigger frame.
    *   3. Transition `phase: 'idle' → 'armed'` synchronously so observers see
    *      the armed state even if the first poll response is delayed.
@@ -1578,7 +1577,7 @@ export class VoltraClient {
     // can carry it through every state transition.
     this._guidedLoadTargetWeightLbs = opts.targetWeightLbs;
 
-    // Step 1: write the target weight (BP_BASE_WEIGHT). `setWeight` already
+    // Step 1: write the target weight. `setWeight` already
     // validates against the available-weights table; out-of-range values
     // surface as `InvalidSettingError` before any trigger is written.
     await this.setWeight(opts.targetWeightLbs);
@@ -1620,9 +1619,9 @@ export class VoltraClient {
   }
 
   /**
-   * Exit the guided-load flow cleanly by writing
-   * `BP_SET_FITNESS_MODE = STRENGTH_READY`. Stops the poll loop
-   * and transitions state to `'exited'`.
+   * Exit the guided-load flow cleanly by returning the device to a
+   * strength-ready state. Stops the poll loop and transitions state to
+   * `'exited'`.
    *
    * @experimental — see {@link startGuidedLoad}.
    */
@@ -1667,13 +1666,13 @@ export class VoltraClient {
    * to engage the motor on the next {@link startRecording} call.
    *
    * **SDK-01.13:** the `Workout.PREPARE` write was removed. It is a
-   * single-param write of `FITNESS_WORKOUT_STATE = WeightTraining`
+   * single-param write setting the workout state to WeightTraining
    * and touches no other register — functionally
    * `setMode(WeightTraining)`. Running it before GO silently reset the
    * caller's selected fitness mode: Band survived (its `band_max_force`
    * register is independent) but Damper/Isokinetic were clobbered back to
    * WeightTraining because their coefficient registers only take effect
-   * while `FITNESS_WORKOUT_STATE` names that mode. The selected mode is
+   * while the workout state names that mode. The selected mode is
    * already written by
    * {@link setMode} before recording, so PREPARE was redundant for WT and
    * harmful for every other mode. Hardware-confirmed 2026-07-07 bench:
@@ -1986,7 +1985,7 @@ export class VoltraClient {
    * weight in tenths of pounds. Use this listener to react to assist-mode
    * transitions (Bug 26) and chain-engagement state changes.
    *
-   * The raw `assistMode` byte is preserved. `FITNESS_ASSIST_MODE` has
+   * The raw `assistMode` byte is preserved. The assist-mode register has
    * asymmetric-off semantics: only the "on" code means on, and every other
    * value should be treated as off.
    *

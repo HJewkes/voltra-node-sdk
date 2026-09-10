@@ -2,7 +2,7 @@
  * Reassert Scheduler — Bug 22
  *
  * Schedules a sequence of "reassert" callbacks at fixed offsets after an
- * arming write (e.g. the EP_SCR_SWITCH commit that drops the device into
+ * arming write (e.g. the screen-switch commit that drops the device into
  * Rowing-active). Each scheduled tick is tagged with an `attemptId` so a
  * subsequent attempt (or any user mode change) can cancel pending callbacks
  * from prior attempts atomically.

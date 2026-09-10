@@ -22,14 +22,14 @@ import {
 import { createFrame, type TelemetryFrame } from '../models/telemetry/frame';
 import { bytesEqual, bytesToHex } from '../../shared/utils';
 import type {
-  Cmd0x0FBulkResponse,
+  BulkParamResponse,
   DeviceSettings,
   StateDumpEvent,
   RowingSummaryEvent,
   RowingStatusEvent,
   WaveformChunkEvent,
-  Cmd10AsyncState,
-  Cmd10Param,
+  AsyncStateFrame,
+  AsyncStateParam,
 } from './types';
 import type { PerRepEvent, SummaryEvent, SetSummaryEvent, InProgressEvent } from '../../sdk/types';
 
@@ -64,14 +64,14 @@ const CMD_BYTE_OFFSET = 10;
 /** Cmd byte identifying an async-state frame. */
 const CMD_ASYNC_STATE = 0x10;
 /** Offset of the inner-cmd discriminator, which doubles as the param count. */
-const CMD10_PARAM_COUNT_OFFSET = 11;
+const ASYNC_STATE_PARAM_COUNT_OFFSET = 11;
 /** Offset of the first param; the byte before it is reserved and always zero. */
-const CMD10_FIRST_PARAM_OFFSET = 13;
+const ASYNC_STATE_FIRST_PARAM_OFFSET = 13;
 /**
  * Sub-type bytes of the Phase-1a state-dump frame. Its frame header
  * aliases the legacy
  * `statusBattery` notification length, so this dispatch must precede the
- * 2-byte header check.
+ * header check.
  */
 const STATE_DUMP_SUBTYPE_0: number = 0x80;
 const STATE_DUMP_SUBTYPE_1: number = 0x25;
@@ -97,43 +97,43 @@ const RESPONSE_FRAME_TYPE_EXTENDED = 0x09;
 /** Cmd byte for the multi-paramID read response. */
 const CMD_PARAM_READ = 0x0f;
 /** Frame offset of the param-count u16 LE in a bulk-read response. */
-const CMD_0F_COUNT_OFFSET = 12;
+const BULK_PARAM_COUNT_OFFSET = 12;
 /** Frame offset of the first param pair in a bulk-read response. */
-const CMD_0F_FIRST_PARAM_OFFSET = 14;
+const BULK_PARAM_FIRST_OFFSET = 14;
 
 /**
  * Per-paramId value width (bytes) for params decoded from bulk-read
  * responses. Only the params surfaced through `DeviceSettings` are listed —
  * the decoder uses {@link Uint16ParamIds} for everything else, falling back
  * to abort decoding if neither table covers the paramId. Bootstrap step 10
- * (18-param query) covers all of these plus QUICK_CABLE_ADJUSTMENT, whose
+ * (18-param query) covers all of these plus quick cable adjustment, whose
  * width is not yet known.
  *
  * Param IDs are stored as little-endian hex strings to match `ParamIdHex`.
  */
-const CMD_0F_KNOWN_PARAM_WIDTHS: Readonly<Record<string, number>> = {
+const KNOWN_PARAM_WIDTHS: Readonly<Record<string, number>> = {
   // Step-10 response carries these as uint16 LE (lb / index / state).
-  '863e': 2, // BP_BASE_WEIGHT
-  '873e': 2, // BP_CHAINS_WEIGHT
-  '883e': 2, // BP_ECCENTRIC_WEIGHT (signed; readCmd0x0FValue handles sign)
-  '893e': 2, // BP_SET_FITNESS_MODE (also covered by Uint16ParamIds)
-  '823e': 2, // BP_RUNTIME_POSITION_CM
-  '6a50': 2, // MC_DEFAULT_OFFLEN_CM
-  '6253': 2, // RESISTANCE_BAND_MAX_FORCE
-  b753: 2, // RESISTANCE_BAND_LEN
-  '3154': 2, // ISOMETRIC_MAX_FORCE
-  d253: 2, // ISOMETRIC_MAX_DURATION
+  '863e': 2, // base weight
+  '873e': 2, // chains weight
+  '883e': 2, // eccentric weight (signed; readParamValue handles sign)
+  '893e': 2, // fitness mode (also covered by Uint16ParamIds)
+  '823e': 2, // runtime cable position, cm
+  '6a50': 2, // saved cable offset, cm
+  '6253': 2, // resistance-band max force
+  b753: 2, // resistance-band length
+  '3154': 2, // isometric max force
+  d253: 2, // isometric max duration
   // Step-10 response carries these as uint8 flags / enums.
-  '6153': 1, // RESISTANCE_BAND_ALGORITHM
-  b653: 1, // RESISTANCE_BAND_LEN_BY_ROM
-  e352: 1, // EP_RESISTANCE_BAND_INVERSE
-  '0651': 1, // FITNESS_ASSIST_MODE
-  b053: 1, // FITNESS_INVERSE_CHAIN
-  c653: 1, // WEIGHT_TRAINING_EXTRA_MODE
-  b04f: 1, // FITNESS_WORKOUT_STATE (training mode)
+  '6153': 1, // resistance-band algorithm
+  b653: 1, // resistance-band length by ROM
+  e352: 1, // resistance-band inverse
+  '0651': 1, // assist mode
+  b053: 1, // inverse chains
+  c653: 1, // weight-training extra mode
+  b04f: 1, // workout state (training mode)
   // damperLevel — key is the wire-byte hex (little-endian), not the paramID.
   // An earlier version of this table had the two bytes inverted.
-  '0351': 1, // FITNESS_DAMPER_RATIO_IDX
+  '0351': 1, // damper ratio index
 };
 // <Bug-17> End
 
@@ -252,15 +252,15 @@ export function identifyMessageType(data: Uint8Array): MessageType {
   }
 
   // <Bug-17> bulk-read response: matched on the frame-type byte
-  // (plain or extended) AND the cmd byte. Tested before the 2-byte header
+  // (plain or extended) AND the cmd byte. Tested before the header
   // dispatch because this response's length varies with param count and
   // value widths, so it cannot use a fixed-length header match.
-  if (isCmd0x0FResponse(data)) {
+  if (isBulkParamResponse(data)) {
     return 'cmd_0f_bulk_response';
   }
 
   // <Decoder-statedump-asyncstate> Vendor state-dump and rowing telemetry sub-types.
-  // These checks must precede the 2-byte header dispatch — the state-dump
+  // These checks must precede the header dispatch — the state-dump
   // frame aliases the `statusBattery` header and was previously yielding
   // spurious battery readings.
   if (
@@ -295,15 +295,18 @@ export function identifyMessageType(data: Uint8Array): MessageType {
   // <Decoder-statedump-asyncstate> Async-state cascade. Phase 1a confirmed that the
   // "inner-cmd" byte is really the param count, which distinguishes a
   // single-param update from a mode-switch pair and from a full-settings
-  // cascade. The legacy 4-byte header path (`mode_confirmation`,
+  // cascade. The legacy header path (`mode_confirmation`,
   // `multi_param`, `settings_update`) mis-classified single-param frames
   // carrying non-trainingMode params (assist, damper, chains) — those now
   // flow through this path.
-  if (data.length >= CMD10_FIRST_PARAM_OFFSET + 3 && data[CMD_BYTE_OFFSET] === CMD_ASYNC_STATE) {
+  if (
+    data.length >= ASYNC_STATE_FIRST_PARAM_OFFSET + 3 &&
+    data[CMD_BYTE_OFFSET] === CMD_ASYNC_STATE
+  ) {
     return 'cmd10_async_state';
   }
 
-  // Check 2-byte headers for other notification types
+  // Check the fixed-length headers for other notification types
   const header2 = bytesToHex(data.slice(0, 2));
 
   if (header2 === NotificationConfigs.modeConfirmation.header) {
@@ -315,8 +318,8 @@ export function identifyMessageType(data: Uint8Array): MessageType {
   } else if (header2 === NotificationConfigs.deviceInit.header) {
     return 'device_init';
   } else if (header2 === NotificationConfigs.statusBattery.header) {
-    // On-device validation confirmed the legacy 4-byte STATUS_UPDATE
-    // signature was an alias for this 2-byte path.
+    // On-device validation confirmed the legacy STATUS_UPDATE
+    // signature was an alias for this path.
     return 'status_update';
   }
 
@@ -550,7 +553,7 @@ function decodeSettingsUpdate(data: Uint8Array): DecodeResult {
     return null;
   }
 
-  const params = decodeCmd10Params(data, config.paramCountOffset, config.firstParamOffset);
+  const params = decodeAsyncStateParams(data, config.paramCountOffset, config.firstParamOffset);
   return { type: 'settings_update', settings: paramsToSettings(params) };
 }
 
@@ -562,7 +565,7 @@ function decodeSettingsUpdate(data: Uint8Array): DecodeResult {
 // default, or uint16 LE for the param IDs listed in `Uint16ParamIds`. The
 // offsets are the module constants above.
 //
-// `decodeCmd10` returns the structured param list; `decodeCmd10ToResult`
+// `decodeAsyncState` returns the structured param list; `decodeAsyncStateToResult`
 // tries to project it into a `mode_confirmation` (single TRAINING_MODE
 // param) or `settings_update` (any other recognized params). Frames whose
 // only param is unrecognized still return `settings_update` with an empty
@@ -574,16 +577,20 @@ function decodeSettingsUpdate(data: Uint8Array): DecodeResult {
  * the first truncated/malformed param so callers can rely on returned
  * params being well-formed.
  */
-export function decodeCmd10(data: Uint8Array): Cmd10AsyncState | null {
-  if (data.length < CMD10_FIRST_PARAM_OFFSET + 3) return null;
+export function decodeAsyncState(data: Uint8Array): AsyncStateFrame | null {
+  if (data.length < ASYNC_STATE_FIRST_PARAM_OFFSET + 3) return null;
   if (data[CMD_BYTE_OFFSET] !== CMD_ASYNC_STATE) return null;
-  const paramCount = data[CMD10_PARAM_COUNT_OFFSET];
+  const paramCount = data[ASYNC_STATE_PARAM_COUNT_OFFSET];
   // Cap at 16 to avoid any pathological frame steering us into a long loop.
   // Real captures top out at 9 params.
   if (paramCount === 0 || paramCount > 16) {
     return { paramCount, params: [] };
   }
-  const params = decodeCmd10Params(data, CMD10_PARAM_COUNT_OFFSET, CMD10_FIRST_PARAM_OFFSET);
+  const params = decodeAsyncStateParams(
+    data,
+    ASYNC_STATE_PARAM_COUNT_OFFSET,
+    ASYNC_STATE_FIRST_PARAM_OFFSET
+  );
   return { paramCount, params };
 }
 
@@ -593,12 +600,12 @@ export function decodeCmd10(data: Uint8Array): Cmd10AsyncState | null {
  * both share the same count / reserved / param-list encoding starting at
  * `firstParamOffset`.
  */
-function decodeCmd10Params(
+function decodeAsyncStateParams(
   data: Uint8Array,
   paramCountOffset: number,
   firstParamOffset: number
-): Cmd10Param[] {
-  const params: Cmd10Param[] = [];
+): AsyncStateParam[] {
+  const params: AsyncStateParam[] = [];
   if (paramCountOffset >= data.length) return params;
   const paramCount = data[paramCountOffset];
   let offset = firstParamOffset;
@@ -623,7 +630,7 @@ function decodeCmd10Params(
  * Unrecognized param IDs are skipped silently — they're emitted by the
  * device but not yet plumbed into the public `DeviceSettings` shape.
  */
-function paramsToSettings(params: Cmd10Param[]): DeviceSettings {
+function paramsToSettings(params: AsyncStateParam[]): DeviceSettings {
   const settings: DeviceSettings = {};
   for (const { paramIdHex, value } of params) {
     if (paramIdHex === ParamIdHex.BASE_WEIGHT) {
@@ -655,8 +662,8 @@ function paramsToSettings(params: Cmd10Param[]): DeviceSettings {
  * non-trainingMode single-param frames (assist, damper, chains) are no
  * longer mis-classified as mode changes.
  */
-function decodeCmd10ToResult(data: Uint8Array): DecodeResult {
-  const decoded = decodeCmd10(data);
+function decodeAsyncStateToResult(data: Uint8Array): DecodeResult {
+  const decoded = decodeAsyncState(data);
   if (!decoded) return null;
   if (decoded.params.length === 1 && decoded.params[0].paramIdHex === ParamIdHex.TRAINING_MODE) {
     const value = decoded.params[0].value;
@@ -793,7 +800,7 @@ export function decodeWaveformChunk(data: Uint8Array): WaveformChunkEvent | null
   const payloadStart = CMD_BYTE_OFFSET + 1;
   const rawEnd = Math.max(payloadStart, data.length - 2);
   const raw = data.slice(payloadStart, rawEnd);
-  // Need at least 6 bytes for the chunk header before any samples.
+  // Reject a buffer too short to carry the chunk header.
   if (raw.length < 6) return null;
 
   const declaredSampleCount = readUint16LE(raw, 4);
@@ -820,7 +827,7 @@ export function decodeWaveformChunk(data: Uint8Array): WaveformChunkEvent | null
  * the frame-type byte (plain or extended) and the cmd byte at their
  * documented offsets. Bootstrap step 10's response is the canonical instance.
  */
-function isCmd0x0FResponse(data: Uint8Array): boolean {
+function isBulkParamResponse(data: Uint8Array): boolean {
   if (data.length <= CMD_BYTE_OFFSET) return false;
   if (data[0] !== 0x55) return false;
   const frameType = data[2];
@@ -835,15 +842,15 @@ function isCmd0x0FResponse(data: Uint8Array): boolean {
  * response, or `null` if the SDK does not model this paramId yet. Falls back
  * to {@link Uint16ParamIds} for params present in `protocol.json`.
  */
-function resolveCmd0x0FValueWidth(paramIdHex: string): number | null {
-  const known = CMD_0F_KNOWN_PARAM_WIDTHS[paramIdHex];
+function resolveParamValueWidth(paramIdHex: string): number | null {
+  const known = KNOWN_PARAM_WIDTHS[paramIdHex];
   if (known !== undefined) return known;
   if (Uint16ParamIds.has(paramIdHex)) return 2;
   return null;
 }
 
 /** Read a value of the given width and apply paramId-specific signedness. */
-function readCmd0x0FValue(
+function readParamValue(
   data: Uint8Array,
   offset: number,
   width: number,
@@ -851,12 +858,12 @@ function readCmd0x0FValue(
 ): number {
   if (width === 1) return data[offset];
   if (width === 2) {
-    // BP_ECCENTRIC_WEIGHT is signed lb on the wire.
+    // Eccentric weight is signed lb on the wire.
     if (paramIdHex === ParamIdHex.ECCENTRIC) return readInt16LE(data, offset);
     return readUint16LE(data, offset);
   }
   // Width 4 / other widths are not currently resolved by
-  // resolveCmd0x0FValueWidth, so this branch is unreachable today. Kept as
+  // resolveParamValueWidth, so this branch is unreachable today. Kept as
   // a defensive default to avoid misreporting partial values.
   return readUint32LE(data, offset);
 }
@@ -867,11 +874,7 @@ function readCmd0x0FValue(
  * eccentric / trainingMode / inverseChains / damperLevel). Unmapped params
  * are intentionally ignored.
  */
-function applyCmd0x0FParamToSettings(
-  settings: DeviceSettings,
-  paramIdHex: string,
-  value: number
-): void {
+function applyParamToSettings(settings: DeviceSettings, paramIdHex: string, value: number): void {
   if (paramIdHex === ParamIdHex.BASE_WEIGHT) {
     settings.baseWeight = value;
   } else if (paramIdHex === ParamIdHex.CHAINS) {
@@ -890,10 +893,10 @@ function applyCmd0x0FParamToSettings(
 }
 
 /**
- * Decode a bulk-read response into a {@link Cmd0x0FBulkResponse}.
+ * Decode a bulk-read response into a {@link BulkParamResponse}.
  *
  * Walks the `[count, ...(paramId + value)]` payload using
- * {@link CMD_0F_KNOWN_PARAM_WIDTHS} to size each value. Stops gracefully
+ * {@link KNOWN_PARAM_WIDTHS} to size each value. Stops gracefully
  * (returning whatever has been decoded so far) on the first param whose
  * width is not in the known-widths table — this keeps mis-aligned reads
  * from corrupting downstream offsets when the device echoes a register the
@@ -901,13 +904,13 @@ function applyCmd0x0FParamToSettings(
  *
  * Returns `null` only if the buffer fails the frame-type / cmd-byte gate.
  */
-export function decodeCmd0x0FResponse(data: Uint8Array): Cmd0x0FBulkResponse | null {
-  if (!isCmd0x0FResponse(data)) return null;
-  if (data.length < CMD_0F_FIRST_PARAM_OFFSET) return null;
+export function decodeBulkParamResponse(data: Uint8Array): BulkParamResponse | null {
+  if (!isBulkParamResponse(data)) return null;
+  if (data.length < BULK_PARAM_FIRST_OFFSET) return null;
 
-  const declaredCount = readUint16LE(data, CMD_0F_COUNT_OFFSET);
+  const declaredCount = readUint16LE(data, BULK_PARAM_COUNT_OFFSET);
   const settings: DeviceSettings = {};
-  let offset = CMD_0F_FIRST_PARAM_OFFSET;
+  let offset = BULK_PARAM_FIRST_OFFSET;
   let decoded = 0;
 
   for (let i = 0; i < declaredCount; i++) {
@@ -915,15 +918,15 @@ export function decodeCmd0x0FResponse(data: Uint8Array): Cmd0x0FBulkResponse | n
     const paramIdHex = bytesToHex(data.slice(offset, offset + 2));
     offset += 2;
 
-    const width = resolveCmd0x0FValueWidth(paramIdHex);
+    const width = resolveParamValueWidth(paramIdHex);
     if (width === null) break;
     if (offset + width > data.length) break;
 
-    const value = readCmd0x0FValue(data, offset, width, paramIdHex);
+    const value = readParamValue(data, offset, width, paramIdHex);
     offset += width;
     decoded++;
 
-    applyCmd0x0FParamToSettings(settings, paramIdHex, value);
+    applyParamToSettings(settings, paramIdHex, value);
   }
 
   return { paramCount: decoded, settings };
@@ -1010,7 +1013,7 @@ export function decodeNotification(data: Uint8Array): DecodeResult {
       // `onSettingsUpdate` listeners (and `syncSettingsFromDevice`) populate
       // `_settings` automatically — the bulk response carries the same
       // DeviceSettings shape as an async-state update.
-      const decoded = decodeCmd0x0FResponse(data);
+      const decoded = decodeBulkParamResponse(data);
       return decoded ? { type: 'settings_update', settings: decoded.settings } : null;
     }
 
@@ -1020,7 +1023,7 @@ export function decodeNotification(data: Uint8Array): DecodeResult {
 
     // <Decoder-statedump-asyncstate>
     case 'cmd10_async_state':
-      return decodeCmd10ToResult(data);
+      return decodeAsyncStateToResult(data);
 
     case 'vendor_state_dump':
       return decodeStateDumpToResult(data);
@@ -1051,7 +1054,7 @@ export function decodeNotification(data: Uint8Array): DecodeResult {
 
 /**
  * Encode a TelemetryFrame into a BLE notification payload.
- * Creates a minimal 30-byte message that can be decoded by decodeTelemetryFrame.
+ * Creates a minimal message that can be decoded by decodeTelemetryFrame.
  * Used for replay functionality.
  */
 export function encodeTelemetryFrame(frame: TelemetryFrame): Uint8Array {

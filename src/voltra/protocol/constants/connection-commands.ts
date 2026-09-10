@@ -36,7 +36,7 @@ export const Auth = {
  * leaving `VoltraClient._connectionState='connected'` while the adapter's
  * write characteristic was already null (Bug 30, on-device 2026-05-07).
  * The 0.7.2 hotfix reverts the `Init.SEQUENCE` append. The constant + the
- * `decodeCmd0x0FResponse` decoder are kept in place for a future, safer
+ * `decodeBulkParamResponse` decoder are kept in place for a future, safer
  * invocation mechanism (likely an explicit `client.queryDeviceSettings()`
  * call after connect stabilizes).
  */
@@ -73,8 +73,8 @@ export const Init = {
  */
 export const Workout = {
   /**
-   * Legacy "prepare" frame — a single-param write of
-   * `FITNESS_WORKOUT_STATE = WeightTraining`.
+   * Legacy "prepare" frame — a single-param write setting the workout state
+   * to WeightTraining.
    *
    * **SDK-01.13:** no longer used by the recording path. It is functionally
    * `setMode(WeightTraining)` and, run before GO, silently clobbered the
@@ -84,13 +84,12 @@ export const Workout = {
    */
   PREPARE: hexToBytes(protocol.commands.workout.prepare),
   /**
-   * Multi-paramID READ for `MC_DEFAULT_OFFLEN_CM` + `BP_RUNTIME_POSITION_CM`.
+   * Multi-paramID READ for the saved cable offset and the live cable position.
    *
    * Reclassified in 0.5.2: previously documented as "Configure workout
    * mode," but it is a read, not a setter. The device responds with a
-   * `cmd_0f_bulk_response` carrying the saved cable offset
-   * (`MC_DEFAULT_OFFLEN_CM`) and the live cable position
-   * (`BP_RUNTIME_POSITION_CM`).
+   * `cmd_0f_bulk_response` carrying the saved cable offset and the live
+   * cable position.
    *
    * Kept under `Workout` for now to preserve the bootstrap-sequence
    * call-site contract; Phase 1 of the codegen refactor will relocate

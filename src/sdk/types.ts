@@ -155,7 +155,7 @@ export type BatteryUpdateListener = (battery: number) => void;
  * weight).
  *
  * Unlike `SettingsUpdateListener`, the payload preserves the raw
- * `assistMode` byte — consumers should be aware that `FITNESS_ASSIST_MODE`
+ * `assistMode` byte — consumers should be aware that the assist-mode register
  * has asymmetric-off semantics, so only the "on" code means on and every
  * other value should be treated as off.
  */
@@ -178,7 +178,7 @@ export type ConnectionStateListener = (state: VoltraConnectionState) => void;
 // =============================================================================
 
 /**
- * Payload of a vendor `perRep` frame (74 B). Fires twice per rep —
+ * Payload of a vendor `perRep` frame. Fires twice per rep —
  * pull start (motionPhase 1) and return start (motionPhase 2).
  */
 export interface PerRepEvent {
@@ -330,7 +330,7 @@ export type GuidedLoadPhase =
  * countdown — the value decreases monotonically from ~3000 to 0 during the
  * countdown phase and is `null` outside that phase.
  *
- * `fitnessModeRaw` is the raw value of the `BP_SET_FITNESS_MODE` register,
+ * `fitnessModeRaw` is the raw value of the mode register,
  * which takes a distinct value while armed, while active, and after
  * `exitGuidedLoad()`.
  */
@@ -555,7 +555,7 @@ export type ModeRevertEventListener = (event: ModeRevertEvent) => void;
  *
  * Note: row distance presets are a client-side construct (`50m=10×5`,
  * `5000m=1000×5`) — the device does not receive a native target-distance
- * register. `EP_SCR_SWITCH` only selects the preset *screen*; the SDK
+ * register. the screen-switch only selects the preset *screen*; the SDK
  * does not currently emit a separate target-distance write.
  */
 export type RowingDistancePreset =

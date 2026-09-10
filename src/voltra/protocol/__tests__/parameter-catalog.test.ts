@@ -4,7 +4,7 @@
  * voltra-private's `parameters/` registry now emits a structured catalog
  * into the SDK via `protocol.telemetry.parameterCatalog`. This test pins:
  *   - the catalog is populated and non-empty (no regression in codegen)
- *   - every wireLE the decoder's `CMD_0F_KNOWN_PARAM_WIDTHS` lookup
+ *   - every wireLE the decoder's `KNOWN_PARAM_WIDTHS` lookup
  *     references resolves to a catalog entry (so future migrations have a
  *     1:1 source of truth)
  *   - the catalog and the hand-authored width table AGREE for every
@@ -19,7 +19,7 @@ import { ParameterCatalog } from '../constants';
 
 /**
  * paramID widths the SDK decoder treats authoritatively today, copied from
- * `telemetry-decoder.ts:CMD_0F_KNOWN_PARAM_WIDTHS`. Kept here so this test
+ * `telemetry-decoder.ts:KNOWN_PARAM_WIDTHS`. Kept here so this test
  * fails loudly if either side mutates without the other being updated.
  */
 const SDK_HAND_AUTHORED_WIDTHS: Readonly<Record<string, number>> = {

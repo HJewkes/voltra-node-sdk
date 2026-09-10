@@ -124,7 +124,7 @@ export class ErrorInjector {
   private corruptFrame(data: Uint8Array): Uint8Array {
     const corrupted = new Uint8Array(data);
     if (corrupted.length > 4) {
-      // Corrupt a byte in the payload (after the 4-byte header)
+      // Corrupt a byte in the payload, past the header
       const idx = 4 + Math.floor(this.rng() * (corrupted.length - 4));
       corrupted[idx] = corrupted[idx] ^ 0xff;
     } else {

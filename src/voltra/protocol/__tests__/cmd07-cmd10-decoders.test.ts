@@ -19,7 +19,7 @@ import { describe, it, expect } from 'vitest';
 import {
   decodeNotification,
   decodeStateDump,
-  decodeCmd10,
+  decodeAsyncState,
   decodeRowingSummary,
   decodeRowingStatus,
   decodeWaveformChunk,
@@ -94,11 +94,11 @@ describe('identifyMessageType - cmd=0x10 async-state', () => {
   });
 });
 
-describe('decodeCmd10', () => {
+describe('decodeAsyncState', () => {
   it('decodes a single uint8 param (damperLevel=7)', () => {
     const data = hexToBytes(FRAME_CMD10_DAMPER_LEVEL_7);
 
-    const result = decodeCmd10(data);
+    const result = decodeAsyncState(data);
 
     expect(result).not.toBeNull();
     expect(result!.paramCount).toBe(1);
@@ -111,7 +111,7 @@ describe('decodeCmd10', () => {
   it('decodes a single uint16 param (chains=25)', () => {
     const data = hexToBytes(FRAME_CMD10_CHAINS_25);
 
-    const result = decodeCmd10(data);
+    const result = decodeAsyncState(data);
 
     expect(result).not.toBeNull();
     expect(result!.paramCount).toBe(1);
@@ -124,7 +124,7 @@ describe('decodeCmd10', () => {
   it('decodes a 2-param mode-switch (fitness-mode + trainingMode=Isometric)', () => {
     const data = hexToBytes(FRAME_CMD10_MODE_SWITCH_ISOMETRIC);
 
-    const result = decodeCmd10(data);
+    const result = decodeAsyncState(data);
 
     expect(result).not.toBeNull();
     expect(result!.paramCount).toBe(2);
@@ -144,7 +144,7 @@ describe('decodeCmd10', () => {
   it('decodes a 9-param full cascade (chains=25)', () => {
     const data = hexToBytes(FRAME_CMD10_FULL_CASCADE_CHAINS);
 
-    const result = decodeCmd10(data);
+    const result = decodeAsyncState(data);
 
     expect(result).not.toBeNull();
     expect(result!.paramCount).toBe(9);
@@ -158,7 +158,7 @@ describe('decodeCmd10', () => {
   it('returns null for a frame whose cmd byte is not 0x10', () => {
     const data = hexToBytes(FRAME_STATE_DUMP_ASSIST_ON);
 
-    const result = decodeCmd10(data);
+    const result = decodeAsyncState(data);
 
     expect(result).toBeNull();
   });

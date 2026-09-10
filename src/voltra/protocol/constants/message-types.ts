@@ -17,11 +17,11 @@ const protocol = protocolData as ProtocolData;
 // =============================================================================
 
 /**
- * Message type identifiers (first 4 bytes of notifications).
+ * Message type identifiers.
  *
- * Only the telemetry stream has a stable 4-byte signature. Frames previously
+ * Only the telemetry stream has a stable fixed-length signature. Frames previously
  * exposed as REP_SUMMARY / SET_SUMMARY / STATUS_UPDATE are now identified
- * via {@link VendorMessages} sub-type matching or the 2-byte statusBattery
+ * via {@link VendorMessages} sub-type matching or the statusBattery
  * notification path (validated on-device 2026-05-05).
  */
 export const MessageTypes = {
@@ -66,11 +66,11 @@ export function matchesVendorSubType(data: Uint8Array, subType: VendorSubTypeCon
  * Byte offsets for parsing telemetry stream messages.
  */
 export const TelemetryOffsets = {
-  SEQUENCE: protocol.telemetry.offsets.sequence, // 2 bytes, little-endian
-  PHASE: protocol.telemetry.offsets.phase, // 1 byte
-  POSITION: protocol.telemetry.offsets.position, // 2 bytes, little-endian unsigned (mm)
-  FORCE: protocol.telemetry.offsets.force, // 2 bytes, little-endian unsigned (tenths of pounds)
-  VELOCITY: protocol.telemetry.offsets.velocity, // 2 bytes, little-endian signed (mm/s, sign flips with direction)
+  SEQUENCE: protocol.telemetry.offsets.sequence,
+  PHASE: protocol.telemetry.offsets.phase,
+  POSITION: protocol.telemetry.offsets.position, // millimetres
+  FORCE: protocol.telemetry.offsets.force, // tenths of pounds
+  VELOCITY: protocol.telemetry.offsets.velocity, // mm/s, sign flips with direction
 } as const;
 
 // =============================================================================
@@ -109,9 +109,9 @@ export const Uint16ParamIds: ReadonlySet<string> = new Set(protocol.telemetry.ui
  * `protocol.telemetry.parameterCatalog`.
  *
  * The catalog is the authoritative metadata. The
- * `telemetry-decoder.ts` `CMD_0F_KNOWN_PARAM_WIDTHS` table is NOT yet
- * refactored to consume it — FITNESS_WORKOUT_STATE and
- * FITNESS_INVERSE_CHAIN have documented width disagreements
+ * `telemetry-decoder.ts` `KNOWN_PARAM_WIDTHS` table is NOT yet
+ * refactored to consume it — the workout-state and
+ * inverse-chains params have documented width disagreements
  * (vp = uint16, SDK = uint8) that need on-device validation
  * before the decoder can safely migrate.
  *
