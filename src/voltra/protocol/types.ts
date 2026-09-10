@@ -439,10 +439,9 @@ export interface DeviceSettings {
 // State-dump (cmd=0x07 / 52-byte aa80-25 envelope) parsed payload.
 //
 // Field offsets validated on-device 2026-05-07. The earlier "variable-layout
-// / discriminator byte" hypothesis was disproved: the 37-byte payload
-// following `aa 80 25` has a fixed layout across every observed
-// (trainingMode × assistMode × transition) combination. Only fields stable
-// across the observed frames are exposed.
+// / discriminator byte" hypothesis was disproved: the payload has a fixed
+// layout across every observed (trainingMode × assistMode × transition)
+// combination. Only fields stable across the observed frames are exposed.
 // CRC trailer occupies frame[encodedLength-2 .. encodedLength-1], i.e. the
 // last 2 bytes of the 52-byte frame, not inside the decoded payload.
 // ==========================================================

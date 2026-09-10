@@ -5,13 +5,10 @@
  * direct-load (`0x12`) flow, plus a decoder for the 4 status registers
  * polled during the post-trigger 18-second window.
  *
- * The protocol-derived constants below (the `0x12` payload byte, the 4 status
- * paramIDs, and the fitness-mode values 0x0026/0x0027/0x0004) live here rather
- * than in the generated protocol-data.json so the SDK does not depend on a
- * regen for this flow.
+ * The protocol-derived constants below live here rather than in the generated
+ * protocol-data.json so the SDK does not depend on a regen for this flow.
  *
- * The exact byte sequence emitted by `buildGuidedLoadTriggerFrame()`
- * (`550e0466aa1000202000aa125231`) is validated on-device.
+ * The frame emitted by `buildGuidedLoadTriggerFrame()` is validated on-device.
  */
 
 import { calculateCRC8, calculateCRC16 } from './_factories/checksum.generated';

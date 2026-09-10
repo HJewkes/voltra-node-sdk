@@ -1570,8 +1570,8 @@ export class VoltraClient {
    * **Concurrency.** Throws if a guided-load flow is already in progress —
    * call {@link exitGuidedLoad} first.
    *
-   * @experimental — the polling window is 18s at a 500ms cadence. The
-   * `0x53C7` enum and `0x53C8` milliseconds-vs-seconds interpretation are not
+   * @experimental — the polling window is 18s at a 500ms cadence. The status
+   * enum and the countdown's milliseconds-vs-seconds interpretation are not
    * yet validated end-to-end.
    *
    * @param opts Guided-load options.

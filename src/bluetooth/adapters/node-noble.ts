@@ -24,8 +24,8 @@
  *     is avoided. Backstop for any future library-layer rebind.
  *
  * macOS caveat: noble auto-negotiates MTU 185–244 via CoreBluetooth. The
- * largest Voltra payload is ~52B (the `aa 80 25` envelope), so no
- * `requestMtu()` call is needed. Linux HCI may differ; not exercised here.
+ * largest Voltra payload is ~52B, so no `requestMtu()` call is needed.
+ * Linux HCI may differ; not exercised here.
  */
 
 import type {

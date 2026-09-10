@@ -644,8 +644,8 @@ function paramsToSettings(params: Cmd10Param[]): DeviceSettings {
     } else if (paramIdHex === ParamIdHex.INVERSE_CHAINS) {
       settings.inverseChains = value;
     } else if (paramIdHex === DAMPER_LEVEL_PARAM_ID_HEX) {
-      // damperLevel uses uint8 value (opcode 0xc7) and is one of the ~9
-      // registers reflected in the settingsUpdate curated subset.
+      // damperLevel decodes as a uint8 and is one of the ~9 registers
+      // reflected in the settingsUpdate curated subset.
       settings.damperLevel = value;
     }
   }

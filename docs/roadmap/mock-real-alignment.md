@@ -79,8 +79,9 @@ encodes the key discipline this doc formalizes:
   `encodeTelemetryFrame()` so consumers can't tell it from a real device.
   Controls: `play`/`pause`/`seek`/`setSpeed`.
 - Real device sessions are captured as **JSONL** outside this repo. Each
-  line is one event; the relevant record is:
-  `{"type":"frame_in","ts":<ms-since-start>,"hex":"<lowercase-hex>","label":...,"tier":...,"cmdByte":...}`
+  line is one event; the records this plan needs are the inbound-frame ones,
+  which carry a millisecond timestamp relative to session start and the
+  frame's bytes as a hex string.
 - Roundtrip codec: `encodeTelemetryFrame()` / `decodeTelemetryFrame()` /
   `decodeNotification()` (exported from the package root).
 
@@ -226,9 +227,10 @@ recorded real-device behavior.
 4. **Diff against golden**: compare the collected output to a committed
    **golden fixture** derived from that capture. This is a *decoded-domain*
    diff (TelemetryFrame fields, event sequence), complementary to the
-   byte-level `replay diff` that already exists outside this repo. Volatile
-   fields the existing tooling already flags — header CRC8 (offset 3), sequence
-   (6–7), trailing CRC16 — are excluded from the comparison.
+   byte-level `replay diff` that already exists outside this repo. Fields that
+   change on every capture, such as the frame's checksums and its sequence
+   counter, are excluded from the comparison — the existing tooling already
+   flags the same set.
 
 5. **Drift alarm**: a mismatch means either the capture corpus changed,
    the decoder changed, or the mock/replay path regressed. A small,
