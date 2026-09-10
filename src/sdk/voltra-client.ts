@@ -793,10 +793,9 @@ export class VoltraClient {
    *   via {@link onModeRevertEvent}). The latch self-clears after the window
    *   so a user-initiated mode change via the device UI doesn't trip it.
    *
-   * **Bug 22 rationale.** Rowing is the only workout state that
-   * does not respond to the strength-arm primitive. Writing it while the
-   * device is
-   * on the rowing screen is silently reinterpreted as a strength session,
+   * **Bug 22 rationale.** Rowing is the only workout state that does not
+   * respond to the strength-arm primitive. Writing it while the device is on
+   * the rowing screen is silently reinterpreted as a strength session,
    * reverting the rowing flow — HIGH safety severity. The two-stage path
    * commits via the screen-switch action codes, which is the only correct
    * primitive for Rowing.

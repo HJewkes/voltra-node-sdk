@@ -20,7 +20,7 @@ const protocol = protocolData as ProtocolData;
  * Message type identifiers.
  *
  * Only the telemetry stream has a stable fixed-length signature. Frames previously
- * exposed as REP_SUMMARY / SET_SUMMARY / STATUS_UPDATE are now identified
+ * exposed under their own message-type names are now identified
  * via {@link VendorMessages} sub-type matching or the statusBattery
  * notification path (validated on-device 2026-05-05).
  */

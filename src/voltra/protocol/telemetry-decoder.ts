@@ -55,7 +55,7 @@ const DAMPER_LEVEL_PARAM_ID_HEX = '0351';
 
 // <Decoder-statedump-asyncstate> ==========================================================
 // Frame-byte offsets and constants for the async-state and state-dump
-// decode paths added in Phase 1a.
+// decode paths.
 // All other frame types continue to flow through the legacy header-based
 // dispatch in `identifyMessageType`.
 // ==========================================================
@@ -68,7 +68,7 @@ const ASYNC_STATE_PARAM_COUNT_OFFSET = 11;
 /** Offset of the first param; the byte before it is reserved and always zero. */
 const ASYNC_STATE_FIRST_PARAM_OFFSET = 13;
 /**
- * Sub-type bytes of the Phase-1a state-dump frame. Its frame header
+ * Sub-type bytes of the state-dump frame. Its frame header
  * aliases the legacy
  * `statusBattery` notification length, so this dispatch must precede the
  * header check.
@@ -292,8 +292,9 @@ export function identifyMessageType(data: Uint8Array): MessageType {
     return 'vendor_waveform_chunk';
   }
 
-  // <Decoder-statedump-asyncstate> Async-state cascade. Phase 1a confirmed that the
-  // "inner-cmd" byte is really the param count, which distinguishes a
+  // <Decoder-statedump-asyncstate> Async-state cascade. On-device validation
+  // confirmed the "inner-cmd" byte is really the param count, which
+  // distinguishes a
   // single-param update from a mode-switch pair and from a full-settings
   // cascade. The legacy header path (`mode_confirmation`,
   // `multi_param`, `settings_update`) mis-classified single-param frames
@@ -318,8 +319,8 @@ export function identifyMessageType(data: Uint8Array): MessageType {
   } else if (header2 === NotificationConfigs.deviceInit.header) {
     return 'device_init';
   } else if (header2 === NotificationConfigs.statusBattery.header) {
-    // On-device validation confirmed the legacy STATUS_UPDATE
-    // signature was an alias for this path.
+    // On-device validation confirmed the legacy status signature was an
+    // alias for this path.
     return 'status_update';
   }
 
@@ -341,11 +342,11 @@ export type DecodeResult =
   | { type: 'frame'; frame: TelemetryFrame }
   | { type: 'perRep'; event: PerRepEvent } // Typed perRep frame (0.6.0+)
   | { type: 'summary'; event: SummaryEvent } // Typed end-of-set summary (0.6.0+)
-  | { type: 'setSummary'; event: SetSummaryEvent } // Typed per-set summary (`aa 85 5f`); renamed from `preSummary` in 0.9.0
+  | { type: 'setSummary'; event: SetSummaryEvent } // Typed per-set summary; renamed from `preSummary` in 0.9.0
   | { type: 'inProgress'; event: InProgressEvent } // Typed in-progress heartbeat (0.6.0+)
   | { type: 'mode_confirmation'; mode: TrainingMode } // Mode change confirmed
   | { type: 'settings_update'; settings: DeviceSettings } // Device settings
-  // <Decoder-statedump-asyncstate> Phase 1a additions (state dump + rowing telemetry).
+  // <Decoder-statedump-asyncstate> State dump + rowing telemetry.
   | { type: 'state_dump'; event: StateDumpEvent }
   | { type: 'rowing_summary'; event: RowingSummaryEvent }
   | { type: 'rowing_status'; event: RowingStatusEvent }
@@ -788,7 +789,7 @@ export function decodeRowingStatus(data: Uint8Array): RowingStatusEvent | null {
  * using `chunkIndex`.
  *
  * **Sample units:** `tenths-of-pounds`. Rowing samples are tenths-of-lb
- * directly; isometric callers must scale by `LB_TO_NEWTONS = 4.4482216` to
+ * directly; isometric callers must scale tenths-of-pounds by 4.4482216 to
  * get newtons.
  */
 export function decodeWaveformChunk(data: Uint8Array): WaveformChunkEvent | null {

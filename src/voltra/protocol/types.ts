@@ -183,7 +183,7 @@ export interface TelemetryConfig {
 export interface ParameterCatalogEntry {
   /** Canonical 16-bit paramID for the register named by `name`. */
   paramId: number;
-  /** Canonical name . */
+  /** Canonical register name. */
   name: string;
   /** Big-endian wire form (4-char lowercase hex; outbound writes). */
   wireBE: string;
@@ -525,8 +525,8 @@ export interface RowingStatusEvent {
  * Decoded rowing/isometric waveform chunk.
  *
  * In rowing mode each sample is a force value in **tenths of pounds** (NOT
- * Newtons — the isometric-mode parser scales tenths-lb by `LB_TO_NEWTONS`,
- * but rowing samples are reported as tenths-lb directly).
+ * Newtons — the isometric-mode parser converts to newtons, but rowing
+ * samples are reported as tenths-lb directly).
  *
  * `chunkIndex` lets the consumer reassemble multi-chunk waveforms. Reset the
  * buffer whenever the index fails to advance.
