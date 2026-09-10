@@ -8,7 +8,7 @@
  * Lets capture-file regression tests drive the real SDK code path —
  * `VoltraClient`, `VoltraManager`, the bridge — without physical hardware.
  *
- * Frames are emitted as 30-byte encoded BLE notifications via
+ * Frames are emitted as encoded BLE notifications via
  * `encodeTelemetryFrame()` so the consumer side cannot tell the
  * difference from a real device's `notify` callback.
  *

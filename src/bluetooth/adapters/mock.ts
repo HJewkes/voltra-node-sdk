@@ -5,7 +5,7 @@
  * Used for visual development and Playwright testing where Web Bluetooth
  * is unavailable (automated Chrome can't show the system device picker).
  *
- * On connect, emits encoded 30-byte telemetry frames at 11Hz following
+ * On connect, emits encoded telemetry frames at 11Hz following
  * real device phase transitions: IDLE -> CONCENTRIC -> HOLD -> ECCENTRIC -> IDLE.
  * Also emits rep/set boundary notifications.
  *

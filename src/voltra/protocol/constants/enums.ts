@@ -38,7 +38,7 @@ export const PhaseNames: Record<MovementPhase, string> = {
 
 /**
  * Parameter IDs for device commands.
- * These identify which parameter is being set in 19-byte commands.
+ * These identify which parameter is being set in a parametric command.
  */
 export enum ParameterId {
   /** Base weight setting */
@@ -125,7 +125,7 @@ export const VALID_TRAINING_MODES: readonly TrainingMode[] = [
 
 /**
  * Per-mode schema version carried as the 4th sub-type byte of vendor
- * `summary` and `setSummary` frames, after the vendor cmd and its 2-byte
+ * `summary` and `setSummary` frames, after the vendor cmd and its fixed
  * fixed identifier. Validated on-device 2026-05-06.
  */
 export enum VendorSchemaVersion {

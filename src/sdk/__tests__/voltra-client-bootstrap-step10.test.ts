@@ -1,7 +1,7 @@
 /**
  * Bootstrap step 10 — historical regression tests.
  *
- * The cmd=0x0F bulk-read packet was appended to `Init.SEQUENCE` in 0.7.0 as
+ * The bulk-read packet was appended to `Init.SEQUENCE` in 0.7.0 as
  * the Bug 17 fix (post-reconnect settings cascade). On real hardware
  * (VTR-097082, 2026-05-07) this packet caused the firmware to drop the GATT
  * link mid-bootstrap, producing the `_connectionState='connected'` /
@@ -12,7 +12,7 @@
  * 1. `Init.SEQUENCE` does NOT include the step-10 query packet (regression
  *    guard — re-introducing it would re-open Bug 30 unless the underlying
  *    firmware behavior is understood).
- * 2. The `cmd=0x0F` response decoder still works when invoked directly,
+ * 2. The bulk-read response decoder still works when invoked directly,
  *    populating `client.settings` from a simulated device frame. This
  *    keeps the decoder live for a future safer invocation path.
  * 3. `cleanup()` still does NOT blanket-reset `_settings` to defaults —
@@ -53,7 +53,7 @@ class MockAdapter extends BaseBLEAdapter {
 
   /**
    * Push a notification frame from the simulated device into the client's
-   * decode pipeline. Used to inject a cmd=0x0F response directly.
+   * decode pipeline. Used to inject a bulk-read response directly.
    */
   pushNotification(data: Uint8Array): void {
     this.emitNotification(data);
@@ -87,7 +87,7 @@ function bytesToHexLower(data: Uint8Array): string {
  * SEQ_LO SEQ_HI 20 00 0F 00 COUNT_LO COUNT_HI ...payload CRC16`. CRC values
  * are placeholders — the SDK decoder does not validate them.
  */
-function buildCmd0x0FResponse(
+function buildBulkParamResponse(
   params: Array<{ paramIdHex: string; valueBytes: number[] }>
 ): Uint8Array {
   const header = [
@@ -161,7 +161,7 @@ describe('cmd=0x0F decoder still wired — direct injection populates client.set
   });
 
   it('updates client.settings from a simulated cmd=0x0F response', () => {
-    const response = buildCmd0x0FResponse([
+    const response = buildBulkParamResponse([
       { paramIdHex: ParamIdHex.BASE_WEIGHT, valueBytes: [60, 0] },
       { paramIdHex: ParamIdHex.CHAINS, valueBytes: [10, 0] },
       { paramIdHex: ParamIdHex.TRAINING_MODE, valueBytes: [TrainingMode.Damper] },
@@ -188,7 +188,7 @@ describe('disconnect/reconnect preserves last-known settings (PR #40 behavior re
       // Simulate the device pushing a settings cascade (e.g., from a future
       // safer invocation path or from a write that triggers cmd=0x10).
       adapter.pushNotification(
-        buildCmd0x0FResponse([
+        buildBulkParamResponse([
           { paramIdHex: ParamIdHex.BASE_WEIGHT, valueBytes: [80, 0] },
           { paramIdHex: ParamIdHex.TRAINING_MODE, valueBytes: [TrainingMode.WeightTraining] },
         ])
