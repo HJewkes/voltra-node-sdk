@@ -17,10 +17,10 @@
 #
 # Two rules about how this script is written, both learned the hard way:
 #
-#   - Every grep is `-a`. A source file carrying a NUL byte is classified
-#     binary and skipped SILENTLY by grep's default, and a file no sweep can
-#     read looks exactly like a clean one. That happened in the sibling repo
-#     and hid three findings for months.
+#   - Every file is read as TEXT. A source file carrying a NUL byte is
+#     classified binary and skipped SILENTLY by grep's default, and a file no
+#     sweep can read looks exactly like a clean one. That happened in the
+#     sibling repo and hid three findings for months.
 #   - No spelling of a protocol value appears here. This script is as public as
 #     the source it audits and its output lands in a public build log, so the
 #     checks are written against shapes.
@@ -58,21 +58,40 @@ SANCTIONED='__no_sanctioned_form__'
 # COUNTED.
 TEST_PATH='(^|/)(__tests__|test)/|\.test\.'
 
+# Where the rule is DEFINED and WRITTEN DOWN, as opposed to applied. A pattern
+# definition is not a citation, and a document that states what may not appear
+# has to name the things that may not appear. Any pattern-based guard has this
+# property; the ESLint rule has it too, and gets it for free by living outside
+# the tree it lints.
+#
+# This is an exemption about where a rule is written, never about content, and
+# it covers checks 2 and 3 only. Check 4 still reads all three files, so a
+# VALUE written into any of them fails the build like anywhere else.
+RULE_TEXT=(':!scripts/audit-privacy.sh' ':!eslint-rules/*' ':!CONTRIBUTING.md')
+
 # One finding per line as `path:line:match`, over the files git tracks under
 # the pathspecs in `$2..`. The MATCH is emitted, not the whole line, so that
 # `$SANCTIONED` below can exempt a form rather than a line: a line carrying
 # both a sanctioned form and a real finding must still fail.
 #
-# The pathspecs are quoted all the way through. Unquoted, the shell expands
-# `*.md` against the working directory before git ever sees it, which quietly
-# narrows the sweep to top-level files — an all-zero result that looks exactly
-# like a clean one.
+# Three details, each from something that produced a clean result that was not
+# clean:
+#
+#   - The pathspecs are quoted all the way through. Unquoted, the shell expands
+#     `*.md` against the working directory before git ever sees it, which
+#     narrows the sweep to top-level files.
+#   - `--binary-files=text` and no `-I`. `-I` asks grep to skip a file it reads
+#     as binary, which is the opposite of the intent and invisible when it
+#     fires.
+#   - `-o`, so the unit is the MATCH and not the line. Three citations on one
+#     line are three findings; counting lines reports one and reads as
+#     progress.
 sweep() {
   local pattern="$1"
   shift
   git ls-files -- "$@" | while IFS= read -r file; do
     [ -f "$file" ] || continue
-    grep -anoEI -- "$pattern" "$file" 2>/dev/null | sed "s|^|$file:|"
+    grep -anoE --binary-files=text -- "$pattern" "$file" 2>/dev/null | sed "s|^|$file:|"
   done | grep -avE -- "$SANCTIONED_HEADER" | grep -avE -- ":$SANCTIONED\$"
 }
 
@@ -106,13 +125,6 @@ else
   pass "No private/ directory"
 fi
 
-# Checks 2 and 3 skip THIS FILE, and only this file. A pattern definition is
-# not a citation: any pattern-based guard necessarily contains the strings it
-# looks for, and the same structural exemption applies to the ESLint rule,
-# which lives outside the tree it lints. It is an exemption about where a
-# pattern is DEFINED, not a judgement about content — check 4 still reads this
-# file, so a value written here fails the build like anywhere else.
-#
 # Naming the private repo is unavoidable and harmless: the regeneration script
 # has to name the path it runs, and a contributor has to be told where protocol
 # data comes from. A path INTO it is provenance — it names a document, a
@@ -120,13 +132,13 @@ fi
 echo "2. Checking for paths into the private repo"
 SANCTIONED='voltra-private/build\.ts'
 report "No path into the private repo beyond its build entry point" \
-  'voltra-private/[A-Za-z0-9_.-]+' ':!scripts/audit-privacy.sh'
+  'voltra-private/[A-Za-z0-9_.-]+' "${RULE_TEXT[@]}"
 SANCTIONED='__no_sanctioned_form__'
 
 echo "3. Checking for capture, research and derivation references"
 report "No capture, research or derivation references" \
   '(captures?/(sessions|frames)|research/[A-Za-z0-9_.-]+\.(md|json)|validation-phase|decompil|reverse.engineer)' \
-  ':!scripts/audit-privacy.sh'
+  "${RULE_TEXT[@]}"
 
 # A long hex run inside a .ts file is a value, and values ship here. The same
 # run in markdown, a shell script or a workflow cannot be a value — nothing
