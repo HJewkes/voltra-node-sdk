@@ -30,6 +30,23 @@
 // They are covered instead by `scripts/audit-privacy.sh`, which reads them as
 // text and excludes only the sanctioned regeneration header.
 //
+// WHAT THIS RULE CANNOT SEE, named rather than left to be discovered:
+//
+//   - A value SPLIT ACROSS A CONCATENATION. `'cmd' + '0x10'` is two string
+//     literals to the parser and neither half is a finding alone. Constant
+//     folding would close it and is not worth the machinery: deliberate
+//     evasion is not the threat model, because anyone evading would simply not
+//     write the value. What does happen is a long string wrapped to fit the
+//     line width, so keep a value on one line where the rule can see it.
+//   - PROVENANCE PHRASED ORGANICALLY. A sentence saying where a number came
+//     from, carrying no path and no keyword, matches nothing here. That is out
+//     of scope by ruling rather than by oversight: this rule catches encoded
+//     values and named references, and prose is a review-checklist item. See
+//     CONTRIBUTING.md.
+//
+// Naming both is the point. A guard that is silently narrower than it looks is
+// the failure this campaign is named after (VW-220).
+//
 // Messages name the shape and never the token. A CI log is as public as the
 // source it refused.
 
@@ -81,6 +98,17 @@ const HAS_DIGIT = /\d/;
 /** Four or more bytes reproduced verbatim, run together or separated. */
 const BYTE_RUN = /(?<![\w#])(?:[0-9a-f]{8,}|[0-9a-f]{2}(?:[ ,:-][0-9a-f]{2}){3,})(?![\w-])/gi;
 
+/**
+ * The same capture spelled with `_`. Underscore is an identifier separator
+ * rather than punctuation, so this spelling is found by segmenting words
+ * rather than by widening the class above — which is what reaches
+ * `frame_a9_c7_00_04` as well as `a9_c7_00_04`. Widening the class reaches
+ * only the second, because a prefixed run no longer starts at a word boundary.
+ */
+const WORD = /[A-Za-z0-9_$]+/g;
+const HEX_PAIR = /^[0-9a-f]{2}$/i;
+const BYTES_IN_A_CAPTURE = 4;
+
 /** A clock or a date, which is not a capture whatever its separators. */
 const CLOCK_SHAPE = /^\d{2}(?:[:.]\d{2})+$/;
 
@@ -94,9 +122,20 @@ export function findProvenance(text) {
 
 /** Every verbatim byte run in `text`, as `{ index, length }`. */
 export function findByteRuns(text) {
-  return [...text.matchAll(BYTE_RUN)]
+  const runs = [...text.matchAll(BYTE_RUN)]
     .filter((m) => !CLOCK_SHAPE.test(m[0]))
     .map((m) => ({ index: m.index, length: m[0].length }));
+  for (const match of text.matchAll(WORD)) {
+    let pairRun = 0;
+    for (const segment of match[0].split(SEGMENT_BOUNDARY).filter(Boolean)) {
+      pairRun = HEX_PAIR.test(segment) ? pairRun + 1 : 0;
+      if (pairRun === BYTES_IN_A_CAPTURE) {
+        runs.push({ index: match.index, length: match[0].length });
+        break;
+      }
+    }
+  }
+  return runs.sort((a, b) => a.index - b.index);
 }
 
 /** Whether `name` carries a command code, in any spelling. */
@@ -159,6 +198,14 @@ const rule = {
       Literal(node) {
         if (typeof node.value === 'string' && isCommandCodeIdentifier(node.value)) {
           report(node.range[0], node.raw.length, 'identifier');
+        }
+      },
+      // A template literal is a string with different quotes. Without this the
+      // two guards in this campaign disagreed on the same shape, and the one
+      // that missed it guarded the repo that is actually published.
+      TemplateElement(node) {
+        if (isCommandCodeIdentifier(node.value.raw)) {
+          report(node.range[0], node.value.raw.length, 'identifier');
         }
       },
     };

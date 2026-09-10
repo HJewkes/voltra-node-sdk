@@ -7,6 +7,7 @@
 // not trip it on their way past.
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { Linter } from 'eslint';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, relative } from 'node:path';
 // @ts-expect-error — the rule ships as plain ESM so `eslint.config.mjs` can load it.
@@ -64,6 +65,8 @@ describe('verbatim captures in comments', () => {
     ['a run-together capture', ' observed a9c700041b2c3d on the wire'],
     ['a spaced capture', ' observed a9 c7 00 04 1b on the wire'],
     ['a hyphenated capture', ' observed a9-c7-00-04-1b on the wire'],
+    ['an underscored capture', ' observed a9_c7_00_04 on the wire'],
+    ['an underscored capture behind a prefix', ' observed frame_a9_c7_00_04 on the wire'],
   ])('flags %s', (_label, text) => {
     expect(findByteRuns(text).length).toBeGreaterThan(0);
   });
@@ -72,8 +75,35 @@ describe('verbatim captures in comments', () => {
     ['a short annotation', ' the value is 0x1f'],
     ['a timestamp', ' "[00:00:00.000 --> 00:00:01.100] stop"'],
     ['a date', ' bench 2026-07-07'],
+    ['a snake_case identifier', ' see set_weight_lbs'],
   ])('lets %s through', (_label, text) => {
     expect(findByteRuns(text)).toEqual([]);
+  });
+});
+
+// A template literal is a string with different quotes, and the sibling guard
+// in voltras-mcp catches values in one. Without a `TemplateElement` visitor the
+// two rules disagreed on the same shape, and the one that missed it guards the
+// repo published to npm. This test is here so removing the visitor fails.
+describe('the rule visitors', () => {
+  const run = (code: string): unknown[] =>
+    new Linter().verify(code, [
+      {
+        plugins: { voltras: guard.default as never },
+        rules: { 'voltras/no-private-provenance': 'error' },
+      },
+    ]);
+
+  it('flags a command code in a template literal', () => {
+    expect(run('const probe = `cmd0x10`;')).toHaveLength(1);
+  });
+
+  it('flags a command code in an ordinary string literal', () => {
+    expect(run("const probe = 'cmd0x10';")).toHaveLength(1);
+  });
+
+  it('leaves an executable protocol value alone', () => {
+    expect(run('const LEGAL = 0xa9c700041b2c3d;')).toEqual([]);
   });
 });
 
