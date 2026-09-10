@@ -22,7 +22,7 @@ const protocol = protocolData as ProtocolData;
  * Only the telemetry stream has a stable 4-byte signature. Frames previously
  * exposed as REP_SUMMARY / SET_SUMMARY / STATUS_UPDATE are now identified
  * via {@link VendorMessages} sub-type matching or the 2-byte statusBattery
- * notification path (see Phase A validation, 2026-05-05).
+ * notification path (validated on-device 2026-05-05).
  */
 export const MessageTypes = {
   /** Real-time telemetry stream (~11 Hz) */
@@ -36,9 +36,7 @@ export const MessageTypes = {
 /**
  * Vendor sub-type frame definitions.
  *
- * Vendor frames carry the cmd marker at frame offset {@link cmdByteOffset}
- * followed by sub-type identifier bytes. Use {@link matchesVendorSubType} to
- * test a buffer against a sub-type.
+ * Use {@link matchesVendorSubType} to test a buffer against a sub-type.
  */
 export const VendorMessages = {
   cmdByteOffset: protocol.telemetry.vendorMessages.cmdByteOffset,
@@ -104,20 +102,20 @@ export const ParamIdHex = {
 export const Uint16ParamIds: ReadonlySet<string> = new Set(protocol.telemetry.uint16ParamIds ?? []);
 
 /**
- * Generated parameter catalog (Phase 2.5). Keyed by `wireLE` (the form
+ * Generated parameter catalog. Keyed by `wireLE` (the form
  * inbound async-state / bulk-read cascade decoders match against). Each entry
  * carries `paramId`, `name`, `wireBE`, `wireLE`, `valueType`, `valueWidth`,
  * `unit`, `register`, `validation` — sourced from the generated
  * `protocol.telemetry.parameterCatalog`.
  *
- * Phase 2.5 promotes the catalog as authoritative metadata. The
+ * The catalog is the authoritative metadata. The
  * `telemetry-decoder.ts` `CMD_0F_KNOWN_PARAM_WIDTHS` table is NOT yet
  * refactored to consume it — FITNESS_WORKOUT_STATE and
  * FITNESS_INVERSE_CHAIN have documented width disagreements
- * (vp = uint16, SDK = uint8) that need Phase 2.7 on-device validation
+ * (vp = uint16, SDK = uint8) that need on-device validation
  * before the decoder can safely migrate.
  *
- * Empty record on older protocol-data versions (pre-Phase 2.5).
+ * Empty record on older protocol-data versions.
  */
 export const ParameterCatalog: Readonly<
   Record<string, NonNullable<ProtocolData['telemetry']['parameterCatalog']>[string]>

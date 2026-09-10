@@ -166,7 +166,7 @@ export interface TelemetryConfig {
    * `CMD_0F_KNOWN_PARAM_WIDTHS` lookup in `telemetry-decoder.ts`.
    *
    * Emitted by the protocol-data generator. Optional for backward compat
-   * with protocol-data versions older than Phase 2.5.
+   * with older protocol-data versions.
    */
   parameterCatalog?: Record<string, ParameterCatalogEntry>;
   /** Training mode values */
@@ -215,7 +215,7 @@ export interface ParameterCatalogEntry {
 /**
  * Message type header bytes (4-byte hex strings).
  *
- * Phase A on-device validation (2026-05-05, 1369 frames) confirmed that
+ * On-device validation (2026-05-05, 1369 frames) confirmed that
  * the previously-documented `repSummary`, `setSummary`, and `statusUpdate`
  * 4-byte signatures were aliases for vendor sub-type frames (perRep,
  * inProgress) and the 2-byte statusBattery notification respectively.
@@ -230,8 +230,7 @@ export interface MessageTypeConfig {
 /**
  * Vendor frame sub-type definitions.
  *
- * Vendor frames carry a cmd marker at frame offset `cmdByteOffset`
- * followed by sub-type identifier bytes.
+ * Each entry names a vendor frame family and the sub-type it is matched by.
  */
 export interface VendorMessagesConfig {
   /** Byte offset of the vendor cmd marker within the frame */
@@ -443,7 +442,6 @@ export interface DeviceSettings {
 // / discriminator byte" hypothesis was disproved: the payload has a fixed
 // layout across every observed (trainingMode × assistMode × transition)
 // combination. Only fields stable across the observed frames are exposed.
-// The CRC trailer sits at the end of the frame, outside the decoded payload.
 // ==========================================================
 /**
  * Parsed state-dump frame.
@@ -480,7 +478,7 @@ export interface StateDumpEvent {
    * the async-state cascade `eccentric` × 10.
    */
   eccentricPercentTenths: number;
-  /** Raw payload after the sub-type prefix (excludes CRC). */
+  /** Raw payload bytes (excludes the CRC trailer). */
   raw: Uint8Array;
 }
 
@@ -505,7 +503,7 @@ export interface RowingSummaryEvent {
   strokeCount: number;
   /** Distance in meters. */
   distanceMeters: number;
-  /** Raw payload following the sub-type prefix (excludes CRC). */
+  /** Raw payload bytes (excludes the CRC trailer). */
   raw: Uint8Array;
 }
 
@@ -564,10 +562,9 @@ export interface Cmd10Param {
 /**
  * Decoded async-state cascade frame.
  *
- * The payload is a param count, a reserved byte, then that many
- * `<paramID-LE><value>` pairs. The count doubles as a discriminator: one
- * param is a single-setting update, two is a structural / mode-switch
- * update, and a full cascade carries the whole settings bag.
+ * The param count doubles as a discriminator: one param is a single-setting
+ * update, two is a structural / mode-switch update, and a full cascade
+ * carries the whole settings bag.
  */
 export interface Cmd10AsyncState {
   /** Parameter count; also serves as the inner-cmd discriminator. */
@@ -582,11 +579,10 @@ export interface Cmd10AsyncState {
  *
  * The device returns one of these in response to bootstrap step 10 (the
  * 18-param mode-feature-state query) and to any other multi-paramID read.
- * The payload structure is `[count(u16 LE), ...(paramId(u16 LE) + value)]`
- * where the value width depends on the paramId — currently the SDK decodes
- * the same fields as `settings_update` (`baseWeight`, `chains`, `eccentric`,
- * `trainingMode`, `inverseChains`, `damperLevel`) and ignores params with
- * unknown widths. Per-paramId value-width tables remain an open question.
+ * The response carries a set of paramId/value pairs whose value widths vary
+ * by paramId. The SDK decodes the same fields as `settings_update`
+ * (`baseWeight`, `chains`, `eccentric`, `trainingMode`, `inverseChains`,
+ * `damperLevel`) and ignores params with unknown widths. Per-paramId value-width tables remain an open question.
  */
 export interface Cmd0x0FBulkResponse {
   /** Number of paramId+value pairs successfully parsed */

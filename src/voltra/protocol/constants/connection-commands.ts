@@ -86,12 +86,11 @@ export const Workout = {
   /**
    * Multi-paramID READ for `MC_DEFAULT_OFFLEN_CM` + `BP_RUNTIME_POSITION_CM`.
    *
-   * Phase 0.5.2 reclassification: previously documented as "Configure
-   * workout mode," but its wire layout carries a paramID pair with no value
-   * bytes, which makes it the Type-C "config / multi-paramID read" envelope
-   * rather than a setter. The device responds with a `cmd_0f_bulk_response`
-   * carrying the saved cable offset (`MC_DEFAULT_OFFLEN_CM`) and the live
-   * cable position (`BP_RUNTIME_POSITION_CM`).
+   * Reclassified in 0.5.2: previously documented as "Configure workout
+   * mode," but it is a read, not a setter. The device responds with a
+   * `cmd_0f_bulk_response` carrying the saved cable offset
+   * (`MC_DEFAULT_OFFLEN_CM`) and the live cable position
+   * (`BP_RUNTIME_POSITION_CM`).
    *
    * Kept under `Workout` for now to preserve the bootstrap-sequence
    * call-site contract; Phase 1 of the codegen refactor will relocate

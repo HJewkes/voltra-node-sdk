@@ -557,11 +557,10 @@ function decodeSettingsUpdate(data: Uint8Array): DecodeResult {
 // <Decoder-statedump-asyncstate> ==========================================================
 // Generic async-state decoder.
 //
-// Every async-state frame shares one payload structure: a param count, a
-// reserved byte, then that many `<paramID-LE><value>` pairs, followed by the
-// frame's CRC trailer. A value is uint8 by default, or uint16 LE for the
-// param IDs listed in `Uint16ParamIds`. The offsets are the module constants
-// above.
+// Every async-state frame shares one payload shape, so a single walker serves
+// both this path and the legacy `settingsUpdate` path. A value is uint8 by
+// default, or uint16 LE for the param IDs listed in `Uint16ParamIds`. The
+// offsets are the module constants above.
 //
 // `decodeCmd10` returns the structured param list; `decodeCmd10ToResult`
 // tries to project it into a `mode_confirmation` (single TRAINING_MODE
@@ -679,7 +678,7 @@ function decodeCmd10ToResult(data: Uint8Array): DecodeResult {
  * Returns `null` for any frame that doesn't match the sub-type bytes or is
  * shorter than a full state-dump frame. The payload carries runtime state
  * (active training mode, assist toggle, weight, effective chain force,
- * eccentric overload). The CRC trailer is NOT included in `event.raw`.
+ * eccentric overload). `event.raw` excludes the CRC trailer.
  *
  * Field offsets are validated on-device (2026-05-07) and fixed: an earlier
  * hypothesis that this frame used a variable layout was disproved.
@@ -690,7 +689,6 @@ export function decodeStateDump(data: Uint8Array): StateDumpEvent | null {
   if (data[CMD_BYTE_OFFSET + 1] !== STATE_DUMP_SUBTYPE_0) return null;
   if (data[CMD_BYTE_OFFSET + 2] !== STATE_DUMP_SUBTYPE_1) return null;
 
-  // Payload starts on the byte after the sub-type prefix.
   const payloadStart = CMD_BYTE_OFFSET + 3;
   // Exclude the CRC trailer from raw.
   const payloadEnd = STATE_DUMP_FRAME_LENGTH - 2;
@@ -736,8 +734,8 @@ export function decodeRowingSummary(data: Uint8Array): RowingSummaryEvent | null
   if (data[CMD_BYTE_OFFSET + 1] !== ROWING_SUMMARY_SUBTYPE_0) return null;
   if (data[CMD_BYTE_OFFSET + 2] !== ROWING_SUMMARY_SUBTYPE_1) return null;
 
-  const payloadStart = CMD_BYTE_OFFSET + 1; // raw includes the sub-type byte
-  // Trailer is CRC16 — exclude last 2 bytes from raw if frame is long enough.
+  const payloadStart = CMD_BYTE_OFFSET + 1;
+  // Exclude the CRC trailer from raw if the frame is long enough.
   const rawEnd = Math.max(payloadStart, data.length - 2);
   const raw = data.slice(payloadStart, rawEnd);
 
@@ -935,7 +933,7 @@ export function decodeCmd0x0FResponse(data: Uint8Array): Cmd0x0FBulkResponse | n
 /**
  * Decode a device status notification.
  *
- * Phase 0.5.2 hotfix: the byte the `deviceInit` frame was being read for
+ * Hotfix in 0.5.2: the byte the `deviceInit` frame was being read for
  * battery is a sub-command marker, not a battery percentage. Reading it as
  * battery produced impossible values, well over 100%. Battery now arrives
  * through the async-state settings cascade under its own paramID, so the

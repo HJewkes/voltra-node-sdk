@@ -96,11 +96,9 @@ export function buildGuidedLoadTriggerFrame(sequence: number = DEFAULT_SEQUENCE)
 /**
  * Build the multi-paramID read frame for the 4 direct-load status registers.
  *
- * The payload is a uint16 LE count followed by that many uint16 LE paramIDs,
- * under `CMD_PARAM_READ`.
+ * Issued under `CMD_PARAM_READ`.
  */
 export function buildGuidedLoadStatusReadFrame(sequence: number = DEFAULT_SEQUENCE): Uint8Array {
-  // Payload: the uint16 LE count, then one uint16 LE entry per paramID.
   const payload = new Uint8Array(2 + STATUS_PARAM_IDS_LE.length * 2);
   payload[0] = STATUS_PARAM_IDS_LE.length & 0xff;
   payload[1] = (STATUS_PARAM_IDS_LE.length >> 8) & 0xff;
