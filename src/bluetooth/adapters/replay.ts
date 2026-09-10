@@ -5,10 +5,8 @@
  * `BLEAdapter` notification interface, with timing reconstructed from
  * each frame's `timestamp` field.
  *
- * Lets capture-file regression tests (e.g.
- * `voltra-private/captures/sessions/.../*.jsonl`) drive the real SDK
- * code path — `VoltraClient`, `VoltraManager`, the bridge — without
- * physical hardware.
+ * Lets capture-file regression tests drive the real SDK code path —
+ * `VoltraClient`, `VoltraManager`, the bridge — without physical hardware.
  *
  * Frames are emitted as 30-byte encoded BLE notifications via
  * `encodeTelemetryFrame()` so the consumer side cannot tell the

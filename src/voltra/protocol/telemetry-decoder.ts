@@ -44,14 +44,12 @@ import type { PerRepEvent, SummaryEvent, SetSummaryEvent, InProgressEvent } from
  * `0x5103`); `bytesToHex([0x03, 0x51]) = '0351'`. The convention elsewhere
  * in this decoder treats `paramIdHex` as the wire-byte hex string, so the
  * literal here is `'0351'` — matching the bytes the device actually sends
- * (verified against captures in
- * `voltra-private/captures/sessions/validation-phase-7-cmd0x10-recon-
- * 2026-05-06T21-38-19.events.json` Campaign 3 + the protocol-data
- * `damperLevel` TX command bytes which encode the paramID identically).
+ * (verified on-device, and against the protocol-data `damperLevel` TX
+ * command bytes which encode the paramID identically).
  *
- * Phase-5 Block F (handoff 2026-05-06) identified damperLevel as one of the
- * ~9 registers in the settingsUpdate curated subset. Hardcoded here pending
- * a future regen sync that promotes it into `protocol.telemetry.paramIds`.
+ * damperLevel was identified on-device 2026-05-06 as one of the ~9 registers
+ * in the settingsUpdate curated subset. Hardcoded here pending a future regen
+ * sync that promotes it into `protocol.telemetry.paramIds`.
  */
 const DAMPER_LEVEL_PARAM_ID_HEX = '0351';
 
@@ -71,7 +69,7 @@ const CMD10_PARAM_COUNT_OFFSET = 11;
 const CMD10_FIRST_PARAM_OFFSET = 13;
 /**
  * Sub-type bytes of the Phase-1a state-dump frame (52-byte `aa 80 25`
- * envelope, called "cmd=0x07" in `notes-2026-05-06T21-38-19.md`). The 4-byte
+ * envelope, called "cmd=0x07" elsewhere in this decoder). The 4-byte
  * frame header `5534 04 ac` aliases the legacy `statusBattery` notification
  * length, so this dispatch must precede the 2-byte `5534` header check.
  */
@@ -109,8 +107,7 @@ const CMD_0F_FIRST_PARAM_OFFSET = 14;
  * the decoder uses {@link Uint16ParamIds} for everything else, falling back
  * to abort decoding if neither table covers the paramId. Bootstrap step 10
  * (18-param query) covers all of these plus QUICK_CABLE_ADJUSTMENT (`bc54`)
- * whose width is not yet documented; see
- * `voltra-private/research/data-port-2026-05-07-android-deep.md` § 4 #11.
+ * whose width is not yet known.
  *
  * Param IDs are stored as little-endian hex strings to match `ParamIdHex`.
  */
@@ -264,8 +261,7 @@ export function identifyMessageType(data: Uint8Array): MessageType {
     return 'cmd_0f_bulk_response';
   }
 
-  // <Decoder-cmd07-cmd10> Vendor state-dump and rowing telemetry sub-types
-  // discovered via Phase 1a recon (2026-05-06T21-38-19) + Android deep scrub.
+  // <Decoder-cmd07-cmd10> Vendor state-dump and rowing telemetry sub-types.
   // These checks must precede the 2-byte header dispatch — the 52-byte
   // `aa 80 25` state-dump frame aliases the `statusBattery` 4-byte header
   // (`5534 04 ac`) and was previously yielding spurious battery readings.
@@ -396,10 +392,9 @@ export function decodeTelemetryFrame(data: Uint8Array): TelemetryFrame | null {
 // =============================================================================
 // Vendor frame decoders (0.6.0+)
 //
-// Field offsets validated 2026-05-06 on VTR-212006 (voltra-private phase-5
-// captures). For perRep / summary / setSummary we read offsets from the
-// regen's `fields` block — keeping the SDK in sync with voltra-private's
-// validation work without recompiling.
+// Field offsets validated on-device 2026-05-06. For perRep / summary /
+// setSummary we read offsets from the regen's `fields` block, so a protocol
+// refresh does not require recompiling the SDK.
 // =============================================================================
 
 /**
@@ -501,9 +496,9 @@ export function decodeVendorSetSummary(data: Uint8Array): SetSummaryEvent | null
   };
 }
 
-// inProgress field offsets are validated empirically (handoff 2026-05-06)
-// but not yet baked into voltra-private's telemetry-config; hardcoded here
-// pending a future regen sync.
+// inProgress field offsets are validated on-device (2026-05-06) but not yet
+// carried by the generated telemetry config; hardcoded here pending a future
+// regen sync.
 const IN_PROGRESS_PEAK_FORCE_OFFSET = 17;
 const IN_PROGRESS_CURRENT_FORCE_OFFSET = 25;
 const IN_PROGRESS_VELOCITY_OFFSET = 28;
@@ -649,9 +644,8 @@ function paramsToSettings(params: Cmd10Param[]): DeviceSettings {
     } else if (paramIdHex === ParamIdHex.INVERSE_CHAINS) {
       settings.inverseChains = value;
     } else if (paramIdHex === DAMPER_LEVEL_PARAM_ID_HEX) {
-      // damperLevel uses uint8 value (opcode 0xc7). Phase-5 Block F
-      // confirmed damperLevel is one of the ~9 registers reflected in the
-      // settingsUpdate curated subset.
+      // damperLevel uses uint8 value (opcode 0xc7) and is one of the ~9
+      // registers reflected in the settingsUpdate curated subset.
       settings.damperLevel = value;
     }
   }
@@ -692,9 +686,8 @@ function decodeCmd10ToResult(data: Uint8Array): DecodeResult {
  * chain force, eccentric overload). The trailing 2 frame bytes are CRC16
  * and are NOT included in `event.raw`.
  *
- * Field offsets validated on-device in session E (2026-05-07); see
- * `voltra-private/research/cmd-0x07-variable-layout-fix-2026-05-08.md` for
- * the byte table and the disproof of the earlier variable-layout hypothesis.
+ * Field offsets are validated on-device (2026-05-07) and fixed: an earlier
+ * hypothesis that this frame used a variable layout was disproved.
  */
 export function decodeStateDump(data: Uint8Array): StateDumpEvent | null {
   if (data.length < STATE_DUMP_FRAME_LENGTH) return null;
@@ -774,8 +767,7 @@ export function decodeRowingSummary(data: Uint8Array): RowingSummaryEvent | null
  * wire is **centimeters** (uint32 LE); decoder converts to meters.
  *
  * Min frame body length 15 (= envelope 11 + sub-type 1 + payload 15-byte
- * post-sub-type body); see `aa-subtype-catalog-2026-05-07-android-deep.md`
- * §7.7.
+ * post-sub-type body).
  */
 export function decodeRowingStatus(data: Uint8Array): RowingStatusEvent | null {
   if (data[CMD_BYTE_OFFSET] !== VendorMessages.cmdValue) return null;
@@ -952,13 +944,11 @@ export function decodeCmd0x0FResponse(data: Uint8Array): Cmd0x0FBulkResponse | n
  * Decode a device status notification.
  *
  * Phase 0.5.2 hotfix: the `5523` `deviceInit` frame's byte [11] is a sub-cmd
- * byte (constant `0xa7` in observed captures), NOT a battery percentage.
+ * byte (constant `0xa7` as observed on-device), NOT a battery percentage.
  * Reading it produced nonsense readings (e.g. `0xa7 = 167%`). Battery now
  * comes via paramID `2d4e` through the cmd=0x10 settings cascade, so the
  * `deviceInit` branch no longer emits a `device_status` event. The `5523`
- * frame falls through to `unknown` until a proper decoder lands. See
- * `sources/integration-plans/voltra-private-codegen/inventory-inbound.md`
- * §2.12 for the canonical `5523` byte layout.
+ * frame falls through to `unknown` until a proper decoder lands.
  *
  * The `statusBattery` (`5534`) branch is kept intact for any non-state-dump
  * `5534` traffic, but in practice the 52-byte vendor-state-dump dispatch

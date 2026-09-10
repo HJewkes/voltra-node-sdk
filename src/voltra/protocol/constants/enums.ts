@@ -126,7 +126,7 @@ export const VALID_TRAINING_MODES: readonly TrainingMode[] = [
 /**
  * Per-mode schema version carried as the 4th sub-type byte of vendor
  * `summary` and `setSummary` frames (cmd `0xAA` + 2-byte fixed identifier
- * + this byte). Synced from voltra-private validation 2026-05-06.
+ * + this byte). Validated on-device 2026-05-06.
  */
 export enum VendorSchemaVersion {
   Weight = 0x01,

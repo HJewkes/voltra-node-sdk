@@ -12,9 +12,6 @@
  *   - `0xAA 0x13 0x01` — the vendor "state refresh" pulse the device
  *     expects shortly after every `EP_SCR_SWITCH` commit.
  *
- * Source of truth (rationale, action-code table, reassert cadence):
- *   voltra-private/research/rowing-protocol-2026-05-06-android-deep.md §1, §2, §7.
- *
  * Important: the SDK's existing parametric command builder
  * (`buildCommandBytes`) is hard-wired for fixed-width numeric values
  * (uint8/uint16/int16/uint32). EP_SCR_SWITCH carries a 4-byte composite

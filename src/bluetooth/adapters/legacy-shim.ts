@@ -14,8 +14,6 @@
  * Phase 1 will add a true noble-backed Host/Peripheral pair that does NOT
  * go through this shim. Phase 3 deletes both `BLEAdapter` and these
  * shims.
- *
- * See: sources/architecture/ble-adapter-refactor-2026-05-08.md §7
  */
 
 import type {
@@ -132,9 +130,8 @@ export class LegacyAdapterHost implements BluetoothHost {
     //    `adapter.connect()` needs.
     //  - Every subsequent dial allocates a FRESH adapter via the
     //    factory. Sharing one adapter across multiple peripherals
-    //    causes singleton-field cross-talk
-    //    (`sources/audits/sdk-fresh-connect-cross-talk-2026-05-08.md`)
-    //    and is the bug Phase 1 is moving to fix at the library level.
+    //    causes singleton-field cross-talk, the bug Phase 1 is moving
+    //    to fix at the library level.
     //  - When the discovery payload carries its own adapter (synthesized
     //    by the legacy connect-without-scan path), use that adapter
     //    directly — the manager already sized it correctly.

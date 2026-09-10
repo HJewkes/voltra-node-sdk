@@ -171,8 +171,8 @@ export type ConnectionStateListener = (state: VoltraConnectionState) => void;
 // =============================================================================
 // Typed vendor-frame events (0.6.0+)
 //
-// Field offsets validated 2026-05-06 on VTR-212006 (voltra-private phase-5
-// captures). 0.6.0 removed the legacy onRepBoundary / onSetBoundary listeners
+// Field offsets validated on-device 2026-05-06.
+// 0.6.0 removed the legacy onRepBoundary / onSetBoundary listeners
 // — the four vendor frames are now exclusively surfaced via their typed
 // perRep / inProgress / summary / setSummary callbacks.
 // =============================================================================
@@ -221,10 +221,8 @@ export interface SummaryEvent {
  * one of these per set in WT/RB/Damper modes after all reps complete, with
  * the final `repCount` and `repDurationMs` baked in. (The legacy `preSummary`
  * label and the "fires ~3s before final rep" comment were misnomers; the
- * frame fires post-final-rep with the device's own debounce. See
- * `voltra-private/research/aa-subtype-catalog-2026-05-07-android-deep.md` §7.5
- * for the cross-decompile analysis and `voltra-private/captures/sessions/validation-phase-6-set-boundaries-2026-05-06T20-12-57.events.json`
- * for the empirical evidence.)
+ * frame fires post-final-rep with the device's own debounce, confirmed
+ * on-device 2026-05-06.)
  *
  * In WT/RB/Damper this is the canonical per-set close marker — the
  * `aa 86 7d` "summary" frame is workout-end / post-STOP only and may not
@@ -273,9 +271,9 @@ export interface SetSummaryEvent {
  * Payload of a vendor `inProgress` frame (79 B, ~1 Hz heartbeat during
  * active sets).
  *
- * Field offsets validated empirically (handoff 2026-05-06) but not yet
- * baked into voltra-private's telemetry-config. Hardcoded in the decoder
- * pending a future regen sync.
+ * Field offsets validated on-device (2026-05-06) but not yet carried by the
+ * generated telemetry config. Hardcoded in the decoder pending a future
+ * regen sync.
  */
 export interface InProgressEvent {
   /** Peak force during current rep, tenths of pounds (frame[17..18], uint16 LE). */
@@ -300,8 +298,7 @@ export interface InProgressEvent {
 // (armed) → countdown → ACTIVE (engaged) transitions without rolling their
 // own polling loop.
 //
-// State machine summary (from voltra-private/research/direct-load-protocol-
-// 2026-05-06-android-deep.md §3-§5):
+// State machine summary:
 //   - 'idle'      — pre-trigger; no polling active
 //   - 'armed'     — trigger sent, BP_SET_FITNESS_MODE = 0x0026, awaiting pull
 //   - 'countdown' — user has pulled; safety countdown register `0x53C8` is
@@ -554,13 +551,11 @@ export type ModeRevertEventListener = (event: ModeRevertEvent) => void;
  * Distance preset for {@link VoltraClient.startRow}. Pass `'JustRow'` for
  * a free-row session with no preset distance.
  *
- * Wire-level mapping is documented in
- * voltra-private/research/rowing-protocol-2026-05-06-android-deep.md §2.
- * Only `JustRow` and `M50` are independently verified against iPad
- * captures; the 100/500/1000/2000/5000 m codes are inferred by sequential
- * numbering and pending on-device validation.
+ * Only `JustRow` and `M50` are independently verified; the
+ * 100/500/1000/2000/5000 m codes are inferred by sequential numbering and
+ * pending on-device validation.
  *
- * Note: row distance presets are an iPad-side construct (`50m=10×5`,
+ * Note: row distance presets are a client-side construct (`50m=10×5`,
  * `5000m=1000×5`) — the device does not receive a native target-distance
  * register. `EP_SCR_SWITCH` only selects the preset *screen*; the SDK
  * does not currently emit a separate target-distance write.

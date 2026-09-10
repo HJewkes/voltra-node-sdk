@@ -9,9 +9,8 @@
  *   for tests that need an active session.
  *
  * - `ReplayBLEAdapter` — plays back a recorded `TelemetryFrame[]`
- *   array (e.g. from `voltra-private/captures/sessions/.../*.jsonl`)
- *   with reconstructed timing. Use for regression tests against real
- *   device captures without hardware.
+ *   array with reconstructed timing. Use for regression tests against
+ *   recorded device data without hardware.
  *
  * Both are also re-exported from the package root for backwards
  * compatibility; new code should prefer this subpath.

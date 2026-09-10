@@ -149,8 +149,7 @@ export type {
 } from './bluetooth/adapters/types';
 
 // Phase 0 (2026-05-08): BluetoothHost + Peripheral split. New shape
-// alongside the legacy `BLEAdapter` — see
-// sources/architecture/ble-adapter-refactor-2026-05-08.md.
+// alongside the legacy `BLEAdapter`.
 export type {
   BluetoothHost,
   Peripheral,

@@ -5,15 +5,13 @@
  * direct-load (`0x12`) flow, plus a decoder for the 4 status registers
  * polled during the post-trigger 18-second window.
  *
- * Source-of-truth: voltra-private/research/direct-load-protocol-
- * 2026-05-06-android-deep.md (§1-§5). The protocol-derived constants below
- * (the `0x12` payload byte, the 4 status paramIDs, and the fitness-mode
- * values 0x0026/0x0027/0x0004) live here rather than in the generated
- * protocol-data.json so the SDK does not depend on a regen for this flow.
+ * The protocol-derived constants below (the `0x12` payload byte, the 4 status
+ * paramIDs, and the fitness-mode values 0x0026/0x0027/0x0004) live here rather
+ * than in the generated protocol-data.json so the SDK does not depend on a
+ * regen for this flow.
  *
- * The exact byte sequence emitted by `buildGuidedLoadTriggerFrame()` matches
- * the Campaign 8 on-wire capture (`550e0466aa1000202000aa125231`) — see the
- * doc above §1.
+ * The exact byte sequence emitted by `buildGuidedLoadTriggerFrame()`
+ * (`550e0466aa1000202000aa125231`) is validated on-device.
  */
 
 import { calculateCRC8, calculateCRC16 } from './_factories/checksum.generated';
@@ -21,8 +19,7 @@ import { NotificationConfigs } from './constants';
 import { bytesToHex } from '../../shared/utils';
 
 // =============================================================================
-// Protocol-derived constants (KEEP MINIMAL — full rationale lives in
-// voltra-private/research/direct-load-protocol-2026-05-06-android-deep.md)
+// Protocol-derived constants (KEEP MINIMAL)
 // =============================================================================
 
 /** Inner payload byte that triggers the direct-load flow under cmd 0xAA. */
@@ -42,16 +39,14 @@ const FITNESS_MODE_DIRECT_LOAD_ACTIVE = 0x0027;
 const FITNESS_MODE_STRENGTH_READY = 0x0004;
 
 // Direct-load engagement safety-check register (0x538D — `EP_DIRECT_LOAD_SAFETY_CHECK`,
-// uint8 arm bit). Per voltra-private parameters/ep/direct-load-safety-check.ts.
+// uint8 arm bit).
 export const PARAM_DIRECT_LOAD_SAFETY_CHECK = 0x538d;
 // Direct-load `ST` status register (0x53C7 — `EP_DIRECT_LOAD_ST`, uint8 phase enum).
-// Per voltra-private parameters/ep/direct-load-st.ts.
 export const PARAM_DIRECT_LOAD_ST = 0x53c7;
 // Direct-load countdown register (0x53C8 — `EP_DIRECT_LOAD_COUNTDOWN`, uint16 LE
-// countdown ms, max 3000). Per voltra-private parameters/ep/direct-load-countdown.ts.
+// countdown ms, max 3000).
 export const PARAM_DIRECT_LOAD_COUNTDOWN = 0x53c8;
 // Direct-load `CTRL` runtime control register (0x53C9 — `EP_DIRECT_LOAD_CTRL`, uint8).
-// Per voltra-private parameters/ep/direct-load-ctrl.ts.
 export const PARAM_DIRECT_LOAD_CTRL = 0x53c9;
 
 const STATUS_PARAM_IDS_LE = [
@@ -65,7 +60,7 @@ const STATUS_PARAM_IDS_LE = [
 const PARAM_BP_SET_FITNESS_MODE = 0x3e89;
 
 // =============================================================================
-// Frame envelope (mirrors AndroidVoltraClient's VoltraFrameBuilder.kt:18-84)
+// Frame envelope
 // =============================================================================
 
 const START_MARKER = 0x55;

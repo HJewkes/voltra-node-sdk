@@ -5,8 +5,7 @@
  * interfaces) against `@stoprocent/noble` 2.5.x. Does NOT implement the
  * legacy `BLEAdapter` shim — Phase 1's whole point is to offer a Node
  * backend that is multi-peripheral-safe at the library layer, fixing the
- * upstream `webbluetooth` `SimplebleAdapter` singleton cross-talk bug
- * (see `sources/audits/sdk-fresh-connect-cross-talk-2026-05-08.md`).
+ * upstream `webbluetooth` `SimplebleAdapter` singleton cross-talk bug.
  *
  * Ships as `platform: 'node-noble'` opt-in. The default `'node'` platform
  * remains on `webbluetooth` until Phase 4 promotes this backend.
@@ -24,13 +23,9 @@
  *     declared `id`, throw before issuing the write so on-device damage
  *     is avoided. Backstop for any future library-layer rebind.
  *
- * macOS caveat per research doc §4d: noble auto-negotiates MTU 185–244
- * via CoreBluetooth. The largest Voltra payload is ~52B (the `aa 80 25`
- * envelope), so no `requestMtu()` call is needed. Linux HCI may differ;
- * not exercised here.
- *
- * See: sources/audits/ble-library-migration-research-2026-05-08.md
- *      sources/architecture/ble-adapter-refactor-2026-05-08.md
+ * macOS caveat: noble auto-negotiates MTU 185–244 via CoreBluetooth. The
+ * largest Voltra payload is ~52B (the `aa 80 25` envelope), so no
+ * `requestMtu()` call is needed. Linux HCI may differ; not exercised here.
  */
 
 import type {
@@ -517,8 +512,6 @@ export class NoblePeripheral implements Peripheral {
    * first ACK fires it, and subsequent ACKs are silently dropped — so
    * the first caller's promise hangs forever despite the device having
    * received and applied the bytes. See
-   * `sources/archive/handoffs/FINDING-2026-05-10-cascade-write-hang.md` for the
-   * source-level diagnosis and
    * `__tests__/noble-once-exclusive-bug.test.ts` for the regression
    * pin against the noble package itself.
    *

@@ -441,7 +441,7 @@ export class VoltraClient {
    *
    * Returns a narrowed surface for raw BLE writes + matched-response
    * collection. Used by tooling (voltras-mcp's `device.send_raw`,
-   * protocol-byte sweeps, ad-hoc reverse engineering) that needs to send
+   * protocol-byte sweeps, ad-hoc experimentation) that needs to send
    * a hand-built frame and observe the next inbound bytes.
    *
    * The deliberately-ugly name (`unsafeDiagnostics`) keeps it out of the
@@ -867,9 +867,6 @@ export class VoltraClient {
   //   await client.startRow();              // commits Just-Row (no preset)
   //   // -- or --
   //   await client.startRow('M500');        // commits 500 m preset
-  //
-  // Wire-level rationale and the action-code table live in
-  // voltra-private/research/rowing-protocol-2026-05-06-android-deep.md.
 
   /**
    * Stage 1 of Rowing entry — open the rowing sub-menu (Just Row /
@@ -1330,11 +1327,11 @@ export class VoltraClient {
   // QoL Setters (added in 0.6.0, @experimental)
   // ===========================================================================
   //
-  // The four setters below were typed in voltra-private's regen but were not
-  // validated end-to-end on-device during phase-5 Block F (only the underlying
-  // register defs were validated in voltra-private PR #11). The protocol bytes
-  // are correct; device-side behavior may produce side effects not yet
-  // documented. File an issue if observed behavior differs from expectation.
+  // The four setters below come from the generated protocol data. Their
+  // register definitions are validated, but the setters themselves are not
+  // validated end-to-end on-device. The protocol bytes are correct;
+  // device-side behavior may produce side effects not yet documented. File an
+  // issue if observed behavior differs from expectation.
 
   /**
    * Set telemetry frame emission rate.
@@ -1342,8 +1339,8 @@ export class VoltraClient {
    * Settings persist GLOBALLY across mode switches. Resolves on adapter.write
    * completion only.
    *
-   * @experimental — register validated in voltra-private PR #11 but not yet
-   * validated end-to-end on-device. The protocol bytes are correct; the
+   * @experimental — the register definition is validated, but this setter is
+   * not yet validated end-to-end on-device. The protocol bytes are correct; the
    * device-side behavior may produce side effects not yet documented. File
    * an issue if observed behavior differs from expectation.
    *
@@ -1374,8 +1371,8 @@ export class VoltraClient {
    * Settings persist GLOBALLY across mode switches. Resolves on adapter.write
    * completion only.
    *
-   * @experimental — register validated in voltra-private PR #11 but not yet
-   * validated end-to-end on-device. The protocol bytes are correct; the
+   * @experimental — the register definition is validated, but this setter is
+   * not yet validated end-to-end on-device. The protocol bytes are correct; the
    * device-side behavior may produce side effects not yet documented. File
    * an issue if observed behavior differs from expectation.
    *
@@ -1406,8 +1403,8 @@ export class VoltraClient {
    * Settings persist GLOBALLY across mode switches. Resolves on adapter.write
    * completion only.
    *
-   * @experimental — register validated in voltra-private PR #11 but not yet
-   * validated end-to-end on-device. The protocol bytes are correct; the
+   * @experimental — the register definition is validated, but this setter is
+   * not yet validated end-to-end on-device. The protocol bytes are correct; the
    * device-side behavior may produce side effects not yet documented. File
    * an issue if observed behavior differs from expectation.
    *
@@ -1438,8 +1435,8 @@ export class VoltraClient {
    * Settings persist GLOBALLY across mode switches. Resolves on adapter.write
    * completion only.
    *
-   * @experimental — register validated in voltra-private PR #11 but not yet
-   * validated end-to-end on-device. The protocol bytes are correct; the
+   * @experimental — the register definition is validated, but this setter is
+   * not yet validated end-to-end on-device. The protocol bytes are correct; the
    * device-side behavior may produce side effects not yet documented. File
    * an issue if observed behavior differs from expectation.
    *
@@ -1519,8 +1516,7 @@ export class VoltraClient {
   // must poll the 4 status registers (`0x538D` / `0x53C7` / `0x53C8` /
   // `0x53C9`) every 500ms to observe the READY → ACTIVE transition. This
   // method drives that polling for you and surfaces a `GuidedLoadState`
-  // object via `onGuidedLoadState`. See voltra-private/research/direct-
-  // load-protocol-2026-05-06-android-deep.md for the protocol rationale.
+  // object via `onGuidedLoadState`.
 
   /**
    * Get current guided-load state snapshot.
@@ -1574,11 +1570,9 @@ export class VoltraClient {
    * **Concurrency.** Throws if a guided-load flow is already in progress —
    * call {@link exitGuidedLoad} first.
    *
-   * @experimental — register IDs and state-machine semantics derive from an
-   * Android-repo deep-scrub (voltra-private/research/direct-load-protocol-
-   * 2026-05-06-android-deep.md). The 18s polling window and 500ms cadence
-   * mirror the Android client exactly. The `0x53C7` enum and `0x53C8`
-   * milliseconds-vs-seconds interpretation are not yet validated end-to-end.
+   * @experimental — the polling window is 18s at a 500ms cadence. The
+   * `0x53C7` enum and `0x53C8` milliseconds-vs-seconds interpretation are not
+   * yet validated end-to-end.
    *
    * @param opts Guided-load options.
    */
@@ -1909,9 +1903,7 @@ export class VoltraClient {
    * only and may not fire at all in some modes.
    *
    * Renamed from `onPreSummary` in 0.9.0 — the legacy name + "fires before
-   * final rep" docstring were misnomers. See
-   * `voltra-private/research/aa-subtype-catalog-2026-05-07-android-deep.md`
-   * §7.5 for the cross-decompile analysis.
+   * final rep" docstring were misnomers; the frame fires post-final-rep.
    *
    * @param listener setSummary listener
    * @returns Unsubscribe function
@@ -2008,8 +2000,8 @@ export class VoltraClient {
    * transitions (Bug 26) and chain-engagement state changes.
    *
    * The raw `assistMode` byte is preserved (`1` = on, `8` = idle, anything
-   * else should be treated as off — see asymmetric-off semantics for
-   * `FITNESS_ASSIST_MODE` documented in voltra-private research notes A10/A11).
+   * else should be treated as off — `FITNESS_ASSIST_MODE` has asymmetric-off
+   * semantics).
    *
    * @param listener State-dump listener
    * @returns Unsubscribe function

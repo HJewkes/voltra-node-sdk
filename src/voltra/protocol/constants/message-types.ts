@@ -107,8 +107,8 @@ export const Uint16ParamIds: ReadonlySet<string> = new Set(protocol.telemetry.ui
  * Generated parameter catalog (Phase 2.5). Keyed by `wireLE` (the form
  * inbound cmd=0x10 / cmd=0x0F cascade decoders match against). Each entry
  * carries `paramId`, `name`, `wireBE`, `wireLE`, `valueType`, `valueWidth`,
- * `unit`, `register`, `validation` — sourced from voltra-private's
- * `parameters/` registry via `protocol.telemetry.parameterCatalog`.
+ * `unit`, `register`, `validation` — sourced from the generated
+ * `protocol.telemetry.parameterCatalog`.
  *
  * Phase 2.5 promotes the catalog as authoritative metadata. The
  * `telemetry-decoder.ts` `CMD_0F_KNOWN_PARAM_WIDTHS` table is NOT yet

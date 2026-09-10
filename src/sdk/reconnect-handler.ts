@@ -54,10 +54,7 @@ export interface ReconnectState {
  * short-circuited with `return null` whenever `autoReconnect=false`,
  * which left `client._connectionState` stuck at `'connected'` after a
  * `gattserverdisconnected` event — the root cause of the slot-routing
- * cross-talk documented in
- * `sources/audits/ble-slot-routing-2026-05-08.md`
- * (specifically Q6 / "always-on disconnect monitor" of
- * `sdk-slot-routing-code-trace-2026-05-08.md`).
+ * cross-talk this always-on disconnect monitor fixes.
  *
  * @param adapter BLE adapter to monitor
  * @param _options Reconnect options (kept for callsite compatibility; the
