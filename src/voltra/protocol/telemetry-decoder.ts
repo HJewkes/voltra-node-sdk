@@ -53,7 +53,7 @@ import type { PerRepEvent, SummaryEvent, SetSummaryEvent, InProgressEvent } from
  */
 const DAMPER_LEVEL_PARAM_ID_HEX = '0351';
 
-// <Decoder-cmd07-cmd10> ==========================================================
+// <Decoder-statedump-asyncstate> ==========================================================
 // Frame-byte offsets and constants for the async-state and state-dump
 // decode paths added in Phase 1a.
 // All other frame types continue to flow through the legacy header-based
@@ -208,7 +208,7 @@ export type MessageType =
   | 'vendor_in_progress'
   | 'vendor_summary'
   | 'vendor_set_summary'
-  // <Decoder-cmd07-cmd10>
+  // <Decoder-statedump-asyncstate>
   | 'vendor_state_dump'
   | 'vendor_rowing_summary'
   | 'vendor_rowing_status'
@@ -259,7 +259,7 @@ export function identifyMessageType(data: Uint8Array): MessageType {
     return 'cmd_0f_bulk_response';
   }
 
-  // <Decoder-cmd07-cmd10> Vendor state-dump and rowing telemetry sub-types.
+  // <Decoder-statedump-asyncstate> Vendor state-dump and rowing telemetry sub-types.
   // These checks must precede the 2-byte header dispatch — the state-dump
   // frame aliases the `statusBattery` header and was previously yielding
   // spurious battery readings.
@@ -292,7 +292,7 @@ export function identifyMessageType(data: Uint8Array): MessageType {
     return 'vendor_waveform_chunk';
   }
 
-  // <Decoder-cmd07-cmd10> Async-state cascade. Phase 1a confirmed that the
+  // <Decoder-statedump-asyncstate> Async-state cascade. Phase 1a confirmed that the
   // "inner-cmd" byte is really the param count, which distinguishes a
   // single-param update from a mode-switch pair and from a full-settings
   // cascade. The legacy 4-byte header path (`mode_confirmation`,
@@ -342,7 +342,7 @@ export type DecodeResult =
   | { type: 'inProgress'; event: InProgressEvent } // Typed in-progress heartbeat (0.6.0+)
   | { type: 'mode_confirmation'; mode: TrainingMode } // Mode change confirmed
   | { type: 'settings_update'; settings: DeviceSettings } // Device settings
-  // <Decoder-cmd07-cmd10> Phase 1a additions (state dump + rowing telemetry).
+  // <Decoder-statedump-asyncstate> Phase 1a additions (state dump + rowing telemetry).
   | { type: 'state_dump'; event: StateDumpEvent }
   | { type: 'rowing_summary'; event: RowingSummaryEvent }
   | { type: 'rowing_status'; event: RowingStatusEvent }
@@ -554,7 +554,7 @@ function decodeSettingsUpdate(data: Uint8Array): DecodeResult {
   return { type: 'settings_update', settings: paramsToSettings(params) };
 }
 
-// <Decoder-cmd07-cmd10> ==========================================================
+// <Decoder-statedump-asyncstate> ==========================================================
 // Generic async-state decoder.
 //
 // Every async-state frame shares one payload structure: a param count, a
@@ -1020,7 +1020,7 @@ export function decodeNotification(data: Uint8Array): DecodeResult {
     case 'status_update':
       return decodeDeviceStatus(data);
 
-    // <Decoder-cmd07-cmd10>
+    // <Decoder-statedump-asyncstate>
     case 'cmd10_async_state':
       return decodeCmd10ToResult(data);
 

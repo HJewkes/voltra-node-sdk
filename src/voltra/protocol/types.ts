@@ -436,7 +436,7 @@ export interface DeviceSettings {
   damperLevel?: number;
 }
 
-// <Decoder-cmd07-cmd10> ==========================================================
+// <Decoder-statedump-asyncstate> ==========================================================
 // State-dump parsed payload.
 //
 // Field offsets validated on-device 2026-05-07. The earlier "variable-layout
@@ -484,7 +484,7 @@ export interface StateDumpEvent {
   raw: Uint8Array;
 }
 
-// <Decoder-cmd07-cmd10> ==========================================================
+// <Decoder-statedump-asyncstate> ==========================================================
 // Rowing telemetry payload types. All fields are HYPOTHESIS until
 // on-device validation in a future Rowing-mode session — the prior on-device
 // session (Bug 22) was unable to engage Rowing mode successfully.
