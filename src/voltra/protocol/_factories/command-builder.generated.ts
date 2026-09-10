@@ -9,11 +9,11 @@
  */
 
 import { calculateCRC8, calculateCRC16 } from './checksum.generated';
-// bytesToHex inlined from voltra-private/src/utils.ts:
+// bytesToHex inlined from the private toolchain's shared utilities:
 function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
-// Inlined from voltra-private/src/protocol/enums.ts (type-only, no runtime impact).
+// Inlined from the private toolchain's protocol enums (type-only, no runtime impact).
 type ValueType = 'uint8' | 'uint16' | 'int16' | 'uint32' | 'int32';
 interface ParamDefinition {
   readonly id: number;

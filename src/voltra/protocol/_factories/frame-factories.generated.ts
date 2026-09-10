@@ -33,7 +33,7 @@
 
 import { calculateCRC8, calculateCRC16 } from './checksum.generated';
 import { TELEMETRY_CONFIG } from './telemetry-config-source.generated';
-// Inlined from voltra-private/src/protocol/enums.ts.
+// Inlined from the private toolchain's protocol enums.
 // Per-mode schema version for the 4th sub-type byte of vendor summary /
 // setSummary frames (cmd 0xAA + 2-byte fixed identifier + this byte).
 export enum VendorSchemaVersion {
@@ -43,7 +43,7 @@ export enum VendorSchemaVersion {
   Isokinetic = 0x04,
 }
 
-// Inlined from voltra-private/src/protocol/enums.ts (type-only, no runtime impact).
+// Inlined from the private toolchain's protocol enums (type-only, no runtime impact).
 type ValueType = 'uint8' | 'uint16' | 'int16' | 'uint32' | 'int32';
 interface ParamDefinition {
   readonly id: number;

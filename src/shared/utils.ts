@@ -14,7 +14,7 @@ export function delay(ms: number): Promise<void> {
 
 /**
  * Convert hex string to Uint8Array.
- * @param hex Hex string (e.g., "48656c6c6f")
+ * @param hex Hex string, two characters per byte (e.g., "48656c" for "Hel")
  */
 export function hexToBytes(hex: string): Uint8Array {
   const bytes = new Uint8Array(hex.length / 2);
