@@ -27,7 +27,6 @@ import type { VoltraClientOptions, VoltraClientEvent, ScanOptions } from './type
  *
  * - `'node'`: Node.js via the `webbluetooth` package. Default for Node.
  *   Affected by the upstream SimplebleAdapter singleton cross-talk bug
- *   (see `sources/audits/sdk-fresh-connect-cross-talk-2026-05-08.md`)
  *   when driving 2+ peripherals concurrently.
  * - `'node-noble'`: Node.js via `@stoprocent/noble`. Multi-peripheral-safe;
  *   opt-in alongside `'node'` for one release. Will become the default in
@@ -67,8 +66,6 @@ export interface VoltraManagerOptions {
    * `adapter`). When omitted (the legacy path), the manager builds a
    * `LegacyAdapterHost` around the resolved factory so internal code
    * paths are unified — visible behavior is unchanged.
-   *
-   * See: sources/architecture/ble-adapter-refactor-2026-05-08.md
    */
   host?: BluetoothHost;
 

@@ -147,7 +147,7 @@ export class VoltraManager extends VoltraManagerCore {
    * bilateral on-hardware validation.
    *
    * Requires `@stoprocent/noble` installed. macOS: terminal must hold
-   * Bluetooth permission. See research doc §4 for caveats.
+   * Bluetooth permission.
    */
   static forNodeNoble(options?: Omit<VoltraManagerOptions, 'platform'>): VoltraManager {
     return new VoltraManager({ ...options, platform: 'node-noble' });

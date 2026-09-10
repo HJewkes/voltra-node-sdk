@@ -7,16 +7,15 @@
  * subsequent attempt (or any user mode change) can cancel pending callbacks
  * from prior attempts atomically.
  *
- * Pattern source: Android `scheduleRowLiveModeReassert` ticks at
- * +750 / +1750 / +3000 ms after `startRow()` completes. See
- * voltra-private/research/rowing-protocol-2026-05-06-android-deep.md §7.
+ * The default ticks fire at +750 / +1750 / +3000 ms after `startRow()`
+ * completes.
  *
  * The scheduler is intentionally protocol-agnostic — callers supply the
  * frames to re-send. This keeps protocol-derived knowledge out of the
  * scheduler primitive.
  */
 
-/** Default reassert offsets in milliseconds, matching the Android cadence. */
+/** Default reassert offsets in milliseconds. */
 export const DEFAULT_REASSERT_DELAYS_MS: readonly number[] = [750, 1750, 3000];
 
 export interface ReassertSchedulerOptions {

@@ -201,8 +201,7 @@ export class MockBLEAdapter extends BaseBLEAdapter {
    * Test helper: cause the next `write()` to reject with the given error
    * while leaving `linkAlive` true. Models a jammed GATT write pipe where
    * the adapter believes the link is healthy but the firmware-side write
-   * queue has stalled — observed on VTR-097082 2026-05-07T16-11-15
-   * (`feedback_ble_write_fail_reconnect_not_retry`).
+   * queue has stalled — observed on-device 2026-05-07.
    */
   simulateWriteFailure(error: Error = new Error('Write failed')): void {
     this.nextWriteError = error;
@@ -214,9 +213,7 @@ export class MockBLEAdapter extends BaseBLEAdapter {
    * The adapter's connection state is flipped to `'disconnected'` (which
    * fires `onConnectionStateChange` listeners) and the link is killed.
    *
-   * Used by the slot-routing regression test
-   * (`sources/audits/ble-slot-routing-2026-05-08.md`,
-   * Fix C in `sdk-slot-routing-code-trace-2026-05-08.md`) to verify that
+   * Used by the slot-routing regression test to verify that
    * `VoltraClient` observes adapter-level disconnects even when
    * `autoReconnect=false`.
    */

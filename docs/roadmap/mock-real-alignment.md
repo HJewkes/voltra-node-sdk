@@ -78,11 +78,10 @@ encodes the key discipline this doc formalizes:
   with timing reconstructed from each frame's `timestamp`, using
   `encodeTelemetryFrame()` so consumers can't tell it from a real device.
   Controls: `play`/`pause`/`seek`/`setSpeed`.
-- Real device sessions are captured as **JSONL** in
-  `voltra-private/captures/sessions/*.jsonl`. Each line is one event; the
-  relevant record is:
-  `{"type":"frame_in","ts":<ms-since-start>,"hex":"<lowercase-hex>","label":...,"tier":...,"cmdByte":...}`
-  (schema documented in `voltra-private/docs/architecture/captures.md`).
+- Real device sessions are captured as **JSONL** outside this repo. Each
+  line is one event; the records this plan needs are the inbound-frame ones,
+  which carry a millisecond timestamp relative to session start and the
+  frame's bytes as a hex string.
 - Roundtrip codec: `encodeTelemetryFrame()` / `decodeTelemetryFrame()` /
   `decodeNotification()` (exported from the package root).
 
@@ -209,9 +208,9 @@ recorded real-device behavior.
 
 **Flow**:
 
-1. **Capture** (already exists): real sessions land in
-   `voltra-private/captures/sessions/*.jsonl` via the live harness. Each
-   `frame_in` line carries `ts` (ms since session start) and `hex`.
+1. **Capture** (already exists): real sessions land as JSONL via the live
+   harness. Each `frame_in` line carries `ts` (ms since session start) and
+   `hex`.
 
 2. **Load** (proposed helper — the missing bridge): a
    `loadCaptureFrames(jsonl): TelemetryFrame[]` utility in
@@ -228,10 +227,10 @@ recorded real-device behavior.
 4. **Diff against golden**: compare the collected output to a committed
    **golden fixture** derived from that capture. This is a *decoded-domain*
    diff (TelemetryFrame fields, event sequence), complementary to the
-   byte-level `replay diff` that already lives in
-   `voltra-private/scripts/replay.ts` for protocol RE. Volatile fields the
-   existing tooling already flags — header CRC8 (offset 3), sequence
-   (6–7), trailing CRC16 — are excluded from the comparison.
+   byte-level `replay diff` that already exists outside this repo. Fields that
+   change on every capture, such as the frame's checksums and its sequence
+   counter, are excluded from the comparison — the existing tooling already
+   flags the same set.
 
 5. **Drift alarm**: a mismatch means either the capture corpus changed,
    the decoder changed, or the mock/replay path regressed. A small,
@@ -249,8 +248,8 @@ the same inbound stream, but that's out of scope here.
 Grounding this plan surfaced concrete gaps worth filing:
 
 1. **No public JSONL→`TelemetryFrame[]` loader.** `ReplayBLEAdapter` takes
-   `TelemetryFrame[]`, captures are JSONL hex, and the only bridge
-   (`replay.ts`) lives in `voltra-private`, not the shipped SDK. Part 3
+   `TelemetryFrame[]`, captures are JSONL hex, and the only bridge lives
+   outside the shipped SDK. Part 3
    step 2 is blocked without a `loadCaptureFrames()` helper in
    `@voltras/node-sdk/testing`. **Small, self-contained — good first
    ticket.**
@@ -283,5 +282,5 @@ Grounding this plan surfaced concrete gaps worth filing:
 - `docs/roadmap/replay-adapter.md` — the replay adapter's own roadmap
   (partially superseded: `ReplayBLEAdapter` now exists).
 - `docs/concepts/platform-adapters.md` — the adapter abstraction overview.
-- `voltra-private/docs/architecture/captures.md` — capture format,
-  live harness, and the existing byte-level `replay diff` workflow.
+- Capture format, live harness, and the existing byte-level `replay diff`
+  workflow are documented outside this repo.

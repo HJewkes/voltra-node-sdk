@@ -12,8 +12,6 @@
  * disconnect) so multi-device cross-talk becomes a type-level impossibility.
  * The legacy `BLEAdapter` interface remains supported via a shim
  * (`LegacyAdapterPeripheral`) and will be removed in Phase 3.
- *
- * See: sources/architecture/ble-adapter-refactor-2026-05-08.md
  */
 
 import { type DiscoveredDevice } from '../models/device';
@@ -138,8 +136,7 @@ export interface BLEAdapter {
    *
    * Used by `VoltraClient.ensureConnected()` to detect adapter-level
    * disconnects (e.g., `gattserverdisconnected` racing the connect path)
-   * that the client-layer connection state may not yet reflect. See Bug 30
-   * (`voltra-private/captures/sessions/2026-05-07T10-12-37/`).
+   * that the client-layer connection state may not yet reflect (Bug 30).
    *
    * NOTE (Phase 0): merged into the new `Peripheral.status` enum's `'lost'`
    * variant — `Peripheral` consumers do not need this dual-truth check.
@@ -404,8 +401,7 @@ export class PeripheralLost extends Error {
  * Thrown by `Peripheral.write()` when the underlying-library handle has
  * been silently rebound to a DIFFERENT device since this `Peripheral`
  * was dialed. The canonical reproducer is the upstream `webbluetooth`
- * `SimplebleAdapter` singleton bug
- * (`sources/audits/sdk-fresh-connect-cross-talk-2026-05-08.md`):
+ * `SimplebleAdapter` singleton bug:
  * a second scan re-discovers an already-connected address and overwrites
  * the singleton's `peripherals` Map entry, so subsequent writes through
  * the old handle resolve to a fresh disconnected shell.

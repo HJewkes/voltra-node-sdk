@@ -348,8 +348,8 @@ export function getAvailableIsokineticEccOverloadWeights(): number[] {
 /**
  * Get telemetry rate command.
  *
- * @experimental — register validated in voltra-private PR #11 but not yet
- * validated end-to-end on-device. The protocol bytes are correct; the
+ * @experimental — the register definition is validated, but this command is
+ * not yet validated end-to-end on-device. The protocol bytes are correct; the
  * device-side behavior may produce side effects not yet documented.
  *
  * @param hz Telemetry frame emission rate in Hz
@@ -373,8 +373,8 @@ export function getAvailableTelemetryRates(): number[] {
 /**
  * Get telemetry subscribe command.
  *
- * @experimental — register validated in voltra-private PR #11 but not yet
- * validated end-to-end on-device. The protocol bytes are correct; the
+ * @experimental — the register definition is validated, but this command is
+ * not yet validated end-to-end on-device. The protocol bytes are correct; the
  * device-side behavior may produce side effects not yet documented.
  *
  * @param mode 'none' or 'all'
@@ -387,8 +387,8 @@ export function getTelemetrySubscribeCommand(mode: 'none' | 'all'): Uint8Array |
 /**
  * Get cable trigger command.
  *
- * @experimental — register validated in voltra-private PR #11 but not yet
- * validated end-to-end on-device. The protocol bytes are correct; the
+ * @experimental — the register definition is validated, but this command is
+ * not yet validated end-to-end on-device. The protocol bytes are correct; the
  * device-side behavior may produce side effects not yet documented.
  *
  * @param mode 'open' or 'close'
@@ -401,8 +401,8 @@ export function getCableTriggerCommand(mode: 'open' | 'close'): Uint8Array | nul
 /**
  * Get resistance experience command.
  *
- * @experimental — register validated in voltra-private PR #11 but not yet
- * validated end-to-end on-device. The protocol bytes are correct; the
+ * @experimental — the register definition is validated, but this command is
+ * not yet validated end-to-end on-device. The protocol bytes are correct; the
  * device-side behavior may produce side effects not yet documented.
  *
  * @param mode 'intense' or 'standard'

@@ -2,18 +2,13 @@
  * Guided-load (direct-load) protocol helpers (Phase 1g, 0.6.3+).
  *
  * Builds the BLE frames required to trigger and observe the firmware's
- * direct-load (`0x12`) flow, plus a decoder for the 4 status registers
+ * direct-load flow, plus a decoder for the 4 status registers
  * polled during the post-trigger 18-second window.
  *
- * Source-of-truth: voltra-private/research/direct-load-protocol-
- * 2026-05-06-android-deep.md (§1-§5). The protocol-derived constants below
- * (the `0x12` payload byte, the 4 status paramIDs, and the fitness-mode
- * values 0x0026/0x0027/0x0004) live here rather than in the generated
+ * The protocol-derived constants below live here rather than in the generated
  * protocol-data.json so the SDK does not depend on a regen for this flow.
  *
- * The exact byte sequence emitted by `buildGuidedLoadTriggerFrame()` matches
- * the Campaign 8 on-wire capture (`550e0466aa1000202000aa125231`) — see the
- * doc above §1.
+ * The frame emitted by `buildGuidedLoadTriggerFrame()` is validated on-device.
  */
 
 import { calculateCRC8, calculateCRC16 } from './_factories/checksum.generated';
@@ -21,37 +16,34 @@ import { NotificationConfigs } from './constants';
 import { bytesToHex } from '../../shared/utils';
 
 // =============================================================================
-// Protocol-derived constants (KEEP MINIMAL — full rationale lives in
-// voltra-private/research/direct-load-protocol-2026-05-06-android-deep.md)
+// Protocol-derived constants (KEEP MINIMAL)
 // =============================================================================
 
-/** Inner payload byte that triggers the direct-load flow under cmd 0xAA. */
+/** Inner payload byte that triggers the direct-load flow under the vendor cmd. */
 const DIRECT_LOAD_TRIGGER_PAYLOAD = 0x12;
 
-/** Inner cmd byte for vendor (0xAA) and param read (0x0F). */
+/** Inner cmd bytes for the vendor envelope and for a param read. */
 const CMD_VENDOR = 0xaa;
 const CMD_PARAM_READ = 0x0f;
 
 /**
- * BP_SET_FITNESS_MODE register values relevant to direct-load (uint16 LE,
- * register `0x3E89`). Other modes (idle/strength/etc.) are unaffected here.
+ * BP_SET_FITNESS_MODE register values relevant to direct-load (uint16 LE).
+ * Other modes (idle/strength/etc.) are unaffected here.
  */
 const FITNESS_MODE_DIRECT_LOAD_READY = 0x0026;
 const FITNESS_MODE_DIRECT_LOAD_ACTIVE = 0x0027;
 /** STRENGTH_READY — used to exit guided-load cleanly (`exitGuidedLoad`). */
 const FITNESS_MODE_STRENGTH_READY = 0x0004;
 
-// Direct-load engagement safety-check register (0x538D — `EP_DIRECT_LOAD_SAFETY_CHECK`,
-// uint8 arm bit). Per voltra-private parameters/ep/direct-load-safety-check.ts.
+// Direct-load engagement safety-check register (`EP_DIRECT_LOAD_SAFETY_CHECK`,
+// uint8 arm bit).
 export const PARAM_DIRECT_LOAD_SAFETY_CHECK = 0x538d;
-// Direct-load `ST` status register (0x53C7 — `EP_DIRECT_LOAD_ST`, uint8 phase enum).
-// Per voltra-private parameters/ep/direct-load-st.ts.
+// Direct-load `ST` status register (`EP_DIRECT_LOAD_ST`, uint8 phase enum).
 export const PARAM_DIRECT_LOAD_ST = 0x53c7;
-// Direct-load countdown register (0x53C8 — `EP_DIRECT_LOAD_COUNTDOWN`, uint16 LE
-// countdown ms, max 3000). Per voltra-private parameters/ep/direct-load-countdown.ts.
+// Direct-load countdown register (`EP_DIRECT_LOAD_COUNTDOWN`, uint16 LE
+// countdown in ms).
 export const PARAM_DIRECT_LOAD_COUNTDOWN = 0x53c8;
-// Direct-load `CTRL` runtime control register (0x53C9 — `EP_DIRECT_LOAD_CTRL`, uint8).
-// Per voltra-private parameters/ep/direct-load-ctrl.ts.
+// Direct-load `CTRL` runtime control register (`EP_DIRECT_LOAD_CTRL`, uint8).
 export const PARAM_DIRECT_LOAD_CTRL = 0x53c9;
 
 const STATUS_PARAM_IDS_LE = [
@@ -61,11 +53,11 @@ const STATUS_PARAM_IDS_LE = [
   PARAM_DIRECT_LOAD_CTRL,
 ] as const;
 
-// Mode register 0x3E89 — write target = `[0x04, 0x00]` (LE) to exit cleanly.
+// Mode register; written with FITNESS_MODE_STRENGTH_READY to exit cleanly.
 const PARAM_BP_SET_FITNESS_MODE = 0x3e89;
 
 // =============================================================================
-// Frame envelope (mirrors AndroidVoltraClient's VoltraFrameBuilder.kt:18-84)
+// Frame envelope
 // =============================================================================
 
 const START_MARKER = 0x55;
@@ -75,13 +67,10 @@ const HEADER_SUFFIX: readonly [number, number] = [0x20, 0x00];
 const DEFAULT_SEQUENCE = 0x2000;
 
 /**
- * Build a vendor envelope frame with `cmd 0xAA` and a single-byte payload.
+ * Build a vendor envelope frame with a single-byte payload.
  *
- * For the direct-load trigger this produces 14 bytes total:
- *   `55 0E 04 <crc8> AA 10 <seq_lo> <seq_hi> 20 00 AA 12 <crc16_lo> <crc16_hi>`
- *
- * Sequence defaults to `0x2000` to match the captured trigger; callers that
- * need a fresh sequence can override it.
+ * Sequence defaults to `DEFAULT_SEQUENCE` to match the validated trigger;
+ * callers that need a fresh sequence can override it.
  */
 export function buildGuidedLoadTriggerFrame(sequence: number = DEFAULT_SEQUENCE): Uint8Array {
   const totalSize = 14;
@@ -107,13 +96,9 @@ export function buildGuidedLoadTriggerFrame(sequence: number = DEFAULT_SEQUENCE)
 /**
  * Build the multi-paramID read frame for the 4 direct-load status registers.
  *
- * Wire payload after the cmd byte:
- *   `count_lo count_hi <id0_lo id0_hi> ... <id3_lo id3_hi>` (count = 4)
- *
- * The cmd byte is `0x0F` (CMD_PARAM_READ).
+ * Issued under `CMD_PARAM_READ`.
  */
 export function buildGuidedLoadStatusReadFrame(sequence: number = DEFAULT_SEQUENCE): Uint8Array {
-  // Payload: count uint16 LE + 4 paramIDs uint16 LE = 2 + 4*2 = 10 bytes.
   const payload = new Uint8Array(2 + STATUS_PARAM_IDS_LE.length * 2);
   payload[0] = STATUS_PARAM_IDS_LE.length & 0xff;
   payload[1] = (STATUS_PARAM_IDS_LE.length >> 8) & 0xff;
@@ -143,12 +128,11 @@ export function buildGuidedLoadStatusReadFrame(sequence: number = DEFAULT_SEQUEN
 }
 
 /**
- * Build the parametric write frame that exits guided-load cleanly:
- *   `BP_SET_FITNESS_MODE (0x3E89) := 0x0004` (STRENGTH_READY).
+ * Build the parametric write frame that exits guided-load cleanly, by
+ * setting `BP_SET_FITNESS_MODE` to STRENGTH_READY.
  */
 export function buildGuidedLoadExitFrame(sequence: number = DEFAULT_SEQUENCE): Uint8Array {
-  // Standard parametric set frame: header(10) + cmdId(0x11) + reserved(2) +
-  // paramId(2 BE) + value(2 LE) + crc16(2) = 19 bytes.
+  // Standard parametric set frame.
   // NOTE: the existing buildCommandBytes uses the same envelope but with a
   // different cmdId byte ordering for the param. We mirror that layout here
   // (param written big-endian into the frame as in `command-builder.generated`).
@@ -187,31 +171,27 @@ export function buildGuidedLoadExitFrame(sequence: number = DEFAULT_SEQUENCE): U
  * 4 registers into a given response notification.
  */
 export interface GuidedLoadStatusFields {
-  /** EP_DIRECT_LOAD_SAFETY_CHECK (`0x538D`, uint8) — bool-like state-machine arm bit. */
+  /** EP_DIRECT_LOAD_SAFETY_CHECK (uint8) — bool-like state-machine arm bit. */
   primaryStatus?: number;
-  /** EP_DIRECT_LOAD_ST (`0x53C7`, uint8) — phase enum. */
+  /** EP_DIRECT_LOAD_ST (uint8) — phase enum. */
   forceStatus?: number;
-  /** EP_DIRECT_LOAD_COUNTDOWN (`0x53C8`, uint16 LE) — safety countdown remaining (ms). */
+  /** EP_DIRECT_LOAD_COUNTDOWN (uint16 LE) — safety countdown remaining (ms). */
   countdownMs?: number;
-  /** EP_DIRECT_LOAD_CTRL (`0x53C9`, uint8) — runtime control byte. */
+  /** EP_DIRECT_LOAD_CTRL (uint8) — runtime control byte. */
   runtimeStatus?: number;
-  /** Raw `BP_SET_FITNESS_MODE` (`0x3E89`, uint16 LE) — only present when
+  /** Raw `BP_SET_FITNESS_MODE` (uint16 LE) — only present when
    *  the device echoes it in a settings/multi-param response. */
   fitnessModeRaw?: number;
 }
 
 /** ParamId ↔ field map (matched against the LE-byte hex emitted by the
  *  multi-param decoder helpers below). */
+// Each value is the register's paramID with its two bytes in wire (LE) order.
 const FIELD_PARAM_IDS_LE_HEX = {
-  // 0x538D LE = 0x8D 0x53 → "8d53"
   primaryStatus: '8d53',
-  // 0x53C7 LE = "c753"
   forceStatus: 'c753',
-  // 0x53C8 LE = "c853"
   countdownMs: 'c853',
-  // 0x53C9 LE = "c953"
   runtimeStatus: 'c953',
-  // 0x3E89 LE = "893e"
   fitnessModeRaw: '893e',
 } as const;
 
@@ -221,17 +201,16 @@ const UINT16_PARAM_IDS_LE_HEX: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Decode a multi-param response (header `0x16`) or settings-update
- * notification (header `0x2e`) into the subset of guided-load fields it
- * carries. Returns `null` if the buffer is not a multi-param payload or
+ * Decode a multi-param response or settings-update notification into the
+ * subset of guided-load fields it carries. Returns `null` if the buffer is not a multi-param payload or
  * carries none of the 4 status registers.
  *
  * Mirrors the structure of `decodeSettingsUpdate` in `telemetry-decoder.ts`
  * but with guided-load-specific paramIds and uint16/uint8 sizing rules.
  */
 export function decodeGuidedLoadStatus(data: Uint8Array): GuidedLoadStatusFields | null {
-  // Accept either the multi-param shape (header 0x16) or settings-update
-  // (header 0x2e) — both share the count + paramId/value layout.
+  // Accept either the multi-param shape or settings-update — both share the
+  // count + paramId/value layout.
   const header2 = bytesToHex(data.slice(0, 2));
   const multi = NotificationConfigs.multiParam;
   const settings = NotificationConfigs.settingsUpdate;
