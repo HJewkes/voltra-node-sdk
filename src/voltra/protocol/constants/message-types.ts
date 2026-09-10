@@ -20,7 +20,7 @@ const protocol = protocolData as ProtocolData;
  * Message type identifiers (first 4 bytes of notifications).
  *
  * Only the telemetry stream has a stable 4-byte signature. Frames previously
- * exposed as REP_SUMMARY / SET_SUMMARY / STATUS_UPDATE are now identified
+ * exposed under their own message-type names are now identified
  * via {@link VendorMessages} sub-type matching or the 2-byte statusBattery
  * notification path (validated on-device 2026-05-05).
  */
@@ -110,8 +110,8 @@ export const Uint16ParamIds: ReadonlySet<string> = new Set(protocol.telemetry.ui
  *
  * The catalog is the authoritative metadata. The
  * `telemetry-decoder.ts` `CMD_0F_KNOWN_PARAM_WIDTHS` table is NOT yet
- * refactored to consume it — FITNESS_WORKOUT_STATE and
- * FITNESS_INVERSE_CHAIN have documented width disagreements
+ * refactored to consume it — the workout-state and inverse-chains registers
+ * have documented width disagreements
  * (vp = uint16, SDK = uint8) that need on-device validation
  * before the decoder can safely migrate.
  *

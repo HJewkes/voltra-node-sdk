@@ -55,7 +55,7 @@ const DAMPER_LEVEL_PARAM_ID_HEX = '0351';
 
 // <Decoder-statedump-asyncstate> ==========================================================
 // Frame-byte offsets and constants for the async-state and state-dump
-// decode paths added in Phase 1a.
+// decode paths.
 // All other frame types continue to flow through the legacy header-based
 // dispatch in `identifyMessageType`.
 // ==========================================================
@@ -68,7 +68,7 @@ const CMD10_PARAM_COUNT_OFFSET = 11;
 /** Offset of the first param; the byte before it is reserved and always zero. */
 const CMD10_FIRST_PARAM_OFFSET = 13;
 /**
- * Sub-type bytes of the Phase-1a state-dump frame. Its frame header
+ * Sub-type bytes of the state-dump frame. Its frame header
  * aliases the legacy
  * `statusBattery` notification length, so this dispatch must precede the
  * 2-byte header check.
@@ -106,34 +106,34 @@ const CMD_0F_FIRST_PARAM_OFFSET = 14;
  * responses. Only the params surfaced through `DeviceSettings` are listed —
  * the decoder uses {@link Uint16ParamIds} for everything else, falling back
  * to abort decoding if neither table covers the paramId. Bootstrap step 10
- * (18-param query) covers all of these plus QUICK_CABLE_ADJUSTMENT, whose
- * width is not yet known.
+ * (18-param query) covers all of these plus the quick cable-adjustment
+ * register, whose width is not yet known.
  *
  * Param IDs are stored as little-endian hex strings to match `ParamIdHex`.
  */
 const CMD_0F_KNOWN_PARAM_WIDTHS: Readonly<Record<string, number>> = {
   // Step-10 response carries these as uint16 LE (lb / index / state).
-  '863e': 2, // BP_BASE_WEIGHT
-  '873e': 2, // BP_CHAINS_WEIGHT
-  '883e': 2, // BP_ECCENTRIC_WEIGHT (signed; readCmd0x0FValue handles sign)
-  '893e': 2, // BP_SET_FITNESS_MODE (also covered by Uint16ParamIds)
-  '823e': 2, // BP_RUNTIME_POSITION_CM
-  '6a50': 2, // MC_DEFAULT_OFFLEN_CM
-  '6253': 2, // RESISTANCE_BAND_MAX_FORCE
-  b753: 2, // RESISTANCE_BAND_LEN
-  '3154': 2, // ISOMETRIC_MAX_FORCE
-  d253: 2, // ISOMETRIC_MAX_DURATION
+  '863e': 2, // base weight
+  '873e': 2, // chains weight
+  '883e': 2, // eccentric (signed; readCmd0x0FValue handles sign)
+  '893e': 2, // fitness mode (also covered by Uint16ParamIds)
+  '823e': 2, // live cable position
+  '6a50': 2, // saved cable offset
+  '6253': 2, // band max force
+  b753: 2, // band length
+  '3154': 2, // isometric max force
+  d253: 2, // isometric max duration
   // Step-10 response carries these as uint8 flags / enums.
-  '6153': 1, // RESISTANCE_BAND_ALGORITHM
-  b653: 1, // RESISTANCE_BAND_LEN_BY_ROM
-  e352: 1, // EP_RESISTANCE_BAND_INVERSE
-  '0651': 1, // FITNESS_ASSIST_MODE
-  b053: 1, // FITNESS_INVERSE_CHAIN
-  c653: 1, // WEIGHT_TRAINING_EXTRA_MODE
-  b04f: 1, // FITNESS_WORKOUT_STATE (training mode)
+  '6153': 1, // band algorithm
+  b653: 1, // band length by ROM
+  e352: 1, // band inverse
+  '0651': 1, // assist mode
+  b053: 1, // inverse chains
+  c653: 1, // weight-training extra mode
+  b04f: 1, // workout state (training mode)
   // damperLevel — key is the wire-byte hex (little-endian), not the paramID.
   // An earlier version of this table had the two bytes inverted.
-  '0351': 1, // FITNESS_DAMPER_RATIO_IDX
+  '0351': 1, // damper ratio index
 };
 // <Bug-17> End
 
@@ -292,8 +292,9 @@ export function identifyMessageType(data: Uint8Array): MessageType {
     return 'vendor_waveform_chunk';
   }
 
-  // <Decoder-statedump-asyncstate> Async-state cascade. Phase 1a confirmed that the
-  // "inner-cmd" byte is really the param count, which distinguishes a
+  // <Decoder-statedump-asyncstate> Async-state cascade. On-device validation
+  // confirmed the "inner-cmd" byte is really the param count, which
+  // distinguishes a
   // single-param update from a mode-switch pair and from a full-settings
   // cascade. The legacy 4-byte header path (`mode_confirmation`,
   // `multi_param`, `settings_update`) mis-classified single-param frames
@@ -315,8 +316,8 @@ export function identifyMessageType(data: Uint8Array): MessageType {
   } else if (header2 === NotificationConfigs.deviceInit.header) {
     return 'device_init';
   } else if (header2 === NotificationConfigs.statusBattery.header) {
-    // On-device validation confirmed the legacy 4-byte STATUS_UPDATE
-    // signature was an alias for this 2-byte path.
+    // On-device validation confirmed the legacy 4-byte status signature
+    // was an alias for this 2-byte path.
     return 'status_update';
   }
 
@@ -338,11 +339,11 @@ export type DecodeResult =
   | { type: 'frame'; frame: TelemetryFrame }
   | { type: 'perRep'; event: PerRepEvent } // Typed perRep frame (0.6.0+)
   | { type: 'summary'; event: SummaryEvent } // Typed end-of-set summary (0.6.0+)
-  | { type: 'setSummary'; event: SetSummaryEvent } // Typed per-set summary (`aa 85 5f`); renamed from `preSummary` in 0.9.0
+  | { type: 'setSummary'; event: SetSummaryEvent } // Typed per-set summary; renamed from `preSummary` in 0.9.0
   | { type: 'inProgress'; event: InProgressEvent } // Typed in-progress heartbeat (0.6.0+)
   | { type: 'mode_confirmation'; mode: TrainingMode } // Mode change confirmed
   | { type: 'settings_update'; settings: DeviceSettings } // Device settings
-  // <Decoder-statedump-asyncstate> Phase 1a additions (state dump + rowing telemetry).
+  // <Decoder-statedump-asyncstate> State dump + rowing telemetry.
   | { type: 'state_dump'; event: StateDumpEvent }
   | { type: 'rowing_summary'; event: RowingSummaryEvent }
   | { type: 'rowing_status'; event: RowingStatusEvent }
@@ -781,7 +782,7 @@ export function decodeRowingStatus(data: Uint8Array): RowingStatusEvent | null {
  * using `chunkIndex`.
  *
  * **Sample units:** `tenths-of-pounds`. Rowing samples are tenths-of-lb
- * directly; isometric callers must scale by `LB_TO_NEWTONS = 4.4482216` to
+ * directly; isometric callers must scale tenths-of-pounds by 4.4482216 to
  * get newtons.
  */
 export function decodeWaveformChunk(data: Uint8Array): WaveformChunkEvent | null {
@@ -851,7 +852,7 @@ function readCmd0x0FValue(
 ): number {
   if (width === 1) return data[offset];
   if (width === 2) {
-    // BP_ECCENTRIC_WEIGHT is signed lb on the wire.
+    // The eccentric register is signed lb on the wire.
     if (paramIdHex === ParamIdHex.ECCENTRIC) return readInt16LE(data, offset);
     return readUint16LE(data, offset);
   }

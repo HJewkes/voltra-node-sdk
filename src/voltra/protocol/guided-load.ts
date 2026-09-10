@@ -32,18 +32,16 @@ const CMD_PARAM_READ = 0x0f;
  */
 const FITNESS_MODE_DIRECT_LOAD_READY = 0x0026;
 const FITNESS_MODE_DIRECT_LOAD_ACTIVE = 0x0027;
-/** STRENGTH_READY — used to exit guided-load cleanly (`exitGuidedLoad`). */
+/** Strength-ready mode — used to exit guided-load cleanly (`exitGuidedLoad`). */
 const FITNESS_MODE_STRENGTH_READY = 0x0004;
 
-// Direct-load engagement safety-check register (`EP_DIRECT_LOAD_SAFETY_CHECK`,
-// uint8 arm bit).
+// Direct-load engagement safety-check register (uint8 arm bit).
 export const PARAM_DIRECT_LOAD_SAFETY_CHECK = 0x538d;
-// Direct-load `ST` status register (`EP_DIRECT_LOAD_ST`, uint8 phase enum).
+// Direct-load status register (uint8 phase enum).
 export const PARAM_DIRECT_LOAD_ST = 0x53c7;
-// Direct-load countdown register (`EP_DIRECT_LOAD_COUNTDOWN`, uint16 LE
-// countdown in ms).
+// Direct-load countdown register (uint16 LE countdown in ms).
 export const PARAM_DIRECT_LOAD_COUNTDOWN = 0x53c8;
-// Direct-load `CTRL` runtime control register (`EP_DIRECT_LOAD_CTRL`, uint8).
+// Direct-load runtime control register (uint8).
 export const PARAM_DIRECT_LOAD_CTRL = 0x53c9;
 
 const STATUS_PARAM_IDS_LE = [
@@ -129,7 +127,7 @@ export function buildGuidedLoadStatusReadFrame(sequence: number = DEFAULT_SEQUEN
 
 /**
  * Build the parametric write frame that exits guided-load cleanly, by
- * setting `BP_SET_FITNESS_MODE` to STRENGTH_READY.
+ * setting `BP_SET_FITNESS_MODE` to strength-ready.
  */
 export function buildGuidedLoadExitFrame(sequence: number = DEFAULT_SEQUENCE): Uint8Array {
   // Standard parametric set frame.
@@ -148,13 +146,13 @@ export function buildGuidedLoadExitFrame(sequence: number = DEFAULT_SEQUENCE): U
   frame[7] = (sequence >> 8) & 0xff;
   frame[8] = HEADER_SUFFIX[0];
   frame[9] = HEADER_SUFFIX[1];
-  frame[10] = 0x11; // CMD_PARAM_WRITE
-  frame[11] = 0x01; // RESERVED[0]
-  frame[12] = 0x00; // RESERVED[1]
-  frame[13] = (PARAM_BP_SET_FITNESS_MODE >> 8) & 0xff; // BE high byte
-  frame[14] = PARAM_BP_SET_FITNESS_MODE & 0xff; // BE low byte
-  frame[15] = FITNESS_MODE_STRENGTH_READY & 0xff; // value LE low
-  frame[16] = (FITNESS_MODE_STRENGTH_READY >> 8) & 0xff; // value LE high
+  frame[10] = 0x11;
+  frame[11] = 0x01;
+  frame[12] = 0x00;
+  frame[13] = (PARAM_BP_SET_FITNESS_MODE >> 8) & 0xff;
+  frame[14] = PARAM_BP_SET_FITNESS_MODE & 0xff;
+  frame[15] = FITNESS_MODE_STRENGTH_READY & 0xff;
+  frame[16] = (FITNESS_MODE_STRENGTH_READY >> 8) & 0xff;
   const crc = calculateCRC16(frame.subarray(0, totalSize - 2));
   frame[totalSize - 2] = crc & 0xff;
   frame[totalSize - 1] = (crc >> 8) & 0xff;
@@ -171,13 +169,13 @@ export function buildGuidedLoadExitFrame(sequence: number = DEFAULT_SEQUENCE): U
  * 4 registers into a given response notification.
  */
 export interface GuidedLoadStatusFields {
-  /** EP_DIRECT_LOAD_SAFETY_CHECK (uint8) — bool-like state-machine arm bit. */
+  /** Safety-check register (uint8) — bool-like state-machine arm bit. */
   primaryStatus?: number;
-  /** EP_DIRECT_LOAD_ST (uint8) — phase enum. */
+  /** Status register (uint8) — phase enum. */
   forceStatus?: number;
-  /** EP_DIRECT_LOAD_COUNTDOWN (uint16 LE) — safety countdown remaining (ms). */
+  /** Countdown register (uint16 LE) — safety countdown remaining (ms). */
   countdownMs?: number;
-  /** EP_DIRECT_LOAD_CTRL (uint8) — runtime control byte. */
+  /** Runtime control register (uint8). */
   runtimeStatus?: number;
   /** Raw `BP_SET_FITNESS_MODE` (uint16 LE) — only present when
    *  the device echoes it in a settings/multi-param response. */

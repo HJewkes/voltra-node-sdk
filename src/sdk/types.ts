@@ -155,9 +155,9 @@ export type BatteryUpdateListener = (battery: number) => void;
  * weight).
  *
  * Unlike `SettingsUpdateListener`, the payload preserves the raw
- * `assistMode` byte — consumers should be aware that `FITNESS_ASSIST_MODE`
- * has asymmetric-off semantics, so only the "on" code means on and every
- * other value should be treated as off.
+ * `assistMode` byte — consumers should be aware that this register has
+ * asymmetric-off semantics, so only the "on" code means on and every other
+ * value should be treated as off.
  */
 export type StateDumpListener = (event: StateDumpEvent) => void;
 
@@ -555,7 +555,7 @@ export type ModeRevertEventListener = (event: ModeRevertEvent) => void;
  *
  * Note: row distance presets are a client-side construct (`50m=10×5`,
  * `5000m=1000×5`) — the device does not receive a native target-distance
- * register. `EP_SCR_SWITCH` only selects the preset *screen*; the SDK
+ * register. The screen-switch write only selects the preset *screen*; the SDK
  * does not currently emit a separate target-distance write.
  */
 export type RowingDistancePreset =
