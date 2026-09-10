@@ -4,13 +4,12 @@
  * Two-stage Rowing entry uses two protocol primitives that were not in the
  * pre-0.6.x SDK surface:
  *
- *   - `EP_SCR_SWITCH` (LE paramId `0x5165`) — a 4-byte action-code write
- *     that commits the device into a rowing sub-screen. The first byte is
- *     the per-preset action code (Just-Row / 50 m / 100 m / ...); the
- *     remaining three bytes are constant `[0x3E, 0x00, 0x01]`.
+ *   - `EP_SCR_SWITCH` — a 4-byte action-code write that commits the device
+ *     into a rowing sub-screen. The first byte is the per-preset action code
+ *     (Just-Row / 50 m / 100 m / ...); the remaining three are constant.
  *
- *   - `0xAA 0x13 0x01` — the vendor "state refresh" pulse the device
- *     expects shortly after every `EP_SCR_SWITCH` commit.
+ *   - the vendor "state refresh" pulse, which the device expects shortly
+ *     after every `EP_SCR_SWITCH` commit.
  *
  * Important: the SDK's existing parametric command builder
  * (`buildCommandBytes`) is hard-wired for fixed-width numeric values
@@ -26,23 +25,22 @@ const CMD_PARAM_WRITE = 0x11;
 const CMD_VENDOR = 0xaa;
 
 // Parameter id wire-bytes for EP_SCR_SWITCH. The SDK encodes paramIds
-// MSB-first in the on-wire layout — `0x6551` becomes wire bytes `65 51`,
-// which is the little-endian encoding of the canonical paramId `0x5165`.
+// MSB-first on the wire, so these two constants are the canonical paramId's
+// bytes in little-endian order.
 const EP_SCR_SWITCH_PARAMID_LO = 0x65;
 const EP_SCR_SWITCH_PARAMID_HI = 0x51;
 
-// Constant trailing bytes shared by every rowing EP_SCR_SWITCH payload —
-// the second byte (`0x3E`) is the rowing screen id; the remaining
-// `[0x00, 0x01]` is fixed across all observed captures.
+// Constant trailing bytes shared by every rowing EP_SCR_SWITCH payload. The
+// first is the rowing screen id; the rest are fixed across every frame
+// observed on-device.
 const ROWING_SCREEN_ID = 0x3e;
 const ROWING_SCR_SWITCH_TRAILER: readonly [number, number, number] = [ROWING_SCREEN_ID, 0x00, 0x01];
 
 /**
  * Action codes for the first byte of the EP_SCR_SWITCH rowing payload.
  *
- * Both `JustRow` and `M50` are independently verified against iPad
- * sysdiagnose captures; the 100/500/1000/2000/5000 m codes are inferred
- * by sequential numbering.
+ * Both `JustRow` and `M50` are independently verified; the
+ * 100/500/1000/2000/5000 m codes are inferred by sequential numbering.
  */
 export const ROW_START_ACTION_CODES = {
   /** Just Row — no preset distance. */
@@ -62,7 +60,8 @@ export type RowStartActionKey = keyof typeof ROW_START_ACTION_CODES;
  * cmd byte in the framed envelope) for an EP_SCR_SWITCH rowing commit.
  */
 function buildRowScrSwitchPayload(action: number): Uint8Array {
-  // Layout: [count_lo=0x01, count_hi=0x00, paramId_lo, paramId_hi, action, 0x3E, 0x00, 0x01]
+  // Layout: a uint16 LE count of 1, the paramId bytes, the action code,
+  // then the constant trailer.
   return new Uint8Array([
     0x01,
     0x00,
@@ -89,7 +88,7 @@ export function buildRowScrSwitchFrame(
 }
 
 /**
- * Build the `0xAA 0x13 0x01` vendor state-refresh frame. Sent immediately
+ * Build the vendor state-refresh frame. Sent immediately
  * after every EP_SCR_SWITCH commit and on every reassert tick.
  */
 export function buildVendorStateRefreshFrame(opts: { sequence?: number } = {}): Uint8Array {

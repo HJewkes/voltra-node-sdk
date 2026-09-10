@@ -36,7 +36,7 @@ export const MessageTypes = {
 /**
  * Vendor sub-type frame definitions.
  *
- * Vendor frames carry the 0xaa cmd marker at frame offset {@link cmdByteOffset}
+ * Vendor frames carry the cmd marker at frame offset {@link cmdByteOffset}
  * followed by sub-type identifier bytes. Use {@link matchesVendorSubType} to
  * test a buffer against a sub-type.
  */
@@ -112,8 +112,8 @@ export const Uint16ParamIds: ReadonlySet<string> = new Set(protocol.telemetry.ui
  *
  * Phase 2.5 promotes the catalog as authoritative metadata. The
  * `telemetry-decoder.ts` `CMD_0F_KNOWN_PARAM_WIDTHS` table is NOT yet
- * refactored to consume it — two paramIDs (`b04f`/FITNESS_WORKOUT_STATE,
- * `b053`/FITNESS_INVERSE_CHAIN) have documented width disagreements
+ * refactored to consume it — FITNESS_WORKOUT_STATE and
+ * FITNESS_INVERSE_CHAIN have documented width disagreements
  * (vp = uint16, SDK = uint8) that need Phase 2.7 on-device validation
  * before the decoder can safely migrate.
  *

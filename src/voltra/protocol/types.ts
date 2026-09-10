@@ -97,21 +97,21 @@ export interface CommandConfig {
  * Training mode commands.
  */
 export interface ModeCommands {
-  /** Idle mode (0x0000) */
+  /** Idle mode */
   idle: string;
-  /** Weight training mode (0x0001) */
+  /** Weight training mode */
   weightTraining: string;
-  /** Resistance band mode (0x0002) */
+  /** Resistance band mode */
   resistanceBand: string;
-  /** Rowing mode (0x0003) */
+  /** Rowing mode */
   rowing: string;
-  /** Damper mode (0x0004) */
+  /** Damper mode */
   damper: string;
-  /** Custom curves mode (0x0006) */
+  /** Custom curves mode */
   customCurves: string;
-  /** Isokinetic mode (0x0007) */
+  /** Isokinetic mode */
   isokinetic: string;
-  /** Isometric mode (0x0008) */
+  /** Isometric mode */
   isometric: string;
 }
 
@@ -119,9 +119,9 @@ export interface ModeCommands {
  * Authentication device IDs.
  */
 export interface AuthCommands {
-  /** iPhone device ID (41-byte hex) */
+  /** iPhone device ID string. */
   iphone: string;
-  /** iPad device ID (41-byte hex) */
+  /** iPad device ID string. */
   ipad: string;
 }
 
@@ -181,7 +181,7 @@ export interface TelemetryConfig {
  * can't be JSON-serialized through the base64 protocol-data pipeline).
  */
 export interface ParameterCatalogEntry {
-  /** Canonical 16-bit paramID (e.g. `0x3E86` for BP_BASE_WEIGHT). */
+  /** Canonical 16-bit paramID for the register named by `name`. */
   paramId: number;
   /** Canonical name (e.g. `BP_BASE_WEIGHT`). */
   name: string;
@@ -230,13 +230,13 @@ export interface MessageTypeConfig {
 /**
  * Vendor frame sub-type definitions.
  *
- * Vendor frames carry a 0xaa cmd marker at frame offset `cmdByteOffset`
- * followed by sub-type identifier bytes (e.g., [0x82, 0x3b] = perRep).
+ * Vendor frames carry a cmd marker at frame offset `cmdByteOffset`
+ * followed by sub-type identifier bytes.
  */
 export interface VendorMessagesConfig {
-  /** Byte offset of the vendor cmd marker (0xaa) within the frame */
+  /** Byte offset of the vendor cmd marker within the frame */
   cmdByteOffset: number;
-  /** Vendor cmd marker value (0xaa) */
+  /** Vendor cmd marker value */
   cmdValue: number;
   /** Documented sub-type frames */
   subTypes: VendorSubTypesConfig;
@@ -250,7 +250,7 @@ export interface VendorSubTypesConfig {
   /** Recurring in-progress telemetry (79 B). Was previously aliased as setSummary. */
   inProgress: VendorSubTypeConfig;
   /**
-   * `aa 85 5f` set-summary frame (110 B). Device emits one per set in
+   * Set-summary frame. Device emits one per set in
    * WT/RB/Damper after all reps complete. Renamed from `preSummary` in 0.9.0;
    * see SetSummaryEvent for the misnomer history.
    */
@@ -283,7 +283,7 @@ export interface VendorSubTypeConfig {
   /**
    * Optional payload offset of the per-mode schema-version byte.
    * Only present on `summary` and `setSummary` whose 4-byte sub-type is
-   * `cmd 0xAA + 2-byte fixed identifier + this byte`.
+   * the vendor cmd, a 2-byte fixed identifier, then this byte.
    */
   schemaVersionByteOffset?: number;
   /** Optional sample unit metadata (isometricWaveform only) */
@@ -354,15 +354,15 @@ export interface NotificationTypeConfig {
  * All notification type configurations.
  */
 export interface NotificationsConfig {
-  /** Mode change confirmation (0x12) */
+  /** Mode change confirmation */
   modeConfirmation: NotificationTypeConfig;
-  /** Multi-parameter message (0x16) */
+  /** Multi-parameter message */
   multiParam: NotificationTypeConfig;
-  /** Settings update with all parameters (0x2e) */
+  /** Settings update with all parameters */
   settingsUpdate: NotificationTypeConfig;
-  /** Device initialization info (0x23) */
+  /** Device initialization info */
   deviceInit: NotificationTypeConfig;
-  /** Status/battery update (0x34) */
+  /** Status/battery update */
   statusBattery: NotificationTypeConfig;
 }
 
@@ -370,18 +370,18 @@ export interface NotificationsConfig {
  * Known parameter IDs (hex strings, little-endian).
  */
 export interface ParamIdsConfig {
-  /** Base weight parameter (0x863e) */
+  /** Base weight parameter */
   baseWeight: string;
-  /** Chains weight parameter (0x873e) */
+  /** Chains weight parameter */
   chains: string;
-  /** Eccentric setting parameter (0x883e) */
+  /** Eccentric setting parameter */
   eccentric: string;
-  /** Training mode parameter (0xb04f) */
+  /** Training mode parameter */
   trainingMode: string;
-  /** Inverse chains parameter (0xb053) */
+  /** Inverse chains parameter */
   inverseChains: string;
   /**
-   * `BP_SET_FITNESS_MODE` (0x893e) — workout-state register controlling
+   * `BP_SET_FITNESS_MODE` — workout-state register controlling
    * the device's primary mode/state machine (strength READY/ARMED/ACTIVE,
    * direct-load STRENGTH_READY, rowing GO/ACTIVE, etc).
    */
@@ -430,23 +430,23 @@ export interface DeviceSettings {
   inverseChains?: number;
   /**
    * Damper level (protocol value 0-9; UI displays N+1).
-   * Reflected when paramId 0x0351 is present in a settings_update notification.
+   * Reflected when the damperLevel paramId is present in a settings_update
+   * notification.
    */
   damperLevel?: number;
 }
 
 // <Decoder-cmd07-cmd10> ==========================================================
-// State-dump (cmd=0x07 / 52-byte aa80-25 envelope) parsed payload.
+// State-dump (cmd=0x07) parsed payload.
 //
 // Field offsets validated on-device 2026-05-07. The earlier "variable-layout
 // / discriminator byte" hypothesis was disproved: the payload has a fixed
 // layout across every observed (trainingMode × assistMode × transition)
 // combination. Only fields stable across the observed frames are exposed.
-// CRC trailer occupies frame[encodedLength-2 .. encodedLength-1], i.e. the
-// last 2 bytes of the 52-byte frame, not inside the decoded payload.
+// The CRC trailer sits at the end of the frame, outside the decoded payload.
 // ==========================================================
 /**
- * Parsed state-dump frame (52-byte `0xAA 0x80 0x25` envelope).
+ * Parsed state-dump frame.
  *
  * Field semantics validated on-device (2026-05-07). Earlier decoder
  * versions mislabelled `trainingMode` as
@@ -455,35 +455,32 @@ export interface DeviceSettings {
  */
 export interface StateDumpEvent {
   /**
-   * Active training mode at payload offset 0 (raw byte; 0 = transitional
-   * mid-mode-switch, 1 = WeightTraining, 2 = ResistanceBand). The numeric
-   * values align with the {@link TrainingMode} enum but the byte is exposed
-   * verbatim — the encoded byte is uint8, while `TrainingMode` is uint16 LE.
-   * Consumers that want the typed enum should narrow with the enum's
-   * numeric values.
+   * Active training mode, exposed as the raw byte. A zero means the device
+   * is mid-mode-switch. The values align with the {@link TrainingMode} enum,
+   * but the byte is uint8 on the wire while `TrainingMode` is uint16 LE, so
+   * consumers wanting the typed enum should narrow with the enum's values.
    */
   trainingMode: TrainingMode;
-  /** Fitness-assist toggle at payload offset 1 (0 or 0x02). */
+  /** Fitness-assist toggle. */
   assistMode: number;
   /**
-   * Active weight setting in tenths of pounds (uint16 LE) at payload
-   * offset 3. Mirrors the cmd=0x10 cascade `baseWeight` × 10. Zero in
-   * non-WeightTraining modes.
+   * Active weight setting in tenths of pounds (uint16 LE). Mirrors the
+   * cmd=0x10 cascade `baseWeight` × 10. Zero in non-WeightTraining modes.
    */
   weightLbsTenths: number;
   /**
    * Effective chain target force at the cable in tenths of pounds (uint16
-   * LE) at payload offset 5. Equals `min(chains, weight) × 10` — the device
-   * silently caps the chain setting at the active weight. Use the cmd=0x10
-   * cascade `chains` field for the user-set chain value.
+   * LE). Equals `min(chains, weight) × 10` — the device silently caps the
+   * chain setting at the active weight. Use the cmd=0x10 cascade `chains`
+   * field for the user-set chain value.
    */
   chainTargetForceTenths: number;
   /**
-   * Eccentric overload setting in tenths of percent (uint16 LE) at payload
-   * offset 7. Mirrors the cmd=0x10 cascade `eccentric` × 10.
+   * Eccentric overload setting in tenths of percent (uint16 LE). Mirrors
+   * the cmd=0x10 cascade `eccentric` × 10.
    */
   eccentricPercentTenths: number;
-  /** Raw 37-byte payload after the `aa 80 25` sub-type prefix (excludes CRC). */
+  /** Raw payload after the sub-type prefix (excludes CRC). */
   raw: Uint8Array;
 }
 
@@ -493,64 +490,62 @@ export interface StateDumpEvent {
 // session (Bug 22) was unable to engage Rowing mode successfully.
 // ==========================================================
 /**
- * Decoded rowing summary frame (`0xAA 0x95 0x25`).
+ * Decoded rowing summary frame.
  *
- * Pace is stored on-wire as **tenths of seconds per 500 m** (uint32 LE);
- * multiply by 100 to convert to milliseconds. Distance is in **meters**.
+ * Pace is reported in **milliseconds per 500 m** and distance in **meters**.
  */
 export interface RowingSummaryEvent {
-  /** Stroke rate (strokes per minute) at payload offset 2. */
+  /** Stroke rate in strokes per minute. */
   strokeRateSpm: number;
-  /** Current 500 m pace in milliseconds (decoded from tenths-of-seconds). */
+  /** Current 500 m pace in milliseconds. */
   currentPaceMs: number;
-  /** Average 500 m pace in milliseconds (decoded from tenths-of-seconds). */
+  /** Average 500 m pace in milliseconds. */
   averagePaceMs: number;
-  /** Stroke count (Android stores ×100; reported here as whole strokes). */
+  /** Stroke count, reported as whole strokes. */
   strokeCount: number;
-  /** Distance in meters (uint32 LE at payload offset 35..38). */
+  /** Distance in meters. */
   distanceMeters: number;
-  /** Raw payload following the `aa 95 25` sub-type prefix (excludes CRC). */
+  /** Raw payload following the sub-type prefix (excludes CRC). */
   raw: Uint8Array;
 }
 
 /**
- * Decoded rowing status frame (`0xAA 0x92 ...`).
+ * Decoded rowing status frame.
  *
- * Distance is stored on-wire in **centimeters** (uint32 LE); decoder converts
- * to meters. Different unit from `0xAA 0x95 0x25` distance.
+ * Distance is reported in **meters**, converted by the decoder from the
+ * finer unit this frame uses.
  */
 export interface RowingStatusEvent {
-  /** Stroke-rate fallback (uint8 SPM) at payload offset 2. */
+  /** Stroke-rate fallback, in strokes per minute. */
   strokeRateSpm: number;
-  /** Distance in meters (decoded from centimeters at payload offset 11..14). */
+  /** Distance in meters. */
   distanceMeters: number;
-  /** Raw payload following the `aa 92` sub-type byte (excludes CRC). */
+  /** Raw payload following the sub-type byte (excludes CRC). */
   raw: Uint8Array;
 }
 
 /**
- * Decoded rowing/isometric waveform chunk (`0xAA 0x93 <variant>`).
+ * Decoded rowing/isometric waveform chunk.
  *
  * In rowing mode each sample is a force value in **tenths of pounds** (NOT
  * Newtons — the isometric-mode parser scales tenths-lb by `LB_TO_NEWTONS`,
  * but rowing samples are reported as tenths-lb directly).
  *
- * `chunkIndex` lets the consumer reassemble multi-chunk waveforms; reset rule
- * follows Android (`chunkIndex <= 1 || chunkIndex <= lastChunkIndex` resets
- * the buffer).
+ * `chunkIndex` lets the consumer reassemble multi-chunk waveforms. Reset the
+ * buffer whenever the index fails to advance.
  */
 export interface WaveformChunkEvent {
-  /** Variant marker byte (`0xCC`, `0x82`, or `0xA8`) at payload offset 1. */
+  /** Variant marker byte distinguishing isometric from rowing. */
   variant: number;
-  /** Chunk index (uint8) at payload offset 2. */
+  /** Chunk index (uint8). */
   chunkIndex: number;
-  /** Number of declared samples (uint16 LE at payload offset 4..5). */
+  /** Number of declared samples (uint16 LE). */
   declaredSampleCount: number;
-  /** Decoded samples (uint16 LE) starting at payload offset 6. */
+  /** Decoded samples (uint16 LE). */
   samples: Uint16Array;
   /** Sample unit (informational). */
   sampleUnit: 'tenths-of-pounds';
-  /** Raw payload following the `aa 93` sub-type byte (excludes CRC). */
+  /** Raw payload following the sub-type byte (excludes CRC). */
   raw: Uint8Array;
 }
 
@@ -569,19 +564,13 @@ export interface Cmd10Param {
 /**
  * Decoded `cmd=0x10` async-state cascade frame.
  *
- * `frame[10]` = `0x10` (async-state cmd byte).
- * `frame[11]` = paramCount (= inner-cmd discriminator from the runbook):
- *   - `0x01` = single-param update (frame length 18 for uint8 value, 19 for
- *     uint16 value).
- *   - `0x02` = structural / mode-switch update (typically two params; e.g.,
- *     `0x3e89` + `0x4fb0` together).
- *   - `0x09` = full-state cascade (9 params, frame length 46 = canonical
- *     `settingsUpdate`).
- * `frame[12]` = 0x00 (reserved).
- * `frame[13..]` = `<paramID-LE><value>` repeated `paramCount` times.
+ * The payload is a param count, a reserved byte, then that many
+ * `<paramID-LE><value>` pairs. The count doubles as a discriminator: one
+ * param is a single-setting update, two is a structural / mode-switch
+ * update, and a full cascade carries the whole settings bag.
  */
 export interface Cmd10AsyncState {
-  /** Paramater count (frame[11]); also serves as the inner-cmd discriminator. */
+  /** Parameter count; also serves as the inner-cmd discriminator. */
   paramCount: number;
   /** Decoded parameters in wire order. */
   params: Cmd10Param[];

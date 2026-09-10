@@ -40,12 +40,12 @@ import type { PerRepEvent, SummaryEvent, SetSummaryEvent, InProgressEvent } from
 /**
  * Param ID for damperLevel.
  *
- * Wire byte order is `[0x03, 0x51]` (uint16 LE encoding of the paramID
- * `0x5103`); `bytesToHex([0x03, 0x51]) = '0351'`. The convention elsewhere
- * in this decoder treats `paramIdHex` as the wire-byte hex string, so the
- * literal here is `'0351'` — matching the bytes the device actually sends
- * (verified on-device, and against the protocol-data `damperLevel` TX
- * command bytes which encode the paramID identically).
+ * The literal below is the WIRE-byte hex string — the paramID's two bytes in
+ * little-endian order, not the paramID itself. The convention elsewhere in
+ * this decoder treats `paramIdHex` the same way, so this matches the bytes
+ * the device actually sends (verified on-device, and against the
+ * protocol-data `damperLevel` TX command bytes, which encode the paramID
+ * identically).
  *
  * damperLevel was identified on-device 2026-05-06 as one of the ~9 registers
  * in the settingsUpdate curated subset. Hardcoded here pending a future regen
@@ -54,24 +54,24 @@ import type { PerRepEvent, SummaryEvent, SetSummaryEvent, InProgressEvent } from
 const DAMPER_LEVEL_PARAM_ID_HEX = '0351';
 
 // <Decoder-cmd07-cmd10> ==========================================================
-// Frame-byte offsets and constants for the async-state (cmd=0x10) and
-// state-dump (cmd=0x07 / 52-byte aa80-25) decode paths added in Phase 1a.
+// Frame-byte offsets and constants for the async-state and state-dump
+// decode paths added in Phase 1a.
 // All other frame types continue to flow through the legacy header-based
 // dispatch in `identifyMessageType`.
 // ==========================================================
-/** Frame offset of the cmd byte (10) — matches `VendorMessages.cmdByteOffset`. */
+/** Frame offset of the cmd byte — matches `VendorMessages.cmdByteOffset`. */
 const CMD_BYTE_OFFSET = 10;
-/** Async-state cmd byte (10 → cmd=0x10 → `frame[10] === 0x10`). */
+/** Cmd byte identifying an async-state frame. */
 const CMD_ASYNC_STATE = 0x10;
-/** Inner-cmd discriminator byte for cmd=0x10 frames (also = paramCount). */
+/** Offset of the inner-cmd discriminator, which doubles as the param count. */
 const CMD10_PARAM_COUNT_OFFSET = 11;
-/** Reserved byte 12 (always 0x00) followed by params at byte 13 onward. */
+/** Offset of the first param; the byte before it is reserved and always zero. */
 const CMD10_FIRST_PARAM_OFFSET = 13;
 /**
- * Sub-type bytes of the Phase-1a state-dump frame (52-byte `aa 80 25`
- * envelope, called "cmd=0x07" elsewhere in this decoder). The 4-byte
- * frame header `5534 04 ac` aliases the legacy `statusBattery` notification
- * length, so this dispatch must precede the 2-byte `5534` header check.
+ * Sub-type bytes of the Phase-1a state-dump frame, called "cmd=0x07"
+ * elsewhere in this decoder. Its frame header aliases the legacy
+ * `statusBattery` notification length, so this dispatch must precede the
+ * 2-byte header check.
  */
 const STATE_DUMP_SUBTYPE_0: number = 0x80;
 const STATE_DUMP_SUBTYPE_1: number = 0x25;
@@ -83,18 +83,18 @@ const ROWING_SUMMARY_SUBTYPE_1 = 0x25;
 const ROWING_STATUS_SUBTYPE_0 = 0x92;
 const WAVEFORM_SUBTYPE_0 = 0x93;
 /**
- * Variant markers for the `aa 93` waveform-chunk family. `0xCC` is the
- * isometric-mode marker; `0x82` and `0xA8` are observed in iPad captures and
- * may carry rowing waveform data.
+ * Variant markers for the waveform-chunk family. The first is the
+ * isometric-mode marker; the other two are observed on-device and may carry
+ * rowing waveform data.
  */
 const WAVEFORM_VARIANT_MARKERS: ReadonlySet<number> = new Set([0xcc, 0x82, 0xa8]);
 
 // <Bug-17> Begin — cmd=0x0F bulk-read response framing constants.
-/** Frame-type byte for device-originated response frames (`0x08`). */
+/** Frame-type byte for device-originated response frames. */
 const RESPONSE_FRAME_TYPE = 0x08;
-/** Extended-length variant of {@link RESPONSE_FRAME_TYPE} (`0x09`). */
+/** Extended-length variant of {@link RESPONSE_FRAME_TYPE}. */
 const RESPONSE_FRAME_TYPE_EXTENDED = 0x09;
-/** cmd byte for the multi-paramID read response (`0x0F`). */
+/** Cmd byte for the multi-paramID read response. */
 const CMD_PARAM_READ = 0x0f;
 /** Frame offset of the param-count u16 LE in a cmd=0x0F response. */
 const CMD_0F_COUNT_OFFSET = 12;
@@ -106,8 +106,8 @@ const CMD_0F_FIRST_PARAM_OFFSET = 14;
  * responses. Only the params surfaced through `DeviceSettings` are listed —
  * the decoder uses {@link Uint16ParamIds} for everything else, falling back
  * to abort decoding if neither table covers the paramId. Bootstrap step 10
- * (18-param query) covers all of these plus QUICK_CABLE_ADJUSTMENT (`bc54`)
- * whose width is not yet known.
+ * (18-param query) covers all of these plus QUICK_CABLE_ADJUSTMENT, whose
+ * width is not yet known.
  *
  * Param IDs are stored as little-endian hex strings to match `ParamIdHex`.
  */
@@ -131,8 +131,8 @@ const CMD_0F_KNOWN_PARAM_WIDTHS: Readonly<Record<string, number>> = {
   b053: 1, // FITNESS_INVERSE_CHAIN
   c653: 1, // WEIGHT_TRAINING_EXTRA_MODE
   b04f: 1, // FITNESS_WORKOUT_STATE (training mode)
-  // damperLevel — wire byte order [0x03, 0x51] -> hex '0351' (paramID 0x5103)
-  // Corrected per B4 — was inverted '5103'.
+  // damperLevel — key is the wire-byte hex (little-endian), not the paramID.
+  // An earlier version of this table had the two bytes inverted.
   '0351': 1, // FITNESS_DAMPER_RATIO_IDX
 };
 // <Bug-17> End
@@ -236,12 +236,11 @@ export function identifyMessageType(data: Uint8Array): MessageType {
     return 'telemetry_stream';
   }
 
-  // Vendor sub-type classification. Phase A on-device validation
-  // (2026-05-05, 1369 frames) confirmed that perRep frames alias the
-  // legacy 4-byte repSummary header and inProgress frames alias the
-  // legacy 4-byte setSummary header. 2026-05-06 expanded coverage to
-  // `summary` and `setSummary` (the `aa 85 5f` per-set close marker;
-  // renamed from `preSummary` in 0.9.0).
+  // Vendor sub-type classification. On-device validation (2026-05-05, 1369
+  // frames) confirmed that perRep frames alias the legacy repSummary header
+  // and inProgress frames alias the legacy setSummary header. 2026-05-06
+  // expanded coverage to `summary` and `setSummary` (the per-set close
+  // marker; renamed from `preSummary` in 0.9.0).
   if (matchesVendorSubType(data, VendorMessages.subTypes.perRep)) {
     return 'vendor_per_rep';
   } else if (matchesVendorSubType(data, VendorMessages.subTypes.inProgress)) {
@@ -252,19 +251,18 @@ export function identifyMessageType(data: Uint8Array): MessageType {
     return 'vendor_set_summary';
   }
 
-  // <Bug-17> cmd=0x0F bulk-read response: matched on frame-type byte
-  // (0x08 or extended 0x09) AND cmd byte (0x0f). Tested before the 2-byte
-  // header dispatch because cmd=0x0F response length varies (depends on
-  // param count + value widths) and therefore cannot use a fixed-length
-  // 2-byte header match.
+  // <Bug-17> cmd=0x0F bulk-read response: matched on the frame-type byte
+  // (plain or extended) AND the cmd byte. Tested before the 2-byte header
+  // dispatch because this response's length varies with param count and
+  // value widths, so it cannot use a fixed-length header match.
   if (isCmd0x0FResponse(data)) {
     return 'cmd_0f_bulk_response';
   }
 
   // <Decoder-cmd07-cmd10> Vendor state-dump and rowing telemetry sub-types.
-  // These checks must precede the 2-byte header dispatch — the 52-byte
-  // `aa 80 25` state-dump frame aliases the `statusBattery` 4-byte header
-  // (`5534 04 ac`) and was previously yielding spurious battery readings.
+  // These checks must precede the 2-byte header dispatch — the state-dump
+  // frame aliases the `statusBattery` header and was previously yielding
+  // spurious battery readings.
   if (
     data.length >= STATE_DUMP_FRAME_LENGTH &&
     data[CMD_BYTE_OFFSET] === VendorMessages.cmdValue &&
@@ -294,14 +292,13 @@ export function identifyMessageType(data: Uint8Array): MessageType {
     return 'vendor_waveform_chunk';
   }
 
-  // <Decoder-cmd07-cmd10> Async-state cascade (cmd=0x10). Phase 1a confirmed
-  // the runbook's "inner-cmd" byte (frame[11]) is the param count: 0x01 =
-  // single-param update (frame length 18 for uint8 value, 19 for uint16),
-  // 0x02 = mode-switch / structural pair, 0x09 = full-settings cascade
-  // (= legacy `settingsUpdate` 552e). The legacy 4-byte header path
-  // (`mode_confirmation` for 5512, `multi_param` for 5516, `settings_update`
-  // for 552e) mis-classified single-param frames carrying non-trainingMode
-  // params (assist, damper, chains) — those now flow through this path.
+  // <Decoder-cmd07-cmd10> Async-state cascade. Phase 1a confirmed that the
+  // "inner-cmd" byte is really the param count, which distinguishes a
+  // single-param update from a mode-switch pair and from a full-settings
+  // cascade. The legacy 4-byte header path (`mode_confirmation`,
+  // `multi_param`, `settings_update`) mis-classified single-param frames
+  // carrying non-trainingMode params (assist, damper, chains) — those now
+  // flow through this path.
   if (data.length >= CMD10_FIRST_PARAM_OFFSET + 3 && data[CMD_BYTE_OFFSET] === CMD_ASYNC_STATE) {
     return 'cmd10_async_state';
   }
@@ -318,8 +315,8 @@ export function identifyMessageType(data: Uint8Array): MessageType {
   } else if (header2 === NotificationConfigs.deviceInit.header) {
     return 'device_init';
   } else if (header2 === NotificationConfigs.statusBattery.header) {
-    // Phase A confirmed the legacy 4-byte STATUS_UPDATE signature
-    // (553404ac) was an alias for this 2-byte path.
+    // On-device validation confirmed the legacy 4-byte STATUS_UPDATE
+    // signature was an alias for this 2-byte path.
     return 'status_update';
   }
 
@@ -458,7 +455,7 @@ export function decodeVendorSummary(data: Uint8Array): SummaryEvent | null {
 
 // setSummary peak-aggregate offsets are not carried by the regen's `fields`
 // block, so they are hardcoded here in the same style as the inProgress
-// offsets below. Both are corroborated against archived captures rather than
+// offsets below. Both are corroborated on-device rather than
 // vendor-confirmed — see `SetSummaryEvent` for the evidence and for the
 // units caveat on peak power. A time-to-peak field is believed to live in this
 // frame, but its candidate offset decodes to longer than the entire rep in a
@@ -467,7 +464,7 @@ const SET_SUMMARY_PEAK_FORCE_OFFSET = 28;
 const SET_SUMMARY_PEAK_POWER_OFFSET = 32;
 
 /**
- * Decode a vendor `aa 85 5f` set-summary frame (110 B). Per-set close marker
+ * Decode a vendor set-summary frame. Per-set close marker
  * in WT/RB/Damper modes; emitted by the device after all reps complete.
  *
  * Renamed from `decodeVendorPreSummary` in 0.9.0 — the legacy `preSummary`
@@ -560,12 +557,11 @@ function decodeSettingsUpdate(data: Uint8Array): DecodeResult {
 // <Decoder-cmd07-cmd10> ==========================================================
 // Generic cmd=0x10 async-state decoder.
 //
-// All `frame[10]=0x10` frames share the same payload structure:
-//   `frame[11] = paramCount`
-//   `frame[12] = 0x00` (reserved)
-//   `frame[13..]` = `<paramID-LE><value>` repeated `paramCount` times,
-//     where `value` is uint8 (default) or uint16 LE (param IDs in
-//     `Uint16ParamIds`). The frame trailer is a 2-byte CRC16.
+// Every async-state frame shares one payload structure: a param count, a
+// reserved byte, then that many `<paramID-LE><value>` pairs, followed by the
+// frame's CRC trailer. A value is uint8 by default, or uint16 LE for the
+// param IDs listed in `Uint16ParamIds`. The offsets are the module constants
+// above.
 //
 // `decodeCmd10` returns the structured param list; `decodeCmd10ToResult`
 // tries to project it into a `mode_confirmation` (single TRAINING_MODE
@@ -594,9 +590,9 @@ export function decodeCmd10(data: Uint8Array): Cmd10AsyncState | null {
 
 /**
  * Walk the `<paramID-LE><value>` triplets of a cmd=0x10-shaped frame. Used
- * by both the async-state path (frame[11] = count) and the legacy
- * `settingsUpdate` (`552e` 46-byte) header path. Both share the same
- * `<count> 0x00 <param>...<param>` encoding starting at `firstParamOffset`.
+ * by both the async-state path and the legacy `settingsUpdate` header path;
+ * both share the same count / reserved / param-list encoding starting at
+ * `firstParamOffset`.
  */
 function decodeCmd10Params(
   data: Uint8Array,
@@ -674,17 +670,16 @@ function decodeCmd10ToResult(data: Uint8Array): DecodeResult {
 }
 
 // =============================================================================
-// State-dump decoder (cmd=0x07 / 52-byte aa80-25 envelope)
+// State-dump decoder (cmd=0x07)
 // =============================================================================
 
 /**
- * Decode the 52-byte vendor state-dump frame (`aa 80 25 ...`).
+ * Decode the vendor state-dump frame.
  *
  * Returns `null` for any frame that doesn't match the sub-type bytes or is
- * shorter than 52 bytes. The 37-byte payload following `aa 80 25` carries
- * runtime state (active training mode, assist toggle, weight, effective
- * chain force, eccentric overload). The trailing 2 frame bytes are CRC16
- * and are NOT included in `event.raw`.
+ * shorter than a full state-dump frame. The payload carries runtime state
+ * (active training mode, assist toggle, weight, effective chain force,
+ * eccentric overload). The CRC trailer is NOT included in `event.raw`.
  *
  * Field offsets are validated on-device (2026-05-07) and fixed: an earlier
  * hypothesis that this frame used a variable layout was disproved.
@@ -695,9 +690,9 @@ export function decodeStateDump(data: Uint8Array): StateDumpEvent | null {
   if (data[CMD_BYTE_OFFSET + 1] !== STATE_DUMP_SUBTYPE_0) return null;
   if (data[CMD_BYTE_OFFSET + 2] !== STATE_DUMP_SUBTYPE_1) return null;
 
-  // Payload starts at frame[13]: byte after the `aa 80 25` sub-type prefix.
+  // Payload starts on the byte after the sub-type prefix.
   const payloadStart = CMD_BYTE_OFFSET + 3;
-  // Last 2 bytes of the 52-byte frame are CRC16 — exclude from raw.
+  // Exclude the CRC trailer from raw.
   const payloadEnd = STATE_DUMP_FRAME_LENGTH - 2;
   const raw = data.slice(payloadStart, payloadEnd);
 
@@ -727,12 +722,10 @@ function decodeStateDumpToResult(data: Uint8Array): DecodeResult {
 // =============================================================================
 
 /**
- * Decode a rowing summary frame (`0xAA 0x95 0x25`).
+ * Decode a rowing summary frame.
  *
- * Pace fields are stored on-wire as **tenths of seconds per 500 m**
- * (uint32 LE) — multiply by 100 to convert to milliseconds. Distance is in
- * **meters**. Stroke count is stored ×100 and is reported here as whole
- * strokes (rounded toward zero).
+ * Pace is reported in **milliseconds per 500 m** and distance in **meters**.
+ * Stroke count is reported as whole strokes (rounded toward zero).
  *
  * Returns `null` if the buffer doesn't match the sub-type bytes or is too
  * short to safely read all documented fields. Callers needing partial data
@@ -743,13 +736,13 @@ export function decodeRowingSummary(data: Uint8Array): RowingSummaryEvent | null
   if (data[CMD_BYTE_OFFSET + 1] !== ROWING_SUMMARY_SUBTYPE_0) return null;
   if (data[CMD_BYTE_OFFSET + 2] !== ROWING_SUMMARY_SUBTYPE_1) return null;
 
-  const payloadStart = CMD_BYTE_OFFSET + 1; // include sub-type byte at offset 0
+  const payloadStart = CMD_BYTE_OFFSET + 1; // raw includes the sub-type byte
   // Trailer is CRC16 — exclude last 2 bytes from raw if frame is long enough.
   const rawEnd = Math.max(payloadStart, data.length - 2);
   const raw = data.slice(payloadStart, rawEnd);
 
-  // Distance lives at payload[35..38] (uint32 LE meters); the canonical
-  // frame body is ≥ payload offset 39, so verify length before reading.
+  // The distance field sits near the end of the body, so verify the length
+  // before reading it.
   if (raw.length < 39) return null;
 
   return {
@@ -763,11 +756,10 @@ export function decodeRowingSummary(data: Uint8Array): RowingSummaryEvent | null
 }
 
 /**
- * Decode a rowing status frame (`0xAA 0x92 ...`). Distance unit on the
- * wire is **centimeters** (uint32 LE); decoder converts to meters.
+ * Decode a rowing status frame. Distance unit on the
+ * decoder converts to meters.
  *
- * Min frame body length 15 (= envelope 11 + sub-type 1 + payload 15-byte
- * post-sub-type body).
+ * Returns `null` if the body is shorter than the documented field span.
  */
 export function decodeRowingStatus(data: Uint8Array): RowingStatusEvent | null {
   if (data[CMD_BYTE_OFFSET] !== VendorMessages.cmdValue) return null;
@@ -786,13 +778,13 @@ export function decodeRowingStatus(data: Uint8Array): RowingStatusEvent | null {
 }
 
 /**
- * Decode a waveform chunk frame (`0xAA 0x93 <variant>`). Variant byte
- * distinguishes isometric (`0xCC`) from rowing (`0x82` / `0xA8`). Caller
- * is responsible for assembling chunks across frames using `chunkIndex`.
+ * Decode a waveform chunk frame. The variant byte distinguishes isometric
+ * from rowing. Caller is responsible for assembling chunks across frames
+ * using `chunkIndex`.
  *
  * **Sample units:** `tenths-of-pounds`. Rowing samples are tenths-of-lb
  * directly; isometric callers must scale by `LB_TO_NEWTONS = 4.4482216` to
- * get newtons (per the audit).
+ * get newtons.
  */
 export function decodeWaveformChunk(data: Uint8Array): WaveformChunkEvent | null {
   if (data[CMD_BYTE_OFFSET] !== VendorMessages.cmdValue) return null;
@@ -827,7 +819,7 @@ export function decodeWaveformChunk(data: Uint8Array): WaveformChunkEvent | null
 // <Bug-17> Begin — cmd=0x0F bulk-read response classification + decode.
 /**
  * Returns true when `data` looks like a cmd=0x0F bulk-read response. Matches
- * the frame-type byte (0x08 / 0x09) and the cmd byte (0x0F) at their
+ * the frame-type byte (plain or extended) and the cmd byte at their
  * documented offsets. Bootstrap step 10's response is the canonical instance.
  */
 function isCmd0x0FResponse(data: Uint8Array): boolean {
@@ -861,7 +853,7 @@ function readCmd0x0FValue(
 ): number {
   if (width === 1) return data[offset];
   if (width === 2) {
-    // BP_ECCENTRIC_WEIGHT (0x3e88, LE `883e`) is signed lb on the wire.
+    // BP_ECCENTRIC_WEIGHT is signed lb on the wire.
     if (paramIdHex === ParamIdHex.ECCENTRIC) return readInt16LE(data, offset);
     return readUint16LE(data, offset);
   }
@@ -943,16 +935,16 @@ export function decodeCmd0x0FResponse(data: Uint8Array): Cmd0x0FBulkResponse | n
 /**
  * Decode a device status notification.
  *
- * Phase 0.5.2 hotfix: the `5523` `deviceInit` frame's byte [11] is a sub-cmd
- * byte (constant `0xa7` as observed on-device), NOT a battery percentage.
- * Reading it produced nonsense readings (e.g. `0xa7 = 167%`). Battery now
- * comes via paramID `2d4e` through the cmd=0x10 settings cascade, so the
- * `deviceInit` branch no longer emits a `device_status` event. The `5523`
- * frame falls through to `unknown` until a proper decoder lands.
+ * Phase 0.5.2 hotfix: the byte the `deviceInit` frame was being read for
+ * battery is a sub-command marker, not a battery percentage. Reading it as
+ * battery produced impossible values, well over 100%. Battery now arrives
+ * through the cmd=0x10 settings cascade under its own paramID, so the
+ * `deviceInit` branch no longer emits a `device_status` event and the frame
+ * falls through to `unknown` until a proper decoder lands.
  *
- * The `statusBattery` (`5534`) branch is kept intact for any non-state-dump
- * `5534` traffic, but in practice the 52-byte vendor-state-dump dispatch
- * (which precedes header detection) consumes that header today.
+ * The `statusBattery` branch is kept intact for any non-state-dump traffic
+ * on that header, but in practice the vendor-state-dump dispatch (which
+ * precedes header detection) consumes it today.
  */
 function decodeDeviceStatus(data: Uint8Array): DecodeResult {
   const statusConfig = NotificationConfigs.statusBattery;
@@ -1074,19 +1066,14 @@ export function encodeTelemetryFrame(frame: TelemetryFrame): Uint8Array {
   data[2] = header[2];
   data[3] = header[3];
 
-  // Sequence (bytes 6-7)
   writeUint16LE(data, TelemetryOffsets.SEQUENCE, frame.sequence);
 
-  // Phase (byte 13)
   data[TelemetryOffsets.PHASE] = frame.phase;
 
-  // Position (bytes 24-25, unsigned)
+  // Position and force are unsigned; velocity is signed, flipping with
+  // direction. Force is in tenths of pounds.
   writeUint16LE(data, TelemetryOffsets.POSITION, frame.position);
-
-  // Force (bytes 26-27, unsigned tenths of pounds)
   writeUint16LE(data, TelemetryOffsets.FORCE, frame.force);
-
-  // Velocity (bytes 28-29, signed — sign flips with direction)
   writeInt16LE(data, TelemetryOffsets.VELOCITY, frame.velocity);
 
   return data;

@@ -73,21 +73,21 @@ export const ParameterNames: Record<ParameterId, string> = {
  * Values are 2-byte little-endian uint16.
  */
 export enum TrainingMode {
-  /** Idle (0x0000) */
+  /** Idle */
   Idle = 0x0000,
-  /** Weight Training (0x0001) */
+  /** Weight Training */
   WeightTraining = 0x0001,
-  /** Resistance Band (0x0002) */
+  /** Resistance Band */
   ResistanceBand = 0x0002,
-  /** Rowing (0x0003) */
+  /** Rowing */
   Rowing = 0x0003,
-  /** Damper (0x0004) */
+  /** Damper */
   Damper = 0x0004,
-  /** Custom Curves (0x0006) */
+  /** Custom Curves */
   CustomCurves = 0x0006,
-  /** Isokinetic (0x0007) */
+  /** Isokinetic */
   Isokinetic = 0x0007,
-  /** Isometric (0x0008) */
+  /** Isometric */
   Isometric = 0x0008,
 }
 
@@ -125,8 +125,8 @@ export const VALID_TRAINING_MODES: readonly TrainingMode[] = [
 
 /**
  * Per-mode schema version carried as the 4th sub-type byte of vendor
- * `summary` and `setSummary` frames (cmd `0xAA` + 2-byte fixed identifier
- * + this byte). Validated on-device 2026-05-06.
+ * `summary` and `setSummary` frames, after the vendor cmd and its 2-byte
+ * fixed identifier. Validated on-device 2026-05-06.
  */
 export enum VendorSchemaVersion {
   Weight = 0x01,

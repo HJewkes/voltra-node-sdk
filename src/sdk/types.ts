@@ -150,14 +150,14 @@ export type SettingsUpdateListener = (settings: DeviceSettings) => void;
 export type BatteryUpdateListener = (battery: number) => void;
 
 /**
- * State-dump listener (called when device emits a `cmd=0x07` 52-byte
- * `aa 80 25` envelope carrying chains-active flag, fitness-assist toggle, and
- * chain target weight).
+ * State-dump listener (called when the device emits a `cmd=0x07` frame
+ * carrying chains-active flag, fitness-assist toggle, and chain target
+ * weight).
  *
  * Unlike `SettingsUpdateListener`, the payload preserves the raw
- * `assistMode` byte — consumers should be aware of the asymmetric-off
- * semantics for `FITNESS_ASSIST_MODE` (idle reads as `8`, on as `1`; any
- * value other than `1` should be treated as off).
+ * `assistMode` byte — consumers should be aware that `FITNESS_ASSIST_MODE`
+ * has asymmetric-off semantics, so only the "on" code means on and every
+ * other value should be treated as off.
  */
 export type StateDumpListener = (event: StateDumpEvent) => void;
 
@@ -184,14 +184,14 @@ export type ConnectionStateListener = (state: VoltraConnectionState) => void;
 export interface PerRepEvent {
   /** 'pull' = motionPhase 1 (concentric start); 'return' = motionPhase 2 (eccentric start). */
   phase: 'pull' | 'return';
-  /** Cumulative frame counter within the set (frame[14], uint8). */
+  /** Cumulative frame counter within the set. */
   frameCounter: number;
-  /** Set counter (frame[15], uint8). */
+  /** Set counter. */
   setCounter: number;
-  /** Cumulative rep counter within the set (frame[17], uint8). */
+  /** Cumulative rep counter within the set. */
   repCount: number;
   /**
-   * Target weight in tenths of pounds (frame[19..20], uint16 LE).
+   * Target weight in tenths of pounds.
    * baseWeight × 10 in weight mode; 0 in band/damper/isokinetic.
    */
   targetWeightTenths: number;
@@ -201,23 +201,23 @@ export interface PerRepEvent {
  * Payload of a vendor `summary` frame (140 B, end-of-set).
  *
  * Each `schemaVersion` (1=weight, 2=band, 3=damper, 4=isokinetic) carries a
- * different mode-specific aggregate field map at frame offset 18+. Only the
- * universal `setCounter` / `repCount` fields are decoded — consume `raw` for
+ * different mode-specific aggregate field map. Only the universal
+ * `setCounter` / `repCount` fields are decoded — consume `raw` for
  * mode-specific fields.
  */
 export interface SummaryEvent {
   /** Schema version: 1=weight, 2=band, 3=damper, 4=isokinetic. */
   schemaVersion: VendorSchemaVersion;
-  /** Set counter (frame[14], uint8). */
+  /** Set counter. */
   setCounter: number;
-  /** Rep count (frame[16..17], uint16 LE). */
+  /** Rep count. */
   repCount: number;
   /** Raw frame bytes for downstream decoding of mode-specific aggregate fields. */
   raw: Uint8Array;
 }
 
 /**
- * Payload of a vendor `aa 85 5f` set-summary frame (110 B). The device emits
+ * Payload of a vendor set-summary frame. The device emits
  * one of these per set in WT/RB/Damper modes after all reps complete, with
  * the final `repCount` and `repDurationMs` baked in. (The legacy `preSummary`
  * label and the "fires ~3s before final rep" comment were misnomers; the
@@ -225,29 +225,29 @@ export interface SummaryEvent {
  * on-device 2026-05-06.)
  *
  * In WT/RB/Damper this is the canonical per-set close marker — the
- * `aa 86 7d` "summary" frame is workout-end / post-STOP only and may not
- * fire at all in some modes.
+ * "summary" frame is workout-end / post-STOP only and may not fire at all
+ * in some modes.
  */
 export interface SetSummaryEvent {
   /** Schema version: 1=weight, 2=band, 3=damper, 4=isokinetic. */
   schemaVersion: VendorSchemaVersion;
-  /** Target weight in tenths of pounds (frame[16..17], uint16 LE). */
+  /** Target weight in tenths of pounds. */
   targetWeightTenths: number;
-  /** Rep count (frame[26..27], uint16 LE). */
+  /** Rep count. */
   repCount: number;
-  /** Duration of the final rep in milliseconds (frame[96..99], uint32 LE). */
+  /** Duration of the final rep in milliseconds. */
   repDurationMs: number;
   /**
-   * Peak force over the set in tenths of pounds (frame[28..29], uint16 LE).
+   * Peak force over the set in tenths of pounds.
    *
-   * Corroborated offline against nine archived capture sessions: reads at or
-   * just above the set's target weight in every weight-mode capture across
-   * three target weights, and takes untargeted values in band / damper /
-   * isokinetic. Not vendor-confirmed.
+   * Corroborated on-device across nine sessions: reads at or just above the
+   * set's target weight in every weight-mode session across three target
+   * weights, and takes untargeted values in band / damper / isokinetic. Not
+   * vendor-confirmed.
    */
   peakForceTenths: number;
   /**
-   * Peak power over the set, **units unverified** (frame[32..33], uint16 LE).
+   * Peak power over the set, **units unverified**.
    *
    * The device emits this as its own field. Offline it scales with rep speed
    * as power should (a deliberately fast rep reports ~7× a deliberately slow
@@ -276,13 +276,13 @@ export interface SetSummaryEvent {
  * regen sync.
  */
 export interface InProgressEvent {
-  /** Peak force during current rep, tenths of pounds (frame[17..18], uint16 LE). */
+  /** Peak force during current rep, tenths of pounds. */
   peakForceTenths: number;
-  /** Average / current force, tenths of pounds (frame[25..26], uint16 LE). */
+  /** Average / current force, tenths of pounds. */
   currentForceTenths: number;
-  /** Velocity in cm/s — magnitude only (frame[28..29], uint16 LE). */
+  /** Velocity in cm/s — magnitude only. */
   velocityCmPerSec: number;
-  /** Target weight in tenths of pounds (frame[49..52], uint32 LE). */
+  /** Target weight in tenths of pounds. */
   targetWeightTenths: number;
   /** Raw frame bytes. */
   raw: Uint8Array;
@@ -300,12 +300,12 @@ export interface InProgressEvent {
 //
 // State machine summary:
 //   - 'idle'      — pre-trigger; no polling active
-//   - 'armed'     — trigger sent, BP_SET_FITNESS_MODE = 0x0026, awaiting pull
-//   - 'countdown' — user has pulled; safety countdown register `0x53C8` is
+//   - 'armed'     — trigger sent, mode register set to READY, awaiting pull
+//   - 'countdown' — user has pulled; the safety countdown register is
 //                   ticking down (3s nominal)
 //   - 'engaging'  — countdown reached zero, ramp in progress
-//   - 'active'    — BP_SET_FITNESS_MODE = 0x0027, engaged at target
-//   - 'exited'    — `exitGuidedLoad()` issued (write 0x0004 to 0x3E89)
+//   - 'active'    — mode register set to ACTIVE, engaged at target
+//   - 'exited'    — `exitGuidedLoad()` issued
 //   - 'timeout'   — 18s polling window closed without reaching ACTIVE
 //
 // Polling is mandatory — the device does not asynchronously push state
@@ -330,9 +330,9 @@ export type GuidedLoadPhase =
  * countdown — the value decreases monotonically from ~3000 to 0 during the
  * countdown phase and is `null` outside that phase.
  *
- * `fitnessModeRaw` is the raw value of the `BP_SET_FITNESS_MODE` register
- * (`0x3E89`): `0x0026` while armed, `0x0027` while active, and `0x0004`
- * after `exitGuidedLoad()`.
+ * `fitnessModeRaw` is the raw value of the `BP_SET_FITNESS_MODE` register,
+ * which takes a distinct value while armed, while active, and after
+ * `exitGuidedLoad()`.
  */
 export interface GuidedLoadState {
   phase: GuidedLoadPhase;
@@ -346,9 +346,7 @@ export interface GuidedLoadState {
  * `targetWeightLbs` is the **target** for the guided ramp; the device-side
  * start floor is fixed and cannot be controlled.
  *
- * `pollIntervalMs` / `pollDurationMs` defaults match the Android client
- * (`ISOMETRIC_VENDOR_REFRESH_INTERVAL_MILLIS = 500ms`,
- * `DIRECT_LOAD_VENDOR_REFRESH_BURST_MILLIS = 18000ms`).
+ * `pollIntervalMs` defaults to 500ms and `pollDurationMs` to 18000ms.
  */
 export interface GuidedLoadOptions {
   /** Target weight in pounds (range follows `setWeight`'s validation). */

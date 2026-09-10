@@ -29,7 +29,7 @@ export const Auth = {
 // =============================================================================
 
 /**
- * Bootstrap step 10 — 18-param mode-feature-state read (cmd=0x0F).
+ * Bootstrap step 10 — 18-param mode-feature-state read.
  *
  * NOTE: This packet is NOT currently sent during `Init.SEQUENCE`. Sending it
  * during cold bootstrap caused the device firmware to drop the GATT link,
@@ -74,7 +74,7 @@ export const Init = {
 export const Workout = {
   /**
    * Legacy "prepare" frame — a single-param write of
-   * `FITNESS_WORKOUT_STATE = WeightTraining` (`0x4FB0 = 01`).
+   * `FITNESS_WORKOUT_STATE = WeightTraining`.
    *
    * **SDK-01.13:** no longer used by the recording path. It is functionally
    * `setMode(WeightTraining)` and, run before GO, silently clobbered the
@@ -84,17 +84,14 @@ export const Workout = {
    */
   PREPARE: hexToBytes(protocol.commands.workout.prepare),
   /**
-   * Multi-paramID READ for `MC_DEFAULT_OFFLEN_CM` (`0x506a`, LE bytes `6a 50`)
-   * + `BP_RUNTIME_POSITION_CM` (`0x3e82`, LE bytes `82 3e`).
+   * Multi-paramID READ for `MC_DEFAULT_OFFLEN_CM` + `BP_RUNTIME_POSITION_CM`.
    *
    * Phase 0.5.2 reclassification: previously documented as "Configure
-   * workout mode," but the byte layout (cmdID `0x0F` + reserved
-   * `[0x02, 0x00]` + paramID pair, no value bytes between paramIDs and
-   * CRC16) is the Type-C "config / multi-paramID read" envelope, not a
-   * setter. The device responds with a `cmd_0f_bulk_response` carrying
-   * the saved cable offset (`MC_DEFAULT_OFFLEN_CM`) and the live cable
-   * position (`BP_RUNTIME_POSITION_CM`). Canonical bytes are
-   * `55 13 04 03 aa 10 15 00 20 00 0f 02 00 6a 50 82 3e 8f 2f`.
+   * workout mode," but its wire layout carries a paramID pair with no value
+   * bytes, which makes it the Type-C "config / multi-paramID read" envelope
+   * rather than a setter. The device responds with a `cmd_0f_bulk_response`
+   * carrying the saved cable offset (`MC_DEFAULT_OFFLEN_CM`) and the live
+   * cable position (`BP_RUNTIME_POSITION_CM`).
    *
    * Kept under `Workout` for now to preserve the bootstrap-sequence
    * call-site contract; Phase 1 of the codegen refactor will relocate

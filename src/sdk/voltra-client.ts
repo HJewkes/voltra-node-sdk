@@ -793,9 +793,9 @@ export class VoltraClient {
    *   via {@link onModeRevertEvent}). The latch self-clears after the window
    *   so a user-initiated mode change via the device UI doesn't trip it.
    *
-   * **Bug 22 rationale.** Rowing is the only `FITNESS_WORKOUT_STATE`
-   * (`0x4FB0 = 3`) that does not respond to the strength-arm primitive
-   * (`BP_SET_FITNESS_MODE = 5`). Writing the strength-arm while the device is
+   * **Bug 22 rationale.** Rowing is the only `FITNESS_WORKOUT_STATE` that
+   * does not respond to the strength-arm primitive. Writing it while the
+   * device is
    * on the rowing screen is silently reinterpreted as a strength session,
    * reverting the rowing flow — HIGH safety severity. The two-stage path
    * commits via `EP_SCR_SWITCH` action codes, which is the only correct
@@ -854,9 +854,8 @@ export class VoltraClient {
   // Rowing Two-Stage Entry (Bug 22)
   // ===========================================================================
   //
-  // Rowing commits via `EP_SCR_SWITCH (0x5165)` followed by a vendor
-  // state-refresh pulse (`0xAA 0x13 0x01`), NOT via the strength-mode GO
-  // (`BP_SET_FITNESS_MODE ← 5`). The original SDK's `setMode(Rowing)` +
+  // Rowing commits via `EP_SCR_SWITCH` followed by a vendor state-refresh
+  // pulse, NOT via the strength-mode GO. The original SDK's `setMode(Rowing)` +
   // `startRecording()` flow silently issued the strength-mode GO during
   // session_start, which caused the device to revert out of rowing mid-
   // session — Bug 22, HIGH safety severity.
@@ -872,10 +871,9 @@ export class VoltraClient {
    * Stage 1 of Rowing entry — open the rowing sub-menu (Just Row /
    * Distance presets) without engaging resistance.
    *
-   * Sends the existing `BP_SET_FITNESS_MODE ← 0x0003` (a.k.a.
-   * `FITNESS_WORKOUT_STATE = ROWING`) frame. After this returns
-   * successfully the device is on the rowing screen but `BP_SET_FITNESS_MODE`
-   * still reads `0x0004` (READY); the cable must NOT engage. Call
+   * Sends the existing `FITNESS_WORKOUT_STATE = ROWING` frame. After this
+   * returns successfully the device is on the rowing screen but
+   * `BP_SET_FITNESS_MODE` still reads READY; the cable must NOT engage. Call
    * {@link startRow} to commit into a live rowing session.
    *
    * Idempotent — calling repeatedly is safe.
@@ -904,24 +902,21 @@ export class VoltraClient {
   /**
    * Stage 2 of Rowing entry — commit into a live rowing session.
    *
-   * Writes `EP_SCR_SWITCH ← <action> 3E 00 01` (action picks the preset
-   * screen) followed by the `0xAA 0x13 0x01` vendor state-refresh pulse.
-   * Schedules three reassert ticks at +750 / +1750 / +3000 ms (matching
-   * the Android cadence) to recover from BLE-flake drops where the device
-   * silently fails to enter rowing-active.
+   * Writes `EP_SCR_SWITCH` with the action that picks the preset screen,
+   * followed by the vendor state-refresh pulse. Schedules three reassert
+   * ticks at +750 / +1750 / +3000 ms to recover from BLE-flake drops where
+   * the device silently fails to enter rowing-active.
    *
    * Successful commit (verified externally — the SDK does not yet decode
-   * the confirmation frames):
-   *   - `BP_SET_FITNESS_MODE → 0x0015` (FITNESS_MODE_ROWING_ACTIVE)
-   *   - `APP_CUR_SCR_ID → 0x3E`
-   *   - `FITNESS_ONGOING_UI → 0x0303`
-   *   - `0xAA 0x95 0x25` rowing telemetry begins
+   * the confirmation frames) moves `BP_SET_FITNESS_MODE` to
+   * FITNESS_MODE_ROWING_ACTIVE, advances the current-screen and ongoing-UI
+   * registers, and starts rowing telemetry.
    *
    * Note on distance presets: the device does not receive a native
    * target-distance register — `EP_SCR_SWITCH` only selects the preset
-   * *screen*. The iPad enforces stroke targets app-side
+   * *screen*. The client app enforces stroke targets
    * (`50m=10×5`, `5000m=1000×5`); SDK consumers are expected to do the
-   * same comparing live distance from the AA95 stream.
+   * same comparing live distance from the rowing summary stream.
    *
    * Must be preceded by {@link enterRowMode}; otherwise this throws.
    *
@@ -1010,8 +1005,8 @@ export class VoltraClient {
   // ===========================================================================
   //
   // Settings persist GLOBALLY across mode switches. Resolves on adapter.write
-  // completion; no modeConfirmation notification is emitted for opcode 0xa9 /
-  // 0xc7 setters. `client.settings` does not currently reflect these values;
+  // completion; no modeConfirmation notification is emitted for these
+  // setters. `client.settings` does not currently reflect these values;
   // the device does not echo them in settings-update notifications as of
   // protocol v0.5.0.
 
@@ -1019,14 +1014,13 @@ export class VoltraClient {
    * Set damper level.
    *
    * Settings persist GLOBALLY across mode switches. Resolves on adapter.write
-   * completion; no modeConfirmation notification is emitted for opcode 0xa9 /
-   * 0xc7 setters.
+   * completion; no modeConfirmation notification is emitted for these setters.
    *
    * Note: the underlying value is 0-9; the Voltra UI displays this as N+1
    * (i.e. level 0 -> "1" in the app).
    *
    * Reflected in `client.settings.damperLevel` once the device emits the next
-   * `settingsUpdate` notification (paramId 0x0351).
+   * `settingsUpdate` notification.
    *
    * @param level Damper level (0-9)
    */
@@ -1053,8 +1047,7 @@ export class VoltraClient {
    * Set assist mode (off / on).
    *
    * Settings persist GLOBALLY across mode switches. Resolves on adapter.write
-   * completion; no modeConfirmation notification is emitted for opcode 0xa9 /
-   * 0xc7 setters.
+   * completion; no modeConfirmation notification is emitted for these setters.
    *
    * Note: `client.settings` does not currently reflect this value; the device
    * does not echo it in settings-update notifications as of protocol v0.5.0.
@@ -1084,8 +1077,7 @@ export class VoltraClient {
    * Set resistance band max force.
    *
    * Settings persist GLOBALLY across mode switches. Resolves on adapter.write
-   * completion; no modeConfirmation notification is emitted for opcode 0xa9 /
-   * 0xc7 setters.
+   * completion; no modeConfirmation notification is emitted for these setters.
    *
    * Note: `client.settings` does not currently reflect this value; the device
    * does not echo it in settings-update notifications as of protocol v0.5.0.
@@ -1115,8 +1107,7 @@ export class VoltraClient {
    * Set isokinetic target speed.
    *
    * Settings persist GLOBALLY across mode switches. Resolves on adapter.write
-   * completion; no modeConfirmation notification is emitted for opcode 0xa9 /
-   * 0xc7 setters.
+   * completion; no modeConfirmation notification is emitted for these setters.
    *
    * Unit conversion: input is mm/s. The Voltra UI shows the same value
    * divided by 1000 (m/s) — e.g. 1500 mm/s renders as "1.5 m/s".
@@ -1153,8 +1144,7 @@ export class VoltraClient {
    * Set isokinetic eccentric mode.
    *
    * Settings persist GLOBALLY across mode switches. Resolves on adapter.write
-   * completion; no modeConfirmation notification is emitted for opcode 0xa9 /
-   * 0xc7 setters.
+   * completion; no modeConfirmation notification is emitted for these setters.
    *
    * Note: `client.settings` does not currently reflect this value; the device
    * does not echo it in settings-update notifications as of protocol v0.5.0.
@@ -1184,8 +1174,7 @@ export class VoltraClient {
    * Set isokinetic eccentric speed limit.
    *
    * Settings persist GLOBALLY across mode switches. Resolves on adapter.write
-   * completion; no modeConfirmation notification is emitted for opcode 0xa9 /
-   * 0xc7 setters.
+   * completion; no modeConfirmation notification is emitted for these setters.
    *
    * Note: `client.settings` does not currently reflect this value; the device
    * does not echo it in settings-update notifications as of protocol v0.5.0.
@@ -1219,8 +1208,7 @@ export class VoltraClient {
    * Set isokinetic eccentric constant-mode weight.
    *
    * Settings persist GLOBALLY across mode switches. Resolves on adapter.write
-   * completion; no modeConfirmation notification is emitted for opcode 0xa9 /
-   * 0xc7 setters.
+   * completion; no modeConfirmation notification is emitted for these setters.
    *
    * Warning: when set on a connected device, this command causes an audible
    * beep on the unit — possibly a safety/range cue from the firmware. The
@@ -1258,8 +1246,7 @@ export class VoltraClient {
    * Set isokinetic eccentric overload-mode weight.
    *
    * Settings persist GLOBALLY across mode switches. Resolves on adapter.write
-   * completion; no modeConfirmation notification is emitted for opcode 0xa9 /
-   * 0xc7 setters.
+   * completion; no modeConfirmation notification is emitted for these setters.
    *
    * Warning: when set on a connected device, this command causes an audible
    * beep on the unit — possibly a safety/range cue from the firmware. The
@@ -1513,8 +1500,8 @@ export class VoltraClient {
   // The firmware "direct-load" flow ramps from a fixed start floor to the
   // user's target weight after a single trigger byte. After we send the
   // trigger, the device does NOT push any state-change frames — the SDK
-  // must poll the 4 status registers (`0x538D` / `0x53C7` / `0x53C8` /
-  // `0x53C9`) every 500ms to observe the READY → ACTIVE transition. This
+  // must poll the 4 status registers every 500ms to observe the
+  // READY → ACTIVE transition. This
   // method drives that polling for you and surfaces a `GuidedLoadState`
   // object via `onGuidedLoadState`.
 
@@ -1537,15 +1524,14 @@ export class VoltraClient {
    * stops automatically after the duration elapses (`phase: 'timeout'` if
    * the device never reached ACTIVE).
    *
-   * **Sequence (mirrors AndroidVoltraClient.directLoad).**
+   * **Sequence.**
    *
    *   1. {@link setWeight}`(targetWeightLbs)` — writes BP_BASE_WEIGHT (target).
-   *   2. Write the `0xAA 0x12` direct-load trigger frame.
+   *   2. Write the direct-load trigger frame.
    *   3. Transition `phase: 'idle' → 'armed'` synchronously so observers see
    *      the armed state even if the first poll response is delayed.
    *   4. `setInterval(pollGuidedLoadStatus, pollIntervalMs)` (default 500ms)
-   *      reads the 4 status registers (`0x538D`/`0x53C7`/`0x53C8`/`0x53C9`)
-   *      and advances the state machine.
+   *      reads the 4 status registers and advances the state machine.
    *   5. `setTimeout(stopPolling, pollDurationMs)` (default 18000ms) closes
    *      the window. The terminal phase is `'timeout'` if ACTIVE was never
    *      observed; `'exited'` if {@link exitGuidedLoad} was called; `'active'`
@@ -1635,7 +1621,7 @@ export class VoltraClient {
 
   /**
    * Exit the guided-load flow cleanly by writing
-   * `BP_SET_FITNESS_MODE = 0x0004` (STRENGTH_READY). Stops the poll loop
+   * `BP_SET_FITNESS_MODE = STRENGTH_READY`. Stops the poll loop
    * and transitions state to `'exited'`.
    *
    * @experimental — see {@link startGuidedLoad}.
@@ -1682,12 +1668,13 @@ export class VoltraClient {
    *
    * **SDK-01.13:** the `Workout.PREPARE` write was removed. It is a
    * single-param write of `FITNESS_WORKOUT_STATE = WeightTraining`
-   * (`0x4FB0 = 01`) and touches no other register — functionally
+   * and touches no other register — functionally
    * `setMode(WeightTraining)`. Running it before GO silently reset the
    * caller's selected fitness mode: Band survived (its `band_max_force`
    * register is independent) but Damper/Isokinetic were clobbered back to
    * WeightTraining because their coefficient registers only take effect
-   * while `0x4FB0` names that mode. The selected mode is already written by
+   * while `FITNESS_WORKOUT_STATE` names that mode. The selected mode is
+   * already written by
    * {@link setMode} before recording, so PREPARE was redundant for WT and
    * harmful for every other mode. Hardware-confirmed 2026-07-07 bench:
    * `setMode(Damper) → SETUP → GO` with PREPARE omitted holds damper-active
@@ -1883,7 +1870,7 @@ export class VoltraClient {
    * end-of-set.
    *
    * Each `schemaVersion` (1=weight, 2=band, 3=damper, 4=isokinetic) carries
-   * a different mode-specific aggregate field map at frame offset 18+ — only
+   * a different mode-specific aggregate field map — only
    * the universal `setCounter` / `repCount` fields are decoded. Consume
    * `event.raw` for fields beyond those two.
    *
@@ -1896,11 +1883,11 @@ export class VoltraClient {
   }
 
   /**
-   * Subscribe to typed `aa 85 5f` set-summary frame events. The device emits
-   * one of these per set in WT/RB/Damper modes after all reps complete, with
-   * the final `repCount` and `repDurationMs` baked in. This is the canonical
-   * per-set close marker — `onSummary` (`aa 86 7d`) is workout-end / post-STOP
-   * only and may not fire at all in some modes.
+   * Subscribe to typed set-summary frame events. The device emits one of
+   * these per set in WT/RB/Damper modes after all reps complete, with the
+   * final `repCount` and `repDurationMs` baked in. This is the canonical
+   * per-set close marker — `onSummary` is workout-end / post-STOP only and
+   * may not fire at all in some modes.
    *
    * Renamed from `onPreSummary` in 0.9.0 — the legacy name + "fires before
    * final rep" docstring were misnomers; the frame fires post-final-rep.
@@ -1992,16 +1979,16 @@ export class VoltraClient {
   }
 
   /**
-   * Subscribe to `cmd=0x07` state-dump events (52-byte `aa 80 25` envelope).
+   * Subscribe to `cmd=0x07` state-dump events.
    *
    * The payload exposes fields that the legacy `settings_update` decode does
    * NOT surface — chains-active flag, fitness-assist toggle, chain target
    * weight in tenths of pounds. Use this listener to react to assist-mode
    * transitions (Bug 26) and chain-engagement state changes.
    *
-   * The raw `assistMode` byte is preserved (`1` = on, `8` = idle, anything
-   * else should be treated as off — `FITNESS_ASSIST_MODE` has asymmetric-off
-   * semantics).
+   * The raw `assistMode` byte is preserved. `FITNESS_ASSIST_MODE` has
+   * asymmetric-off semantics: only the "on" code means on, and every other
+   * value should be treated as off.
    *
    * @param listener State-dump listener
    * @returns Unsubscribe function
@@ -2267,10 +2254,10 @@ export class VoltraClient {
       next.countdownRemainingMs = fields.countdownMs;
     }
 
-    // Phase resolution rules (mirrors §3-§5 of the design proposal):
-    //  * raw mode 0x0027 → 'active' (engaged at target). Stop polling.
-    //  * raw mode 0x0026 + countdownMs > 0 → 'countdown' (armed, ticking).
-    //  * raw mode 0x0026 + no countdown info → 'armed'.
+    // Phase resolution rules:
+    //  * ACTIVE mode → 'active' (engaged at target). Stop polling.
+    //  * ARMED mode + countdownMs > 0 → 'countdown' (armed, ticking).
+    //  * ARMED mode + no countdown info → 'armed'.
     //  * primaryStatus signals the arm bit; without a fitness-mode
     //    register echo we fall back to it for state inference.
     const mode = next.fitnessModeRaw;
