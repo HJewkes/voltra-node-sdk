@@ -2,40 +2,21 @@
 /**
  * Frame Factories
  *
- * Test utilities that produce well-formed protocol frames (correct CRC,
- * correct envelope, correct sub-type bytes) for any documented frame type.
+ * Test utilities that produce well-formed frames for any documented frame
+ * type, so tests can express intent through a typed signature rather than a
+ * magic hex string.
  *
- * History:
- *   - `buildVendorRepSetFrame` was removed in favor of `buildVendorPerRepFrame`
- *     and `buildVendorSummaryFrame` after offline archaeology (2026-05-05) showed
- *     the original `repSet` metadata was incorrect.
+ * Each factory's signature reflects the documented field shape. Factories for
+ * types whose fields are not yet validated take a raw payload instead. All of
+ * them accept `FrameOpts` for sequence number, length padding and
+ * sender/receiver override.
  *
- * Used by:
- *   - voltra-private's own tests (verifying factory output against metadata)
- *   - voltra-node-sdk's decoder tests (synthesizing inbound frames the SDK
- *     should be able to parse — copied via build.ts as a `.generated.ts`
- *     companion to `protocol-data.generated.ts`)
- *
- * Design intent:
- *   - Each factory's signature reflects the **documented** field shape, so
- *     tests can express intent: `buildVendorPerRepFrame({ motionPhase: 'pull',
- *     frameCounter: 0, setCounter: 1, repCount: 5 })` instead of magic hex strings.
- *   - Factories that ship without validated field offsets (rowing, isometric)
- *     take a raw payload and only handle the envelope + sub-type bytes.
- *   - All factories accept `FrameOpts` for sequence number, total length
- *     padding, and sender/receiver override.
- *
- * Wire-format drift protection: factory tests in `frame-factories.test.ts`
- * round-trip every output through the same metadata that decoders use.
- * If the protocol envelope changes, factory tests fail; if frame factories
- * silently drift, the SDK's decoder tests fail.
+ * Factories are round-tripped against the same metadata decoders use, so a
+ * silent drift on either side fails a test rather than shipping.
  */
 
 import { calculateCRC8, calculateCRC16 } from './checksum.generated';
 import { TELEMETRY_CONFIG } from './telemetry-config-source.generated';
-// Inlined from the private toolchain's protocol enums.
-// Per-mode schema version for the 4th sub-type byte of vendor summary /
-// setSummary frames (cmd 0xAA + 2-byte fixed identifier + this byte).
 export enum VendorSchemaVersion {
   Weight = 0x01,
   Band = 0x02,
@@ -43,7 +24,6 @@ export enum VendorSchemaVersion {
   Isokinetic = 0x04,
 }
 
-// Inlined from the private toolchain's protocol enums (type-only, no runtime impact).
 type ValueType = 'uint8' | 'uint16' | 'int16' | 'uint32' | 'int32';
 interface ParamDefinition {
   readonly id: number;
@@ -71,20 +51,19 @@ const VENDOR_MESSAGES = TELEMETRY_CONFIG.vendorMessages;
 // =============================================================================
 
 export interface FrameOpts {
-  /** Frame-offset 6–7 sequence value. Defaults to `0x2000`. */
+  /**
+   * Sequence value for the frame.
+   */
   sequence?: number;
   /**
-   * Pad payload to hit this exact frame length. Useful when the documented
-   * frame length exceeds the meaningful payload (e.g. per-rep boundary is
-   * 74 bytes but only the first ~7 bytes carry information). Defaults to
-   * the minimum size for the supplied payload.
+   * Pad payload to hit this exact frame length. Defaults to the minimum size
+   * for the supplied payload.
    */
   totalLength?: number;
   /**
-   * Override sender/receiver bytes at frame offsets 4–5. Defaults to the
-   * direction expected for the frame type — `[0xAA, 0x10]` for outbound
-   * (app→device) commands, `[0x10, 0xAA]` for inbound (device→app)
-   * notifications and responses.
+   * Override the sender/receiver pair. Defaults to the direction expected for
+   * the frame type — outbound (app→device) for commands, inbound (device→app)
+   * for notifications and responses.
    */
   senderReceiver?: readonly [number, number];
 }
@@ -95,15 +74,6 @@ export interface FrameOpts {
 
 /**
  * Build a frame with arbitrary cmd byte and payload, computing both CRCs.
- *
- * Layout (frame offsets):
- *   0..3   universal header (start marker, length, category, header CRC8)
- *   4..5   sender/receiver
- *   6..7   sequence (LE uint16)
- *   8..9   header suffix (constant)
- *   10     cmd byte
- *   11..N-3 payload (caller-supplied, padded with zeros if `totalLength` is set)
- *   N-2..N-1 CRC16 (LE)
  *
  * Default sender/receiver is `APP_TO_DEVICE`. Override via `opts.senderReceiver`.
  */
@@ -141,7 +111,6 @@ export function buildEnvelopedFrame(
   frame[9] = HEADER_SUFFIX[1];
   frame[10] = cmdId;
   frame.set(payload, 11);
-  // Bytes between payload-end and CRC stay zero (Uint8Array default).
 
   const crc = calculateCRC16(frame.subarray(0, totalSize - 2));
   frame[totalSize - 2] = crc & 0xff;
@@ -179,7 +148,7 @@ export function buildParametricFrame(
 }
 
 // =============================================================================
-// Identity response frames (inbound, PR 5)
+// Identity response frames (inbound)
 // =============================================================================
 
 export type IdentityOpcodeKey =
@@ -192,10 +161,8 @@ export type IdentityOpcodeKey =
 /**
  * Build a device-to-app identity response frame.
  *
- * String payloads are encoded as ASCII and null-terminated (matches the
- * presumed `0x4F` device-name and `0x77` firmware-versions encoding). Pass a
- * `Uint8Array` directly to control the bytes exactly (e.g. for the binary
- * `0x19` serial-number response).
+ * String payloads are encoded as ASCII and null-terminated. Pass a
+ * `Uint8Array` directly to control the bytes exactly.
  */
 export function buildIdentityResponseFrame(
   opcode: IdentityOpcodeKey,
@@ -224,16 +191,16 @@ function encodeAsciiNullTerminated(s: string): Uint8Array {
 }
 
 // =============================================================================
-// Vendor messages — typed (per-rep boundary + summary, PR 2)
+// Vendor messages — typed (per-rep boundary + summary)
 // =============================================================================
 
 export type PerRepMotionPhase = 'pull' | 'return';
 
 /**
- * Build a vendor per-rep boundary frame (`0xAA 0x82 0x3B`, 74 bytes).
+ * Build a vendor per-rep boundary frame.
  *
- * Field positions follow `TELEMETRY_CONFIG.vendorMessages.subTypes.perRep.fields`.
- * Sender/receiver defaults to `DEVICE_TO_APP`.
+ * Field positions and frame length come from the metadata rather than from
+ * this file. Sender/receiver defaults to `DEVICE_TO_APP`.
  */
 export function buildVendorPerRepFrame(
   fields: {
@@ -245,10 +212,9 @@ export function buildVendorPerRepFrame(
   opts: FrameOpts = {},
 ): Uint8Array {
   const cfg = VENDOR_MESSAGES.subTypes.perRep;
-  const payloadSize = cfg.frameLength - 13; // envelope = 11 header + 2 CRC
+  const payloadSize = cfg.frameLength - 13;
   const payload = new Uint8Array(payloadSize);
 
-  // Sub-type identifier bytes at payload offset 0–1.
   payload[0] = cfg.identifierBytes[0];
   payload[1] = cfg.identifierBytes[1];
 
@@ -270,15 +236,12 @@ export function buildVendorPerRepFrame(
 }
 
 /**
- * Build a vendor end-of-workout summary frame
- * (`0xAA 0x86 0x7D <schemaVersion>`, 140 bytes).
+ * Build a vendor end-of-workout summary frame.
  *
- * The 4-byte sub-type is composed of cmd `0xAA` + 2-byte fixed identifier
- * `[0x86, 0x7D]` + 1-byte per-mode schema version (see `VendorSchemaVersion`).
- * Field positions follow `TELEMETRY_CONFIG.vendorMessages.subTypes.summary.fields`.
- * Sender/receiver defaults to `DEVICE_TO_APP`. Bytes after the documented fields
- * (frame offset 18+) are zero-padded — the device emits aggregate stats there
- * but the layout is not yet decoded.
+ * The sub-type varies per mode; pass the matching `VendorSchemaVersion`. Field
+ * positions and frame length come from the metadata rather than from this
+ * file. Sender/receiver defaults to `DEVICE_TO_APP`; anything past the
+ * documented fields is zero-padded.
  */
 export function buildVendorSummaryFrame(
   fields: {
@@ -292,15 +255,12 @@ export function buildVendorSummaryFrame(
   const payloadSize = cfg.frameLength - 13;
   const payload = new Uint8Array(payloadSize);
 
-  // 2-byte fixed identifier at payload offsets 0–1.
   payload[0] = cfg.identifierBytes[0];
   payload[1] = cfg.identifierBytes[1];
-  // 1-byte schema version completes the 4-byte sub-type at payload offset 2.
   payload[cfg.schemaVersionByteOffset] = fields.schemaVersion & 0xff;
 
   payload[cfg.fields.setCounter.payloadOffset] = fields.setCounter & 0xff;
 
-  // repCount is little-endian per offline-archaeology validation 2026-05-05.
   const off = cfg.fields.repCount.payloadOffset;
   payload[off] = fields.repCount & 0xff;
   payload[off + 1] = (fields.repCount >> 8) & 0xff;
@@ -313,15 +273,15 @@ export function buildVendorSummaryFrame(
 }
 
 // =============================================================================
-// Vendor messages — raw payload (rowing PR 3, isometric PR 4)
+// Vendor messages — raw payload
 // =============================================================================
 
 export type RawVendorSubType = 'rowing' | 'isometricSummary' | 'isometricWaveform';
 
 /**
  * Build a vendor frame for a sub-type whose field layout is not yet validated.
- * Caller supplies the payload bytes following the sub-type identifier; the
- * factory adds the envelope + sub-type identifier + CRC.
+ * Caller supplies the payload bytes; the factory supplies everything the
+ * metadata already describes.
  *
  * `totalLength` defaults to the metadata's `frameLength` if non-null,
  * otherwise to the minimum size needed for the supplied payload.
