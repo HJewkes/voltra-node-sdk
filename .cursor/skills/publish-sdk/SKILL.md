@@ -66,12 +66,18 @@ The SDK is public. The protocol is proprietary. Scan for accidental leaks.
 npm run audit:privacy
 ```
 
-This runs `scripts/audit-privacy.sh` which checks for:
+This runs `scripts/audit-privacy.sh`, which runs in CI on every pull request
+and checks for:
+
 1. No `private/` directory in the repo
-2. No raw protocol hex prefix (`55130403`) outside generated files
-3. No CRC init constant (`0x3692`) outside generated files
-4. No references to `voltra-private` or private data paths in source
+2. No path into the private repo beyond its build entry point
+3. No capture, research or derivation references
+4. No verbatim capture in prose or configuration
 5. No stray JSON data files in `src/`
+
+The checks are written against SHAPES, never against the spelling of a value:
+this file and that script are as public as the source they audit. What is
+deliberately allowed, and why, is in `CONTRIBUTING.md`.
 
 **Manual checks** on the diff:
 - No raw hex command strings outside `protocol-data.generated.ts`

@@ -31,6 +31,19 @@ jobs:
       - run: npm ci
       - run: npm audit --audit-level=critical
 
+  # Confidentiality: the source-level privacy audit (VW-216).
+  # It has existed since 2026-02 and was wired to nothing; a guard nobody runs
+  # is worth less than no guard, because its existence implies coverage.
+  # Needs no dependencies — it reads the tree git tracks.
+  privacy-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+      - run: npm run audit:privacy
+
   # Lint and type checking
   lint:
     runs-on: ubuntu-latest
