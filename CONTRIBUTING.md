@@ -81,7 +81,13 @@ unchanged by both halves of the check. It is deliberately not a file in this
 tree: it is this tree being judged, and a judgement that lives here could be
 edited by the same change it exists to catch.
 
-Two things about the half that runs here are worth knowing before you read a
+**Because the comparison lives in the private repository, a change to it lands
+there first.** A wrapper merged here before the file it calls exists leaves a
+permanently red check on `main`, and a check that is always red stops being
+read — which is how the privacy audit sat wired to nothing for seven months.
+Merge the private repository's change, then this one.
+
+Three things about the half that runs here are worth knowing before you read a
 green check as coverage:
 
 - **It needs a secret and fails until that secret exists.** CI reads a
@@ -91,6 +97,11 @@ green check as coverage:
   withholds secrets there. It goes red rather than green on those, which is the
   honest outcome, but no fork pull request is verified at the moment it is
   proposed.
+- **It fails for you if you cloned only this repository,** which is the expected
+  outcome and not something you broke. `npm run verify:generated` says the
+  private repository is not there, names the path it looked in, and exits
+  non-zero. Nothing else in the build needs it: `npm ci`, `npm run build`,
+  `npm test` and `npm run ci:local` all work without it.
 
 The other half covers that. This repository is public, so the private
 repository clones it and runs the same comparison on a schedule, with no
