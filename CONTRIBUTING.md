@@ -75,17 +75,31 @@ generated output has been edited to make the audit pass. The third exists for
 that. Its root of trust is the generator, which lives in the private
 repository, so nothing you can write here makes it green.
 
-Two things about it are worth knowing before you read a green check as
-coverage:
+`scripts/verify-generated.sh` here only LOCATES the generator. The comparison
+itself lives with the generator, in the private repository, and is called
+unchanged by both halves of the check. It is deliberately not a file in this
+tree: it is this tree being judged, and a judgement that lives here could be
+edited by the same change it exists to catch.
+
+Two things about the half that runs here are worth knowing before you read a
+green check as coverage:
 
 - **It needs a secret and fails until that secret exists.** CI reads a
   read-only deploy key from `VOLTRA_PRIVATE_DEPLOY_KEY`. There is no fallback
   that passes without it.
 - **It cannot run on a pull request opened from a fork,** because GitHub
   withholds secrets there. It goes red rather than green on those, which is the
-  honest outcome, but it means a fork's generated output is unverified.
+  honest outcome, but no fork pull request is verified at the moment it is
+  proposed.
 
-It is not part of `npm run ci:local`, which has to work for a contributor who
+The other half covers that. This repository is public, so the private
+repository clones it and runs the same comparison on a schedule, with no
+credential at all. It catches an edit that reached `main` regardless of forks,
+and it keeps working if the deploy key is ever missing, expired or removed.
+Neither half is redundant: this one is the earliest possible detection, that
+one is the one that cannot be disabled from here.
+
+Neither is part of `npm run ci:local`, which has to work for a contributor who
 does not have the private repository. Run it with
 `VOLTRA_PRIVATE_PATH=../voltra-private npm run verify:generated` if you do.
 
