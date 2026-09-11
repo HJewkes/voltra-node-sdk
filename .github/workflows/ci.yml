@@ -67,6 +67,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      # Without this the checkout below falls back to the workflow token, which
+      # cannot see a private repository, and fails after three retries with a
+      # bare "Not Found" that says nothing about a missing secret. Fails the
+      # same job either way; this one says why.
+      - name: Require the generator deploy key
+        env:
+          DEPLOY_KEY: ${{ secrets.VOLTRA_PRIVATE_DEPLOY_KEY }}
+        run: |
+          if [ -z "$DEPLOY_KEY" ]; then
+            echo "::error::VOLTRA_PRIVATE_DEPLOY_KEY is not set, so the generator cannot be checked out and the generated output cannot be verified."
+            echo "Set it to the private half of a READ-ONLY deploy key on the private repository."
+            echo "On a pull request from a fork GitHub withholds it and this job cannot run at all."
+            exit 1
+          fi
+          echo "Deploy key present."
       - uses: actions/checkout@v7
         with:
           repository: HJewkes/voltra-private
