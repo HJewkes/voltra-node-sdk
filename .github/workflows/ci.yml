@@ -44,6 +44,60 @@ jobs:
           node-version: '20'
       - run: npm run audit:privacy
 
+  # Confidentiality: the committed generated output must equal what the
+  # generator produces (VW-225).
+  #
+  # Every other guard in this file reads the repository, so an edit to the
+  # repository can satisfy it. Generated output was once edited to make
+  # `audit:privacy` pass, and the audit went green on content regeneration does
+  # not produce. This job's root of trust is the generator, which lives outside
+  # this repository, so no edit here can satisfy it.
+  #
+  # REQUIRES A SECRET AND FAILS UNTIL IT EXISTS: `VOLTRA_PRIVATE_DEPLOY_KEY`,
+  # the private half of a READ-ONLY deploy key on the private repository. There
+  # is deliberately no fallback that passes without it — a check that passes
+  # when it cannot run is the failure this job exists to catch.
+  #
+  # SCOPE LIMIT, stated rather than papered over: GitHub withholds secrets from
+  # pull requests opened from forks, so the second checkout fails there and
+  # this job goes red. A fork pull request is NOT covered by this check. It
+  # fails rather than skips on purpose, because a skipped job reads as a check
+  # that ran and found nothing.
+  verify-generated:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Without this the checkout below falls back to the workflow token, which
+      # cannot see a private repository, and fails after three retries with a
+      # bare "Not Found" that says nothing about a missing secret. Fails the
+      # same job either way; this one says why.
+      - name: Require the generator deploy key
+        env:
+          DEPLOY_KEY: ${{ secrets.VOLTRA_PRIVATE_DEPLOY_KEY }}
+        run: |
+          if [ -z "$DEPLOY_KEY" ]; then
+            echo "::error::VOLTRA_PRIVATE_DEPLOY_KEY is not set, so the generator cannot be checked out and the generated output cannot be verified."
+            echo "Set it to the private half of a READ-ONLY deploy key on the private repository."
+            echo "On a pull request from a fork GitHub withholds it and this job cannot run at all."
+            exit 1
+          fi
+          echo "Deploy key present."
+      - uses: actions/checkout@v7
+        with:
+          repository: HJewkes/voltra-private
+          ssh-key: ${{ secrets.VOLTRA_PRIVATE_DEPLOY_KEY }}
+          path: .voltra-private
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+      - name: Install generator dependencies
+        run: npm ci
+        working-directory: .voltra-private
+      - name: Verify the tree matches the generator
+        run: npm run verify:generated
+        env:
+          VOLTRA_PRIVATE_PATH: .voltra-private
+
   # Lint and type checking
   lint:
     runs-on: ubuntu-latest
