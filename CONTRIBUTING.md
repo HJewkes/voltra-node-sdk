@@ -64,18 +64,41 @@ Protocol-derived findings belong in the private repository's research tree.
 | --- | --- | --- |
 | `voltras/no-private-provenance` (`eslint-rules/`) | provenance, command-code identifiers, and verbatim captures in comments, across `src/**/*.ts` | `npm run lint`, CI |
 | `scripts/audit-privacy.sh` | the whole tree git tracks, as text — including the generated files ESLint ignores, and markdown, shell and workflow files no linter reads | `npm run audit:privacy`, CI |
+| `scripts/verify-generated.sh` | the generated files, against what the generator actually produces, byte for byte | `npm run verify:generated`, CI |
 
-Both name the file and the shape and never the token. A build log is as public
-as the source it refused.
+All three name the file and the shape and never the token. A build log is as
+public as the source it refused.
+
+The first two read this repository, so an edit to this repository can satisfy
+them: a reworded comment looks like legitimate content to a content guard, and
+generated output has been edited to make the audit pass. The third exists for
+that. Its root of trust is the generator, which lives in the private
+repository, so nothing you can write here makes it green.
+
+Two things about it are worth knowing before you read a green check as
+coverage:
+
+- **It needs a secret and fails until that secret exists.** CI reads a
+  read-only deploy key from `VOLTRA_PRIVATE_DEPLOY_KEY`. There is no fallback
+  that passes without it.
+- **It cannot run on a pull request opened from a fork,** because GitHub
+  withholds secrets there. It goes red rather than green on those, which is the
+  honest outcome, but it means a fork's generated output is unverified.
+
+It is not part of `npm run ci:local`, which has to work for a contributor who
+does not have the private repository. Run it with
+`VOLTRA_PRIVATE_PATH=../voltra-private npm run verify:generated` if you do.
 
 The audit's exclusion covers the sanctioned **regeneration header line**, never
 a **file**. Excluding a generated file wholesale would hide anything written
 below its header behind the header's own legitimacy — which is what the
 previous version of the script did, for one of the five generated files.
 
-Editing a generated file by hand is normally wrong, and the confidentiality
-rules are the exception: if a regeneration reintroduces provenance, CI fails,
-and the fix belongs in the private template rather than in the output.
+Editing a generated file by hand is always wrong, and the confidentiality rules
+are not the exception people reach for them as: if a regeneration reintroduces
+provenance, the fix belongs in the private template, never in the output.
+`verify:generated` enforces that, so an edit to the output now fails CI whatever
+its motive.
 
 ### What no rule covers: prose
 
