@@ -118,7 +118,21 @@ report() {
 echo "Running privacy audit..."
 echo
 
-echo "1. Checking for a private/ directory"
+# Checks 2-4 below sweep `git ls-files` — the tracked index — which is blind
+# to a file that hasn't been `git add`ed yet. A contributor running this
+# BEFORE staging gets a green that never read the file it should have failed
+# on. This has to run first and loudly: a clean result from here is what
+# makes every check below trustworthy, not just tidy.
+echo "1. Checking for untracked files under the swept paths"
+untracked="$(git ls-files --others --exclude-standard)"
+if [ -n "$untracked" ]; then
+  fail "Untracked files exist that the git-tracked sweep below cannot see — stage them first"
+  printf '%s\n' "$untracked" | sed 's/^/        /'
+else
+  pass "No untracked files outstanding"
+fi
+
+echo "2. Checking for a private/ directory"
 if [ -d "private" ]; then
   fail "private/ directory exists in the SDK (it belongs in the private repo only)"
 else
@@ -129,13 +143,13 @@ fi
 # has to name the path it runs, and a contributor has to be told where protocol
 # data comes from. A path INTO it is provenance — it names a document, a
 # capture or a module the reader cannot open, and says what is in it.
-echo "2. Checking for paths into the private repo"
+echo "3. Checking for paths into the private repo"
 SANCTIONED='voltra-private/build\.ts'
 report "No path into the private repo beyond its build entry point" \
   'voltra-private/[A-Za-z0-9_.-]+' "${RULE_TEXT[@]}"
 SANCTIONED='__no_sanctioned_form__'
 
-echo "3. Checking for capture, research and derivation references"
+echo "4. Checking for capture, research and derivation references"
 report "No capture, research or derivation references" \
   '(captures?/(sessions|frames)|research/[A-Za-z0-9_.-]+\.(md|json)|validation-phase|decompil|reverse.engineer)' \
   "${RULE_TEXT[@]}"
@@ -143,12 +157,12 @@ report "No capture, research or derivation references" \
 # A long hex run inside a .ts file is a value, and values ship here. The same
 # run in markdown, a shell script or a workflow cannot be a value — nothing
 # executes it — so it is a capture someone wrote down.
-echo "4. Checking for verbatim captures in prose and configuration"
+echo "5. Checking for verbatim captures in prose and configuration"
 report "No verbatim capture outside executable code" \
   '(^|[^0-9A-Za-z#-])[0-9a-fA-F]{8,}([^0-9A-Za-z-]|$)' \
   '*.md' '*.mdc' '*.sh' '*.yml' '*.yaml'
 
-echo "5. Checking for stray JSON data files in src/"
+echo "6. Checking for stray JSON data files in src/"
 stray_json=$(find src/ -name "*.json" -not -name "package.json" -not -name "tsconfig*.json" 2>/dev/null || true)
 if [ -n "$stray_json" ]; then
   fail "Stray JSON files found in src/"
