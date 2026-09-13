@@ -18,23 +18,25 @@
  */
 
 import { buildEnvelopedFrame } from './_factories/frame-factories.generated';
+import protocolData from './data/protocol-data.generated';
+import type { ParameterCatalogEntry, ProtocolData } from './types';
+import { hexToBytes } from '../../shared/utils';
 
-// CMD bytes (from the protocol — kept as in-file constants to minimise the
-// blast radius of protocol-derived knowledge).
-const CMD_PARAM_WRITE = 0x11;
-const CMD_VENDOR = 0xaa;
+const protocol = protocolData as ProtocolData;
+const rowing = protocol.commands.rowing;
 
-// Parameter id wire-bytes for the screen-switch. The SDK encodes paramIds
-// MSB-first on the wire, so these two constants are the canonical paramId's
-// bytes in little-endian order.
-const EP_SCR_SWITCH_PARAMID_LO = 0x65;
-const EP_SCR_SWITCH_PARAMID_HI = 0x51;
+function catalogEntry(key: string): ParameterCatalogEntry {
+  const entry = protocol.telemetry.parameterCatalog?.[key];
+  if (!entry) {
+    throw new Error(`rowing-frames: protocol data has no parameter catalog entry for '${key}'`);
+  }
+  return entry;
+}
 
-// Constant trailing bytes shared by every rowing screen-switch payload. The
-// first is the rowing screen id; the rest are fixed across every frame
-// observed on-device.
-const ROWING_SCREEN_ID = 0x3e;
-const ROWING_SCR_SWITCH_TRAILER: readonly [number, number, number] = [ROWING_SCREEN_ID, 0x00, 0x01];
+/** Screen-switch register's paramId bytes, in the order the wire uses. */
+const SCREEN_SWITCH_PARAM_ID_BYTES = hexToBytes(catalogEntry(rowing.screenSwitchParamField).wireLE);
+
+const SCREEN_SWITCH_TRAILER = hexToBytes(rowing.screenSwitchTrailer);
 
 /**
  * Action codes for the first byte of the rowing screen-switch payload.
@@ -42,18 +44,9 @@ const ROWING_SCR_SWITCH_TRAILER: readonly [number, number, number] = [ROWING_SCR
  * Both `JustRow` and `M50` are independently verified; the
  * 100/500/1000/2000/5000 m codes are inferred by sequential numbering.
  */
-export const ROW_START_ACTION_CODES = {
-  /** Just Row — no preset distance. */
-  JustRow: 0x03,
-  M50: 0x06,
-  M100: 0x07,
-  M500: 0x08,
-  M1000: 0x09,
-  M2000: 0x0a,
-  M5000: 0x0b,
-} as const;
+export const ROW_START_ACTION_CODES = rowing.actionCodes as Record<RowStartActionKey, number>;
 
-export type RowStartActionKey = keyof typeof ROW_START_ACTION_CODES;
+export type RowStartActionKey = 'JustRow' | 'M50' | 'M100' | 'M500' | 'M1000' | 'M2000' | 'M5000';
 
 /**
  * Build the parametric write payload (i.e. the bytes that go after the
@@ -65,12 +58,9 @@ function buildRowScrSwitchPayload(action: number): Uint8Array {
   return new Uint8Array([
     0x01,
     0x00,
-    EP_SCR_SWITCH_PARAMID_LO,
-    EP_SCR_SWITCH_PARAMID_HI,
+    ...SCREEN_SWITCH_PARAM_ID_BYTES,
     action & 0xff,
-    ROWING_SCR_SWITCH_TRAILER[0],
-    ROWING_SCR_SWITCH_TRAILER[1],
-    ROWING_SCR_SWITCH_TRAILER[2],
+    ...SCREEN_SWITCH_TRAILER,
   ]);
 }
 
@@ -82,9 +72,11 @@ export function buildRowScrSwitchFrame(
   actionCode: number,
   opts: { sequence?: number } = {}
 ): Uint8Array {
-  return buildEnvelopedFrame(CMD_PARAM_WRITE, buildRowScrSwitchPayload(actionCode), {
-    sequence: opts.sequence,
-  });
+  return buildEnvelopedFrame(
+    hexToBytes(rowing.screenSwitchCmd)[0],
+    buildRowScrSwitchPayload(actionCode),
+    { sequence: opts.sequence }
+  );
 }
 
 /**
@@ -92,7 +84,11 @@ export function buildRowScrSwitchFrame(
  * after every screen-switch commit and on every reassert tick.
  */
 export function buildVendorStateRefreshFrame(opts: { sequence?: number } = {}): Uint8Array {
-  return buildEnvelopedFrame(CMD_VENDOR, new Uint8Array([0x13, 0x01]), {
-    sequence: opts.sequence,
-  });
+  return buildEnvelopedFrame(
+    hexToBytes(rowing.vendorCmd)[0],
+    hexToBytes(rowing.vendorRefreshPayload),
+    {
+      sequence: opts.sequence,
+    }
+  );
 }
