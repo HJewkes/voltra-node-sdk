@@ -84,7 +84,11 @@ export function buildRowScrSwitchFrame(
  * after every screen-switch commit and on every reassert tick.
  */
 export function buildVendorStateRefreshFrame(opts: { sequence?: number } = {}): Uint8Array {
-  return buildEnvelopedFrame(hexToBytes(rowing.vendorCmd)[0], hexToBytes(rowing.vendorRefreshPayload), {
-    sequence: opts.sequence,
-  });
+  return buildEnvelopedFrame(
+    hexToBytes(rowing.vendorCmd)[0],
+    hexToBytes(rowing.vendorRefreshPayload),
+    {
+      sequence: opts.sequence,
+    }
+  );
 }
