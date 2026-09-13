@@ -89,8 +89,48 @@ export interface CommandConfig {
   telemetrySubscribe: Record<'none' | 'all', string>;
   /** Cable trigger commands (open/close -> hex string) */
   cableTrigger: Record<'open' | 'close', string>;
+  /** Guided-load flow pieces the frame builders assemble */
+  guidedLoad: GuidedLoadCommands;
   /** Resistance experience commands (intense/standard -> hex string) */
   resistanceExperience: Record<'intense' | 'standard', string>;
+}
+
+/** Field names of a decoded guided-load status snapshot, in wire order. */
+export type GuidedLoadStatusFieldName =
+  | 'primaryStatus'
+  | 'forceStatus'
+  | 'countdownMs'
+  | 'runtimeStatus';
+
+/**
+ * Guided-load flow definition.
+ *
+ * Registers are named by `parameterCatalog` key rather than by id, so one
+ * lookup gives both the read-frame builder and the decoder what they need.
+ */
+export interface GuidedLoadCommands {
+  /** cmd byte carrying the trigger (hex string) */
+  triggerCmd: string;
+  /** Inner payload of the trigger frame (hex string) */
+  triggerPayload: string;
+  /** cmd byte carrying the multi-parameter status read (hex string) */
+  statusReadCmd: string;
+  /** Status field name -> `parameterCatalog` key, in wire order */
+  statusFields: Record<GuidedLoadStatusFieldName, string>;
+  /** `parameterCatalog` key for the mode register the flow reads and writes */
+  modeField: string;
+  /** Mode-register values the flow recognises and writes */
+  modes: GuidedLoadModes;
+}
+
+/** Mode-register values that mark the guided-load flow's states. */
+export interface GuidedLoadModes {
+  /** Triggered; awaiting the user's pull */
+  armed: number;
+  /** Engaged at target */
+  active: number;
+  /** Written to leave the flow */
+  exit: number;
 }
 
 /**

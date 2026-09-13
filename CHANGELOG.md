@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Internal:** the guided-load module now reads its values from the generated
+  protocol data instead of holding its own copies. No public API change, and
+  every frame it builds is byte-identical — a fixture pins all three builders
+  and the module's exported constants.
+
 ## [0.14.0] - 2026-09-08
 
 ### Fixed
