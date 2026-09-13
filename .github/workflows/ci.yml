@@ -43,6 +43,9 @@ jobs:
         with:
           node-version: '20'
       - run: npm run audit:privacy
+      # VW-227: proves the check above would have caught an untracked file,
+      # not just that the checkout (which has none) passed it.
+      - run: npm run audit:privacy:self-test
 
   # Confidentiality: the committed generated output must equal what the
   # generator produces (VW-225).
