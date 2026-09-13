@@ -91,6 +91,8 @@ export interface CommandConfig {
   cableTrigger: Record<'open' | 'close', string>;
   /** Guided-load flow pieces the frame builders assemble */
   guidedLoad: GuidedLoadCommands;
+  /** Rowing two-stage entry pieces the frame builders assemble */
+  rowing: RowingCommands;
   /** Resistance experience commands (intense/standard -> hex string) */
   resistanceExperience: Record<'intense' | 'standard', string>;
 }
@@ -131,6 +133,27 @@ export interface GuidedLoadModes {
   active: number;
   /** Written to leave the flow */
   exit: number;
+}
+
+/**
+ * Rowing two-stage entry flow definition.
+ *
+ * The register is named by `parameterCatalog` key rather than by id, same
+ * as the guided-load group.
+ */
+export interface RowingCommands {
+  /** cmd byte for the screen-switch write (hex string) */
+  screenSwitchCmd: string;
+  /** cmd byte for the vendor-message family (hex string) */
+  vendorCmd: string;
+  /** Inner payload of the vendor state-refresh pulse (hex string) */
+  vendorRefreshPayload: string;
+  /** `parameterCatalog` key for the screen-switch action register */
+  screenSwitchParamField: string;
+  /** Bytes following the action code in the screen-switch payload (hex string) */
+  screenSwitchTrailer: string;
+  /** Screen-switch action codes, keyed by preset name */
+  actionCodes: Record<string, number>;
 }
 
 /**

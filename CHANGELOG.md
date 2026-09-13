@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   protocol data instead of holding its own copies. No public API change, and
   every frame it builds is byte-identical — a fixture pins all three builders
   and the module's exported constants.
+- **Internal:** the rowing module now reads its values from the generated
+  protocol data instead of holding its own copies. No public API change, and
+  every frame it builds is byte-identical — a fixture pins both builders and
+  the module's exported constant.
 
 ## [0.14.0] - 2026-09-08
 
