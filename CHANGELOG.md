@@ -43,6 +43,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`exitGuidedLoad()` now unloads the motor** (VW-279). The frame it sent named
+  one register and addressed another, so the device stayed loaded and the call
+  reported success. Guided-load sessions had to be ended some other way, most
+  visibly through voltras-mcp's `device.exit_guided_load`. `unloadDevice()` was
+  never affected and is unchanged.
+
 - **`connect()` waits for the device to accept, and re-reads state afterwards**
   (VW-403). It used to write the init frames, wait out fixed delays and declare
   success. The device's own acceptance report was never decoded, and nothing

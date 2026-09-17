@@ -68,8 +68,8 @@ function buildFrame(
   cmd[11] = reserved[0];
   cmd[12] = reserved[1];
 
-  cmd[13] = (param.id >> 8) & 0xff;
-  cmd[14] = param.id & 0xff;
+  cmd[13] = param.id & 0xff;
+  cmd[14] = (param.id >> 8) & 0xff;
 
   const encoded =
     param.valueType.startsWith('int') && value < 0
