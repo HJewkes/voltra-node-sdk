@@ -320,8 +320,18 @@ export interface ParameterCatalogEntry {
   wireLE: string;
   /** Underlying primitive value type (drives decoder dispatch). */
   valueType: 'uint8' | 'uint16' | 'int16' | 'uint32' | 'int32';
-  /** Byte width on the wire for the value field. */
+  /** Byte width an outbound write puts on the wire for the value field. */
   valueWidth: 1 | 2 | 4;
+  /**
+   * Value type the device uses when it reports this register back, present
+   * only when that differs from the type it accepts on a write.
+   */
+  reportValueType?: 'uint8' | 'uint16' | 'int16' | 'uint32' | 'int32';
+  /**
+   * Byte width the device uses when it reports this register back, present
+   * only when that differs from the width it accepts on a write.
+   */
+  reportValueWidth?: 1 | 2 | 4;
   /** Human-readable unit (e.g. `lbs`, `mm/s`, `enum`). */
   unit: string;
   /** Voltra register-prefix subtree. */
@@ -513,6 +523,10 @@ export interface ParamIdsConfig {
    * machine, across the strength, direct-load and rowing flows.
    */
   bpSetFitnessMode: string;
+  /** Damper level parameter. Absent on protocol data older than 0.15.0. */
+  damperLevel?: string;
+  /** Battery percentage parameter. Absent on protocol data older than 0.15.0. */
+  battery?: string;
 }
 
 /**
@@ -567,6 +581,12 @@ export interface DeviceSettings {
    * classifies; absent means the report said nothing about the motor.
    */
   motorState?: MotorReport;
+  /**
+   * Battery charge, percent. Present only when the report carried the
+   * battery register; absent means the report said nothing about the
+   * battery, never that the battery is unknown to the device.
+   */
+  battery?: number;
 }
 
 // <Decoder-statedump-asyncstate> ==========================================================
@@ -687,10 +707,10 @@ export interface WaveformChunkEvent {
 export interface AsyncStateParam {
   /** Parameter ID as a 4-char hex string (little-endian on the wire). */
   paramIdHex: string;
-  /** Decoded value (uint8 or uint16 depending on `paramIdHex`). */
+  /** Decoded value, signed when the register reports a signed value. */
   value: number;
-  /** Width of the value field in bytes (1 or 2). */
-  byteLength: 1 | 2;
+  /** Width of the value field in bytes, as the catalog reports it. */
+  byteLength: 1 | 2 | 4;
 }
 
 /**
@@ -705,6 +725,12 @@ export interface AsyncStateFrame {
   paramCount: number;
   /** Decoded parameters in wire order. */
   params: AsyncStateParam[];
+  /**
+   * True when every declared param decoded. False means the walk stopped at
+   * a register whose width the protocol data does not carry, or at a
+   * truncated entry, and the frame held more than `params` shows.
+   */
+  complete: boolean;
 }
 
 // <Bug-17> Begin — bulk-read response payload (additive, do not modify).
@@ -714,14 +740,19 @@ export interface AsyncStateFrame {
  * The device returns one of these in response to bootstrap step 10 (the
  * 18-param mode-feature-state query) and to any other multi-paramID read.
  * The response carries a set of paramId/value pairs whose value widths vary
- * by paramId. The SDK decodes the same fields as `settings_update`
- * (`baseWeight`, `chains`, `eccentric`, `trainingMode`, `inverseChains`,
- * `damperLevel`) and ignores params with unknown widths. Per-paramId value-width tables remain an open question.
+ * by paramId. Widths come from the generated parameter catalog, and the SDK
+ * projects the same fields as `settings_update`.
  */
 export interface BulkParamResponse {
   /** Number of paramId+value pairs successfully parsed */
   paramCount: number;
   /** Decoded device settings extracted from the response */
   settings: DeviceSettings;
+  /**
+   * True when every declared param decoded. False means the device refused
+   * the read, or the walk stopped at a register whose width the protocol
+   * data does not carry, and the reply held more than `settings` shows.
+   */
+  complete: boolean;
 }
 // <Bug-17> End

@@ -228,6 +228,30 @@ describe('decodeVendorPerRep', () => {
     expect(event!.phase).toBe('return');
   });
 
+  it.each([255, 256])('reports a set counter of %i as the device counted it', (count) => {
+    const frame = buildPerRepFrameWithWeight({
+      motionPhase: 'pull',
+      frameCounter: 1,
+      setCounter: count,
+      repCount: 0,
+      targetWeightTenths: 500,
+    });
+
+    expect(decodeVendorPerRep(frame)!.setCounter).toBe(count);
+  });
+
+  it.each([255, 256])('reports a rep count of %i as the device counted it', (count) => {
+    const frame = buildPerRepFrameWithWeight({
+      motionPhase: 'pull',
+      frameCounter: 1,
+      setCounter: 0,
+      repCount: count,
+      targetWeightTenths: 500,
+    });
+
+    expect(decodeVendorPerRep(frame)!.repCount).toBe(count);
+  });
+
   it('returns null for an unrelated sub-type (summary)', () => {
     const summary = buildVendorSummaryFrame({
       schemaVersion: VendorSchemaVersion.Weight,
@@ -293,6 +317,16 @@ describe('decodeVendorSummary', () => {
     expect(event!.repCount).toBe(12);
     expect(event!.raw).toBeInstanceOf(Uint8Array);
     expect(event!.raw.length).toBe(frame.length);
+  });
+
+  it.each([255, 256])('reports a workout set counter of %i in full', (count) => {
+    const frame = buildVendorSummaryFrame({
+      schemaVersion: VendorSchemaVersion.Weight,
+      setCounter: count,
+      repCount: 1,
+    });
+
+    expect(decodeVendorSummary(frame)!.setCounter).toBe(count);
   });
 
   it('returns null for an unrelated sub-type (perRep)', () => {

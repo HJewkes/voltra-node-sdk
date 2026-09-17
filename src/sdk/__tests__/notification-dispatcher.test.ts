@@ -86,13 +86,22 @@ describe('notification-dispatcher', () => {
     expect(callbacks.onSettingsUpdate).toHaveBeenCalledWith(settings);
   });
 
-  it('dispatches onBatteryUpdate for device status', () => {
-    mockDecode.mockReturnValue({ type: 'device_status', battery: 85 });
+  it('dispatches onBatteryUpdate once when a settings update carries battery', () => {
+    mockDecode.mockReturnValue({ type: 'settings_update', settings: { battery: 85 } });
 
     handler(dummyData);
 
     expect(callbacks.onBatteryUpdate).toHaveBeenCalledOnce();
     expect(callbacks.onBatteryUpdate).toHaveBeenCalledWith(85);
+  });
+
+  it('leaves onBatteryUpdate alone when a settings update says nothing about battery', () => {
+    mockDecode.mockReturnValue({ type: 'settings_update', settings: { baseWeight: 40 } });
+
+    handler(dummyData);
+
+    expect(callbacks.onSettingsUpdate).toHaveBeenCalledOnce();
+    expect(callbacks.onBatteryUpdate).not.toHaveBeenCalled();
   });
 
   it('ignores unknown notification types', () => {

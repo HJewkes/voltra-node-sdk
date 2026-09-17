@@ -125,11 +125,11 @@ describe('decodeBulkParamResponse', () => {
       { paramIdHex: ParamIdHex.ECCENTRIC, valueBytes: [50, 0] },
       // 0xb04f = trainingMode (uint8): WeightTraining
       { paramIdHex: ParamIdHex.TRAINING_MODE, valueBytes: [TrainingMode.WeightTraining] },
-      // 0xb053 = inverseChains (uint8)
-      { paramIdHex: ParamIdHex.INVERSE_CHAINS, valueBytes: [15] },
-      // damperLevel (uint8): wire byte order [0x03, 0x51] -> hex '0351'
-      // (paramID hex string corrected per B4 — was inverted '5103')
-      { paramIdHex: '0351', valueBytes: [3] },
+      // Inverse chains is two bytes wide in the catalog. That width is
+      // hypothesis-grade and no report of ours carries the register, so this
+      // fixture pins what the catalog says rather than an observation.
+      { paramIdHex: ParamIdHex.INVERSE_CHAINS, valueBytes: [15, 0] },
+      { paramIdHex: ParamIdHex.DAMPER_LEVEL!, valueBytes: [3] },
     ]);
     const result = decodeBulkParamResponse(data);
     expect(result).not.toBeNull();

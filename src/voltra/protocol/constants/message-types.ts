@@ -93,27 +93,31 @@ export const ParamIdHex = {
   TRAINING_MODE: protocol.telemetry.paramIds.trainingMode,
   INVERSE_CHAINS: protocol.telemetry.paramIds.inverseChains,
   BP_SET_FITNESS_MODE: protocol.telemetry.paramIds.bpSetFitnessMode,
+  /** Damper level. Undefined on protocol data that does not name it. */
+  DAMPER_LEVEL: protocol.telemetry.paramIds.damperLevel,
+  /** Battery percentage. Undefined on protocol data that does not name it. */
+  BATTERY: protocol.telemetry.paramIds.battery,
 } as const;
 
 /**
- * Param IDs that use 2-byte (uint16) values in notifications.
- * All other param IDs use 1-byte (uint8) values.
+ * Param IDs the protocol data lists as two bytes wide.
+ *
+ * @deprecated Kept for consumers that already read it. The decoder sizes
+ * every reported value from {@link ParameterCatalog}, which carries a width
+ * for each register and states the report direction where it differs.
  */
 export const Uint16ParamIds: ReadonlySet<string> = new Set(protocol.telemetry.uint16ParamIds ?? []);
 
 /**
- * Generated parameter catalog. Keyed by `wireLE` (the form
- * inbound async-state / bulk-read cascade decoders match against). Each entry
- * carries `paramId`, `name`, `wireBE`, `wireLE`, `valueType`, `valueWidth`,
- * `unit`, `register`, `validation` — sourced from the generated
- * `protocol.telemetry.parameterCatalog`.
+ * Generated parameter catalog. Keyed by `wireLE` (the form inbound parameter
+ * reports match against). Each entry carries `paramId`, `name`, `wireBE`,
+ * `wireLE`, `valueType`, `valueWidth`, `unit`, `register`, `validation`, plus
+ * `reportValueType` / `reportValueWidth` for the registers the device reports
+ * differently from how it accepts them.
  *
- * The catalog is the authoritative metadata. The
- * `telemetry-decoder.ts` `KNOWN_PARAM_WIDTHS` table is NOT yet
- * refactored to consume it — the workout-state and
- * inverse-chains params have documented width disagreements
- * (vp = uint16, SDK = uint8) that need on-device validation
- * before the decoder can safely migrate.
+ * This is the width source every inbound parameter decode reads. A register
+ * missing from it has no width, and the decode stops there rather than
+ * assuming one.
  *
  * Empty record on older protocol-data versions.
  */
