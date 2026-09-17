@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`client.motorState`** — what the device last said about the cable motor.
+  `'engaged'` and `'unloaded'` mean the device reported it; `'pending'` means a
+  motor command is written and unanswered; `'unknown'` means we do not know,
+  including after a failed write and on every fresh connection.
+- **`client.requestedSettings` and `client.confirmedSettings`** — values
+  written but not yet echoed back, and values the device has reported on the
+  current connection. `client.settings` is unchanged and still carries
+  last-known values across a reconnect; the two new views let a caller tell a
+  value the device confirmed from one it was merely asked for.
+  `VoltraClientState` carries all three plus `motorState`.
+- **`motorConfirmationTimeoutMs` client option** (default 2000) — how long to
+  wait for the device to report the result of a motor command before giving up
+  on confirming it.
+
+### Fixed
+
+- **A stop the device did not confirm is no longer reported as a stop**
+  (VW-402). `unloadDevice()` used to set the recording state to idle as soon as
+  the GATT write resolved, and `stopRecording()` caught any write error,
+  warned, and went idle anyway — so a stop that never reached the device looked
+  like a completed one, on the path a spoken "stop" rides.
+
+  Each of `stopRecording()`, `unloadDevice()` and `endSet()` now waits for a
+  device report newer than the one it saw before writing, re-reads device state
+  once if none arrives, and reports `motorState: 'unknown'` rather than
+  assuming. A failed write throws instead of being swallowed and leaves the
+  motor state `'unknown'`. Without a confirming report the recording state
+  stays `'stopping'`, which is retryable, rather than falsely reaching idle.
+
+  **Behaviour change for callers.** `stopRecording()` and `endSet()` now reject
+  on a failed write where they previously resolved, and reaching `'idle'` /
+  `'ready'` now requires the device to answer. Read `client.motorState` to tell
+  a confirmed stop from an unconfirmed one. `disconnect()` still releases
+  best-effort without waiting, and leaves the motor state `'unknown'`.
+
+- **`startRecording()`** marks the motor `'pending'` rather than leaving a
+  stale `'unloaded'` in place. It does not wait for the report — a set start
+  blocking on the device would be worse than an unconfirmed engage.
+
 ### Changed
 
 - **Internal:** the guided-load module now reads its values from the generated

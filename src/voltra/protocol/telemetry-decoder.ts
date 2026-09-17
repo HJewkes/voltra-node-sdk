@@ -20,6 +20,7 @@ import {
   VendorSchemaVersion,
 } from './constants';
 import { createFrame, type TelemetryFrame } from '../models/telemetry/frame';
+import { classifyMotorReport, MOTOR_STATE_FIELD } from './device-state';
 import { bytesEqual, bytesToHex } from '../../shared/utils';
 import type {
   BulkParamResponse,
@@ -654,6 +655,8 @@ function paramsToSettings(params: AsyncStateParam[]): DeviceSettings {
       // damperLevel decodes as a uint8 and is one of the ~9 registers
       // reflected in the settingsUpdate curated subset.
       settings.damperLevel = value;
+    } else if (paramIdHex === MOTOR_STATE_FIELD) {
+      settings.motorState = classifyMotorReport(value) ?? undefined;
     }
   }
   return settings;
@@ -894,6 +897,8 @@ function applyParamToSettings(settings: DeviceSettings, paramIdHex: string, valu
     settings.inverseChains = value;
   } else if (paramIdHex === DAMPER_LEVEL_PARAM_ID_HEX) {
     settings.damperLevel = value;
+  } else if (paramIdHex === MOTOR_STATE_FIELD) {
+    settings.motorState = classifyMotorReport(value) ?? undefined;
   }
 }
 
