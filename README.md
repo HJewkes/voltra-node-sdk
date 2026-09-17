@@ -7,7 +7,7 @@ SDK for connecting to and controlling Voltra fitness devices.
 
 ## What's new in 0.6.0
 
-- **Typed vendor-frame events**: `onPerRep`, `onSummary`, `onPreSummary`,
+- **Typed vendor-frame events**: `onPerRep`, `onSummary`, `onSetSummary`,
   `onInProgress` replace the payload-less `onRepBoundary` / `onSetBoundary`
   callbacks (which were removed). Each fires with a structured event payload.
 - **Mode-config setters**: `setDamperLevel`, `setAssistMode`,
@@ -22,10 +22,10 @@ SDK for connecting to and controlling Voltra fitness devices.
 
 ## Features
 
-- **Device Control**: Configure weight (5-200 lbs, any integer), chains (0-100 lbs), inverse chains (0-100 lbs), and eccentric load (-195% to +195%)
+- **Device Control**: Configure weight (5-200 lbs, any integer), chains (0-100 lbs), inverse chains (0-100), and eccentric overload (-195 to +195 lbs)
 - **Real-time Telemetry**: Stream position, velocity, and force data during workouts
 - **Device Notifications**: Rep/set boundaries, mode confirmations, settings updates, battery level
-- **Recording Lifecycle**: Prepare, start, and stop recording with motor engagement control
+- **Recording Lifecycle**: Stage, start, and stop recording, with the motor state the device reported
 - **Cross-platform**: Web browsers, Node.js, and React Native
 - **Multi-device**: Connect to and control multiple devices simultaneously
 - **React Hooks**: `useVoltraScanner` and `useVoltraDevice` for seamless React integration
@@ -65,9 +65,9 @@ const client = await manager.connect(selectedDevice);
 
 // 4. Configure resistance settings
 await client.setWeight(50);         // 5-200 lbs (any integer)
-await client.setChains(25);         // 0-100 lbs (reverse resistance)
-await client.setInverseChains(15);  // 0-100 lbs (progressive resistance)
-await client.setEccentric(10);      // -195 to +195 (eccentric load %)
+await client.setChains(25);         // 0-100 lbs added as you extend
+await client.setInverseChains(15);  // 0-100 (see Inverse Chains below)
+await client.setEccentric(10);      // -195 to +195 lbs on the eccentric
 
 // 5. Subscribe to real-time telemetry
 client.onFrame((frame: TelemetryFrame) => {
@@ -79,7 +79,7 @@ await client.startRecording();
 
 // ... user performs workout ...
 
-// 7. Stop recording (disengages motor)
+// 7. Stop recording (asks the device to release the cable)
 await client.stopRecording();
 
 // 8. Cleanup
@@ -103,54 +103,115 @@ const client = await manager.connectByName('VTR-123456');
 
 ### Resistance Settings
 
-Control the device's resistance in three ways:
+Control the device's resistance in four ways:
 
 | Setting | Range | Description |
 |---------|-------|-------------|
 | **Weight** | 5-200 lbs | Primary resistance (any integer value) |
-| **Chains** | 0-100 lbs | Reverse resistance - reduces load as you extend |
-| **Inverse Chains** | 0-100 lbs | Progressive resistance - increases load as you extend |
-| **Eccentric** | -195% to +195% | Adjusts eccentric (lowering) phase relative to concentric |
+| **Chains** | 0-100 lbs | Adds load as you extend, the way a lifting chain does as it leaves the floor |
+| **Inverse Chains** | 0-100 | Sheds load as you extend. **Under review** - see below |
+| **Eccentric** | -195 to +195 lbs | Overload added to (or taken off) the eccentric phase, on top of the weight |
 
 ```typescript
 // Set all resistance parameters
 await client.setWeight(75);          // 75 lbs primary resistance
-await client.setChains(20);          // 20 lbs chain reduction
-await client.setInverseChains(10);   // 10 lbs progressive resistance
-await client.setEccentric(-25);      // 25% less resistance on eccentric
-
-// Query current settings
-console.log(client.settings);
-// { weight: 75, chains: 20, inverseChains: 10, eccentric: -25, mode: 1, battery: 85 }
+await client.setChains(20);          // up to 20 lbs added at full extension
+await client.setInverseChains(10);   // see "Inverse chains" below
+await client.setEccentric(-25);      // 25 lbs LESS on the eccentric than the concentric
 
 // Get available values for each setting
 const weights = client.getAvailableWeights();            // [5, 6, 7, ..., 200]
 const chains = client.getAvailableChains();              // [0, 1, 2, ..., 100]
 const inverseChains = client.getAvailableInverseChains(); // [0, 1, 2, ..., 100]
-const eccentric = client.getAvailableEccentric();         // [-195, -190, ..., 195]
+const eccentric = client.getAvailableEccentric();         // [-195, -194, ..., 195]
 ```
+
+`setEccentric` takes **signed pounds, not a percentage.** `setEccentric(-25)`
+against a 75 lb setting means 50 lb on the way down, not 25% of 75. The
+parameter was once named `percent`, which is where the misreading comes from.
+
+#### Inverse chains
+
+**Under review.** `setInverseChains(lbs)` accepts 0-100 today, and
+`client.settings.inverseChains` reports what you last asked for. Whether the
+device reads that number as an amount of load or as a choice between a few
+fixed behaviours is being re-checked against the hardware, so treat anything
+other than 0 as "on" rather than as a calibrated weight until that lands.
+Tracked as VW-407.
+
+### Requested vs confirmed settings
+
+A setter resolving means the write reached the device, not that the device
+adopted it. Three views separate those:
+
+| Property | What it holds |
+|----------|---------------|
+| `settings` | Last-known values. Survives a reconnect; the one to render |
+| `requestedSettings` | Written and not yet echoed back by the device |
+| `confirmedSettings` | Reported by the device on the current connection |
+
+```typescript
+await client.setWeight(75);
+client.requestedSettings.weight;  // 75 - asked for
+client.confirmedSettings.weight;  // undefined - the device has not said so yet
+
+// Once the device reports it, the value moves across:
+client.confirmedSettings.weight;  // 75
+client.requestedSettings.weight;  // undefined - no longer outstanding
+```
+
+Both views reset on disconnect, so a value in `confirmedSettings` always came
+from the connection you are on. Subscribe to `onSettingsUpdate` to be told when
+one moves across.
+
+### Connection and motor state
+
+`connect()` does not resolve when the writes land. It enters
+`'awaitingAcceptance'` and resolves only once the device reports that it
+accepted the connection, then reads device state back once. Control writes are
+refused while that is pending, and `client.hasConfirmedState` says whether the
+read has been answered. Anything switching exhaustively on `connectionState`
+needs a case for `'awaitingAcceptance'`.
+
+`client.motorState` is what the device last said about the cable motor:
+`'engaged'` and `'unloaded'` are reports, `'pending'` means a motor command is
+written and unanswered, and `'unknown'` means we do not know - including after
+a failed write and on every fresh connection.
 
 ### Recording Lifecycle
 
-Recording controls the motor engagement:
-
 ```typescript
-// Option 1: Simple start/stop (auto-prepares if needed)
-await client.startRecording();  // Prepares then starts
+// Option 1: Simple start/stop (stages the device if needed)
+await client.startRecording();  // Stages then starts
 // ... workout ...
-await client.stopRecording();   // Stops and disengages motor
+await client.stopRecording();   // Asks the device to release (state: 'idle')
 
-// Option 2: Manual prepare for lower latency between sets
-await client.prepareRecording();  // Pre-engages motor (state: 'ready')
-await client.startRecording();    // Instant start (state: 'active')
-await client.endSet();            // End set but stay prepared (state: 'ready')
+// Option 2: Stage ahead of time for lower latency between sets
+await client.prepareRecording();  // Stages the device (state: 'ready')
+await client.startRecording();    // Instant start, engages the motor (state: 'active')
+await client.endSet();            // Release but stay staged (state: 'ready')
 await client.startRecording();    // Next set instant start
-await client.stopRecording();     // Fully disengage (state: 'idle')
+await client.stopRecording();     // Release and stand down (state: 'idle')
 
 // Monitor recording state
 console.log(client.recordingState);  // 'idle' | 'preparing' | 'ready' | 'active' | 'stopping'
 console.log(client.isRecording);     // true when state === 'active'
+console.log(client.motorState);      // what the device last reported
 ```
+
+`prepareRecording()` **stages the device; it does not engage the motor.** The
+motor engages on `startRecording()`. Staging ahead of time is what makes the
+next `startRecording()` a single write instead of a write plus a settling
+delay.
+
+`stopRecording()` and `endSet()` send the device the same release. They differ
+only in the recording state the client aims for afterwards (`'idle'` versus
+`'ready'`); neither exits a separate device-side "workout mode".
+
+A stop counts as a stop only once the device confirms the release. Without that
+report `recordingState` stays `'stopping'` and `motorState` is `'unknown'`,
+which is retryable rather than a false all-clear. A failed write throws instead
+of being swallowed.
 
 ### Real-time Telemetry
 
@@ -272,10 +333,10 @@ const unsubInProgress = client.onInProgress((event) => {
   updateForceGauge(event.currentForceTenths);
 });
 
-// Pre-summary (fires ~3s before final rep)
-const unsubPreSummary = client.onPreSummary((event) => {
+// Per-set summary (renamed from onPreSummary in 0.9.0)
+const unsubSetSummary = client.onSetSummary((event) => {
   // event.repDurationMs, event.repCount, event.targetWeightTenths
-  showPreSetSummary(event.repDurationMs);
+  showSetSummary(event.repDurationMs);
 });
 
 // Mode confirmations (after setMode())
@@ -552,18 +613,19 @@ Controls a single connected device.
 |--------|-------------|
 | `setWeight(lbs)` | Set weight (5-200, any integer) |
 | `setChains(lbs)` | Set chains (0-100) |
-| `setInverseChains(lbs)` | Set inverse chains (0-100) |
-| `setEccentric(percent)` | Set eccentric (-195 to +195) |
+| `setInverseChains(lbs)` | Set inverse chains (0-100); under review, see VW-407 |
+| `setEccentric(overloadLbs)` | Set eccentric overload in signed pounds (-195 to +195) |
 | `setMode(mode)` | Set training mode |
-| `prepareRecording()` | Pre-engage motor for low-latency start |
-| `startRecording()` | Start recording (engages motor) |
-| `stopRecording()` | Stop recording (disengages motor) |
-| `endSet()` | End set but stay prepared |
+| `prepareRecording()` | Stage the device for a low-latency start |
+| `startRecording()` | Start recording (engages the motor) |
+| `stopRecording()` | Ask the device to release, then stand down |
+| `endSet()` | Release but stay staged |
+| `refreshDeviceState()` | Ask the device to report weight, motor state and mode |
 | `subscribe(callback)` | Subscribe to all events |
 | `onFrame(callback)` | Subscribe to telemetry frames |
 | `onPerRep(callback)` | Subscribe to typed per-rep events (0.6.0+) |
 | `onSummary(callback)` | Subscribe to end-of-set summary events (0.6.0+) |
-| `onPreSummary(callback)` | Subscribe to pre-summary events (0.6.0+) |
+| `onSetSummary(callback)` | Subscribe to per-set summary events (0.9.0+) |
 | `onInProgress(callback)` | Subscribe to ~1 Hz in-progress heartbeats (0.6.0+) |
 | `onModeConfirmed(callback)` | Subscribe to mode confirmation events |
 | `onSettingsUpdate(callback)` | Subscribe to device settings updates |
@@ -574,11 +636,15 @@ Controls a single connected device.
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `connectionState` | string | 'disconnected' \| 'connecting' \| 'authenticating' \| 'connected' |
+| `connectionState` | string | 'disconnected' \| 'connecting' \| 'authenticating' \| 'awaitingAcceptance' \| 'connected' |
 | `isConnected` | boolean | Whether connected |
 | `recordingState` | string | 'idle' \| 'preparing' \| 'ready' \| 'active' \| 'stopping' |
 | `isRecording` | boolean | Whether recording is active |
-| `settings` | object | Current { weight, chains, inverseChains, eccentric, mode, battery } |
+| `motorState` | string | 'engaged' \| 'unloaded' \| 'pending' \| 'unknown' - what the device reported |
+| `settings` | object | Last-known { weight, chains, inverseChains, eccentric, mode, battery } |
+| `requestedSettings` | object | Written and not yet echoed back |
+| `confirmedSettings` | object | Reported by the device on this connection |
+| `hasConfirmedState` | boolean | Whether the device has answered the state read |
 | `connectedDeviceId` | string | Connected device ID |
 | `connectedDeviceName` | string | Connected device name |
 
