@@ -300,19 +300,29 @@ export interface SetSummaryEvent {
  * Payload of a vendor `inProgress` frame (79 B, ~1 Hz heartbeat during
  * active sets).
  *
- * Field offsets validated on-device (2026-05-06) but not yet carried by the
- * generated telemetry config. Hardcoded in the decoder pending a future
- * regen sync.
+ * Every field is a per-rep MEAN the device repeats until the next rep
+ * boundary — none of them is a live reading, and none is a peak. Field
+ * offsets come from the generated telemetry config.
+ *
+ * The four fields these replaced — `peakForceTenths`, `currentForceTenths`,
+ * `velocityCmPerSec` and `targetWeightTenths` — were all misnamed, and the
+ * velocity one was read at an offset straddling two fields. See the
+ * migration note in CHANGELOG.
  */
 export interface InProgressEvent {
-  /** Peak force during current rep, tenths of pounds. */
-  peakForceTenths: number;
-  /** Average / current force, tenths of pounds. */
-  currentForceTenths: number;
-  /** Velocity in cm/s — magnitude only. */
-  velocityCmPerSec: number;
-  /** Target weight in tenths of pounds. */
-  targetWeightTenths: number;
+  /** Mean force over the rep's pull phase, tenths of pounds. */
+  meanPullForceTenths: number;
+  /** Mean force over the rep's return phase, tenths of pounds. */
+  meanReturnForceTenths: number;
+  /** Mean speed over the rep's return phase, mm/s. */
+  meanReturnSpeedMmPerSec: number;
+  /**
+   * Pull volume accumulated over the set so far, in the device's own raw
+   * units — it grows by roughly the set weight per rep. The scaling is not
+   * pinned against an instrumented reference, so treat it as a relative
+   * quantity and do not present it as a weight.
+   */
+  pullVolumeRawTenths: number;
   /** Raw frame bytes. */
   raw: Uint8Array;
 }

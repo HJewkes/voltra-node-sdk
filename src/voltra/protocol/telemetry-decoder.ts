@@ -464,32 +464,36 @@ export function decodeVendorSetSummary(data: Uint8Array): SetSummaryEvent | null
   };
 }
 
-// inProgress field offsets are validated on-device (2026-05-06) but not yet
-// carried by the generated telemetry config; hardcoded here pending a future
-// regen sync.
-const IN_PROGRESS_PEAK_FORCE_OFFSET = 17;
-const IN_PROGRESS_CURRENT_FORCE_OFFSET = 25;
-const IN_PROGRESS_VELOCITY_OFFSET = 28;
-const IN_PROGRESS_TARGET_WEIGHT_OFFSET = 49;
-const IN_PROGRESS_FRAME_LENGTH = 79;
-
 /**
  * Decode a vendor `inProgress` frame (79 B, ~1 Hz heartbeat).
  *
- * Field offsets are hardcoded — the regen's `fields` block is empty for
- * inProgress (`fieldsValidated: false`).
+ * Every field is a per-rep mean the device repeats until the next rep
+ * boundary, not a live reading. Offsets come from the generated config.
  */
 export function decodeVendorInProgress(data: Uint8Array): InProgressEvent | null {
   const cfg = VendorMessages.subTypes.inProgress;
   if (!matchesVendorSubType(data, cfg)) return null;
-  const minLength = cfg.frameLength ?? IN_PROGRESS_FRAME_LENGTH;
-  if (data.length < minLength) return null;
+  if (cfg.frameLength != null && data.length < cfg.frameLength) return null;
+  if (!cfg.fields) return null;
+  const fields = cfg.fields;
 
   return {
-    peakForceTenths: readUint16LE(data, IN_PROGRESS_PEAK_FORCE_OFFSET),
-    currentForceTenths: readUint16LE(data, IN_PROGRESS_CURRENT_FORCE_OFFSET),
-    velocityCmPerSec: readUint16LE(data, IN_PROGRESS_VELOCITY_OFFSET),
-    targetWeightTenths: readUint32LE(data, IN_PROGRESS_TARGET_WEIGHT_OFFSET),
+    meanPullForceTenths: readUint16LE(
+      data,
+      frameOffsetOf(fields.meanPullForceTenths.payloadOffset)
+    ),
+    meanReturnForceTenths: readUint16LE(
+      data,
+      frameOffsetOf(fields.meanReturnForceTenths.payloadOffset)
+    ),
+    meanReturnSpeedMmPerSec: readUint16LE(
+      data,
+      frameOffsetOf(fields.meanReturnSpeedMmPerSec.payloadOffset)
+    ),
+    pullVolumeRawTenths: readUint32LE(
+      data,
+      frameOffsetOf(fields.pullVolumeRawTenths.payloadOffset)
+    ),
     raw: data.slice(),
   };
 }
