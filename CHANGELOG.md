@@ -199,6 +199,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hardcoded in the decoder, and the generated frame factories can build one,
   so a test fixture and the decoder read the same metadata.
 
+- **`SetSummaryEvent.repDurationMs` is `totalPullMovingTimeMs`, and peak power
+  is read whole** (VW-405). The field is the set's total pull moving time, not
+  the final rep's duration: across ten captured summaries it scales with rep
+  count at a steady pace — 11 reps 11085 ms against 645 ms for one fast rep at
+  the same load. The single-rep captures that first pinned it could not tell
+  the two readings apart, which is how the narrower name survived.
+
+  **Migration.** `repDurationMs` → `totalPullMovingTimeMs`. The value is
+  unchanged for a one-rep set and larger for every longer set, so anything
+  presenting it as a rep duration was already wrong for multi-rep sets.
+
+  `peakPowerRaw` is now read at four bytes, where the layout carries four and
+  the decoder read two. Every value captured so far fits in two, so no
+  captured value changes — the truncation above 65535 was invisible by luck of
+  magnitude. Both peak offsets now come from the generated telemetry config
+  instead of being hardcoded in the decoder.
+
 ### Removed
 
 - **The `device_status` decode result** (VW-406). Nothing produces it: it only

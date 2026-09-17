@@ -219,7 +219,7 @@ describe('notification-dispatcher', () => {
       schemaVersion: VendorSchemaVersion.Damper,
       targetWeightTenths: 0,
       repCount: 5,
-      repDurationMs: 1234,
+      totalPullMovingTimeMs: 1234,
       peakForceTenths: 812,
       peakPowerRaw: 77,
       raw: new Uint8Array(110),

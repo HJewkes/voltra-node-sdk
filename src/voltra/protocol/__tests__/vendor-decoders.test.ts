@@ -105,7 +105,7 @@ function buildSetSummaryFrame(fields: {
   schemaVersion: VendorSchemaVersion;
   targetWeightTenths: number;
   repCount: number;
-  repDurationMs: number;
+  totalPullMovingTimeMs: number;
   peakForceTenths?: number;
   peakPowerRaw?: number;
 }): Uint8Array {
@@ -143,12 +143,21 @@ function buildSetSummaryFrame(fields: {
   );
   // repCount (uint16 LE).
   writeUint16LE(frame, frameOffsetOf(cfg.fields.repCount.payloadOffset), fields.repCount);
-  // repDurationMs (uint32 LE).
-  writeUint32LE(frame, frameOffsetOf(cfg.fields.repDurationMs.payloadOffset), fields.repDurationMs);
-  // Peak aggregates — hardcoded offsets (same as in telemetry-decoder.ts);
-  // the regen carries no `fields` entry for either.
-  writeUint16LE(frame, 28, fields.peakForceTenths ?? 0);
-  writeUint16LE(frame, 32, fields.peakPowerRaw ?? 0);
+  writeUint32LE(
+    frame,
+    frameOffsetOf(cfg.fields.totalPullMovingTimeMs.payloadOffset),
+    fields.totalPullMovingTimeMs
+  );
+  writeUint16LE(
+    frame,
+    frameOffsetOf(cfg.fields.peakForceTenths.payloadOffset),
+    fields.peakForceTenths ?? 0
+  );
+  writeUint32LE(
+    frame,
+    frameOffsetOf(cfg.fields.peakPowerRaw.payloadOffset),
+    fields.peakPowerRaw ?? 0
+  );
 
   refreshCrc(frame);
   return frame;
@@ -330,7 +339,7 @@ describe('decodeVendorSetSummary', () => {
       schemaVersion: VendorSchemaVersion.Damper,
       targetWeightTenths: 0,
       repCount: 5,
-      repDurationMs: 4321,
+      totalPullMovingTimeMs: 4321,
       peakForceTenths: 812,
       peakPowerRaw: 77,
     });
@@ -341,7 +350,7 @@ describe('decodeVendorSetSummary', () => {
     expect(event!.schemaVersion).toBe(VendorSchemaVersion.Damper);
     expect(event!.targetWeightTenths).toBe(0);
     expect(event!.repCount).toBe(5);
-    expect(event!.repDurationMs).toBe(4321);
+    expect(event!.totalPullMovingTimeMs).toBe(4321);
     expect(event!.peakForceTenths).toBe(812);
     expect(event!.peakPowerRaw).toBe(77);
     expect(event!.raw).toBeInstanceOf(Uint8Array);
@@ -364,13 +373,46 @@ describe('decodeVendorSetSummary', () => {
       schemaVersion: VendorSchemaVersion.Weight,
       targetWeightTenths: 500,
       repCount: 5,
-      repDurationMs: 1000,
+      totalPullMovingTimeMs: 1000,
     });
     const truncated = frame.slice(0, 50);
 
     const event = decodeVendorSetSummary(truncated);
 
     expect(event).toBeNull();
+  });
+});
+
+describe('decodeVendorSetSummary — set totals', () => {
+  it('carries two unequal pull times as their total, not the last one', () => {
+    // A two-rep set whose pulls took 2500 ms and 5200 ms. The field holds
+    // 7700, so a decoder that read it as the final rep's duration would have
+    // to report 5200 and fails here.
+    const firstPullMs = 2500;
+    const secondPullMs = 5200;
+    const frame = buildSetSummaryFrame({
+      schemaVersion: VendorSchemaVersion.Weight,
+      targetWeightTenths: 200,
+      repCount: 2,
+      totalPullMovingTimeMs: firstPullMs + secondPullMs,
+    });
+
+    const event = decodeVendorSetSummary(frame);
+
+    expect(event!.totalPullMovingTimeMs).toBe(7700);
+    expect(event!.totalPullMovingTimeMs).not.toBe(secondPullMs);
+  });
+
+  it('reads a peak power past what two bytes hold', () => {
+    const frame = buildSetSummaryFrame({
+      schemaVersion: VendorSchemaVersion.Weight,
+      targetWeightTenths: 200,
+      repCount: 1,
+      totalPullMovingTimeMs: 1000,
+      peakPowerRaw: 70000,
+    });
+
+    expect(decodeVendorSetSummary(frame)!.peakPowerRaw).toBe(70000);
   });
 });
 
@@ -383,6 +425,10 @@ describe('decodeVendorSetSummary', () => {
 // Frames are inlined for CI portability (the capture files live in a sibling
 // repo that is not guaranteed to be checked out alongside this one).
 // =============================================================================
+
+/** Weight mode, 20.0 lb target, eleven reps at a steady pace. */
+const CAPTURE_WEIGHT_20LB_11REPS =
+  '556e043c10aa45092000aa855f010204c80000000000000004000b008d01cf0c47020000dc0061055c000000d600f507bb000000c800e40230000000142800000c120000710900005378000011ac0600f80300008c0300005c000000530000004d2b0000630100004d490000c7b2';
 
 /** Weight mode, 20.0 lb target, one deliberately fast rep. */
 const CAPTURE_WEIGHT_20LB_FAST =
@@ -438,7 +484,7 @@ describe('decodeVendorSetSummary peak aggregates (real captures)', () => {
     expect(fast!.targetWeightTenths).toBe(slow!.targetWeightTenths);
     expect(fast!.repCount).toBe(1);
     expect(slow!.repCount).toBe(1);
-    expect(fast!.repDurationMs).toBeLessThan(slow!.repDurationMs);
+    expect(fast!.totalPullMovingTimeMs).toBeLessThan(slow!.totalPullMovingTimeMs);
 
     // Magnitudes are in unverified units; the ratio is the assertable signal.
     expect(fast!.peakPowerRaw).toBe(258);
@@ -454,6 +500,22 @@ describe('decodeVendorSetSummary peak aggregates (real captures)', () => {
     // peak power does — this guards against the two offsets being confused.
     expect(fast!.peakForceTenths).toBe(227);
     expect(slow!.peakForceTenths).toBe(206);
+  });
+
+  it('totals the set rather than timing one rep', () => {
+    // Eleven reps at a steady pace against one rep at the same load: the
+    // eleven-rep set reports 11085 ms where one rep of that pace is about a
+    // second. A per-rep duration could not do that.
+    const manyReps = decodeVendorSetSummary(hexToBytes(CAPTURE_WEIGHT_20LB_11REPS));
+    const oneFastRep = decodeVendorSetSummary(hexToBytes(CAPTURE_WEIGHT_20LB_FAST));
+
+    expect(manyReps!.repCount).toBe(11);
+    expect(oneFastRep!.repCount).toBe(1);
+    expect(manyReps!.totalPullMovingTimeMs).toBe(11085);
+    expect(oneFastRep!.totalPullMovingTimeMs).toBe(645);
+    expect(manyReps!.totalPullMovingTimeMs).toBeGreaterThan(
+      oneFastRep!.totalPullMovingTimeMs * manyReps!.repCount * 0.5
+    );
   });
 });
 
