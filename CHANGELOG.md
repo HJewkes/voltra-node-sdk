@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`connectionState` gains `'awaitingAcceptance'`** — the init writes are out
+  and the client is waiting for the device's own report of whether it accepted
+  the connection. Control writes are refused here.
+- **`acceptanceTimeoutMs` client option** (default 30000) — how long to wait
+  for that report. An already-paired unit answers near-instantly; a first
+  pairing asks the user to accept, which takes seconds.
+- **`client.refreshDeviceState()` and `client.hasConfirmedState`** — ask the
+  device to report weight, motor state and training mode, and check whether it
+  has. The read runs once automatically after a connection is accepted.
+- **`ConnectionRefusedError` and `DeviceStateUnknownError`**, with the matching
+  `ErrorCode.CONNECTION_REFUSED` / `ErrorCode.DEVICE_STATE_UNKNOWN`.
+- **`@voltras/node-sdk/testing` exports device-reply helpers** —
+  `connectSetupReply`, `buildAcceptanceReport`, `buildCoreStateReply`,
+  `isHandshakeFinishWrite`, `isCoreStateRead`, `ACCEPTANCE_STATUS_OK`,
+  `DEFAULT_SIMULATED_STATE`. A stub transport needs to answer the handshake
+  finish and the core-state read for `connect()` to complete; one call in its
+  `write()` does both. `MockBLEAdapter` answers both already.
+
 - **`client.motorState`** — what the device last said about the cable motor.
   `'engaged'` and `'unloaded'` mean the device reported it; `'pending'` means a
   motor command is written and unanswered; `'unknown'` means we do not know,
@@ -24,6 +42,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on confirming it.
 
 ### Fixed
+
+- **`connect()` waits for the device to accept, and re-reads state afterwards**
+  (VW-403). It used to write the init frames, wait out fixed delays and declare
+  success. The device's own acceptance report was never decoded, and nothing
+  re-read state afterwards — so a reconnect to a device whose weight and mode
+  had changed underneath reported the previous connection's values.
+
+  `connect()` now enters `'awaitingAcceptance'` after the init writes and
+  resolves only on an acceptance report carrying the accepted status. Any other
+  status, or silence past `acceptanceTimeoutMs`, rejects with
+  `ConnectionRefusedError`; retrying is the caller's decision, never automatic.
+  Once accepted, a three-register core-state read runs, and control setters
+  throw `DeviceStateUnknownError` until the device answers it. An empty reply
+  does not stand in for a cached value.
+
+  **Behaviour change for callers.** A stub transport that does not answer the
+  handshake finish will now fail to connect; see the new testing helpers.
+  Anything exhaustively switching on `VoltraConnectionState` needs a case for
+  `'awaitingAcceptance'`. The stop primitives are deliberately *not* gated on
+  confirmed state — refusing to release the cable because state is unknown
+  would be the more dangerous failure.
 
 - **A stop the device did not confirm is no longer reported as a stop**
   (VW-402). `unloadDevice()` used to set the recording state to idle as soon as

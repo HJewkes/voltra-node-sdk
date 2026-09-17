@@ -18,6 +18,12 @@ import type { Device, ConnectOptions } from './types';
 import { MovementPhase, TrainingMode } from '../../voltra/protocol/constants/enums';
 import { createFrame } from '../../voltra/models/telemetry/frame';
 import { encodeTelemetryFrame } from '../../voltra/protocol/telemetry-decoder';
+import { isCoreStateRead } from '../../voltra/protocol/device-state';
+import {
+  buildAcceptanceReport,
+  buildCoreStateReply,
+  isHandshakeFinishWrite,
+} from '../../testing/device-replies';
 import { KINEMATICS_PROFILES } from './mock/profiles';
 import {
   buildIdleFrame,
@@ -169,6 +175,28 @@ export class MockBLEAdapter extends BaseBLEAdapter {
     const detectedMode = detectModeCommand(data);
     if (detectedMode !== null) {
       this.setTrainingMode(detectedMode);
+    }
+    this.answerHandshake(data);
+  }
+
+  /**
+   * Answer the two writes a real device answers during connect setup: the
+   * handshake finish, with an acceptance report, and the core-state read,
+   * with the simulated device's current values (VW-403).
+   */
+  private answerHandshake(data: Uint8Array): void {
+    if (isHandshakeFinishWrite(data)) {
+      this.emitNotification(buildAcceptanceReport());
+      return;
+    }
+    if (isCoreStateRead(data)) {
+      this.emitNotification(
+        buildCoreStateReply({
+          weight: this.config.weight,
+          motorEngaged: this.telemetryInterval !== null,
+          trainingMode: this.activeMode,
+        })
+      );
     }
   }
 

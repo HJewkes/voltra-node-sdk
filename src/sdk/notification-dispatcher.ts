@@ -34,6 +34,8 @@ export interface NotificationCallbacks {
   onSummary: (event: SummaryEvent) => void;
   onSetSummary: (event: SetSummaryEvent) => void;
   onInProgress: (event: InProgressEvent) => void;
+  /** VW-403: the device's own report of whether it accepted the connection. */
+  onConnectionAcceptance: (accepted: boolean, status: number) => void;
 }
 
 /**
@@ -87,6 +89,10 @@ export function createNotificationHandler(callbacks: NotificationCallbacks): Not
 
       case 'device_status':
         callbacks.onBatteryUpdate(result.battery);
+        break;
+
+      case 'connection_acceptance':
+        callbacks.onConnectionAcceptance(result.accepted, result.status);
         break;
 
       case 'unknown':

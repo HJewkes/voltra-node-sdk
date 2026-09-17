@@ -29,16 +29,17 @@ export const Auth = {
 // =============================================================================
 
 /**
- * Bootstrap step 10 — 18-param mode-feature-state read.
+ * The wide mode-feature-state read that was once appended to `Init.SEQUENCE`.
  *
- * NOTE: This packet is NOT currently sent during `Init.SEQUENCE`. Sending it
- * during cold bootstrap caused the device firmware to drop the GATT link,
- * leaving `VoltraClient._connectionState='connected'` while the adapter's
- * write characteristic was already null (Bug 30, on-device 2026-05-07).
- * The 0.7.2 hotfix reverts the `Init.SEQUENCE` append. The constant + the
- * `decodeBulkParamResponse` decoder are kept in place for a future, safer
- * invocation mechanism (likely an explicit `client.queryDeviceSettings()`
- * call after connect stabilizes).
+ * NOT sent, and not to be restored. Sending it during cold bootstrap made the
+ * device firmware drop the GATT link, leaving the client believing it was
+ * connected while the adapter's write characteristic was already null (Bug 30,
+ * on-device 2026-05-07). Reverted in 0.7.2.
+ *
+ * The safer mechanism it was waiting for is `client.refreshDeviceState()`
+ * (VW-403), which reads three registers instead of eighteen and runs after the
+ * connection is established rather than during bootstrap. The constant stays
+ * only so the hazard keeps a name.
  */
 const MODE_FEATURE_STATE_18PARAM_QUERY_HEX =
   '553304c2aa10060020000f1200863e62536153b753b653e3520651873e883eb053c653893eb04f3154d253823e6a50bc54985a';
@@ -51,11 +52,13 @@ export { MODE_FEATURE_STATE_18PARAM_QUERY_HEX };
  * Device initialization sequence.
  *
  * Sends the 2-packet connect-request + handshake-finish pair documented in
- * `protocol.commands.init`. The 18-param mode-feature-state query
- * (`MODE_FEATURE_STATE_18PARAM_QUERY_HEX`, "bootstrap step 10") was appended
- * here in 0.7.0 to fix Bug 17 (post-reconnect settings cascade) but caused a
- * GATT-drop regression on real hardware (Bug 30); reverted in 0.7.2. Bug 17
- * remains open and will be re-addressed via a safer mechanism.
+ * `protocol.commands.init`, and nothing else. A wide state query was appended
+ * here in 0.7.0 and caused a GATT-drop regression on real hardware (Bug 30);
+ * reverted in 0.7.2 and not to be restored.
+ *
+ * The device answers the handshake finish with its own acceptance report; the
+ * client waits for that before calling the connection established, then reads
+ * core state back over an established link (VW-403).
  */
 export const Init = {
   SEQUENCE: protocol.commands.init.map(hexToBytes),
