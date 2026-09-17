@@ -125,6 +125,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one, rather than a truncated one, and `MockBLEAdapter`'s notifications and
   the `@voltras/node-sdk/testing` reply builders seal what they build.
 
+### Documentation
+
+- **README rows that conflicted with the code are corrected** (VW-412). The
+  eccentric setter was documented and exemplified as a percentage when it takes
+  signed additional pounds; the chains and inverse-chains physical
+  descriptions were swapped; `prepareRecording()` was described as engaging the
+  motor, which `startRecording()` does; `stopRecording()` was described as
+  exiting a workout mode it does not exit; and a resolved setter was shown as
+  the current device setting. The README now covers `requestedSettings` /
+  `confirmedSettings`, `motorState`, `awaitingAcceptance` and
+  `hasConfirmedState`, and the stale `onPreSummary` name is replaced by
+  `onSetSummary`. Inverse chains is marked under review pending VW-407.
+
 ### Changed
 
 - **Internal:** the guided-load module now reads its values from the generated
