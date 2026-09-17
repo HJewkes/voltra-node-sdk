@@ -6,6 +6,7 @@
  */
 
 import type { TrainingMode } from './constants';
+import type { MotorReport } from './device-state';
 
 // =============================================================================
 // Root Protocol Structure
@@ -93,8 +94,48 @@ export interface CommandConfig {
   guidedLoad: GuidedLoadCommands;
   /** Rowing two-stage entry pieces the frame builders assemble */
   rowing: RowingCommands;
+  /** Core-state read and motor-engagement report classification */
+  deviceState: DeviceStateCommands;
   /** Resistance experience commands (intense/standard -> hex string) */
   resistanceExperience: Record<'intense' | 'standard', string>;
+}
+
+/**
+ * Core-state read and motor-engagement report classification.
+ *
+ * Registers are named by `parameterCatalog` key rather than by id, so one
+ * lookup gives both the read-frame builder and the decoder what they need.
+ */
+export interface DeviceStateCommands {
+  /** cmd byte carrying the multi-parameter read (hex string) */
+  readCmd: string;
+  /** `parameterCatalog` keys the core-state read asks for, in wire order */
+  readFields: CoreStateReadFields;
+  /** How to read engagement out of a device report */
+  motorState: MotorStateReportConfig;
+}
+
+/** Registers a core-state read asks the device to report. */
+export interface CoreStateReadFields {
+  weight: string;
+  motorState: string;
+  trainingMode: string;
+}
+
+/**
+ * Classification of the register that reports whether the cable motor is
+ * holding load. Values outside both lists stay unclassified — the SDK
+ * reports `'unknown'` rather than guessing.
+ */
+export interface MotorStateReportConfig {
+  /** `parameterCatalog` key for the register that reports engagement */
+  field: string;
+  /** Mask isolating the primary value from the wire value */
+  primaryMask: number;
+  /** Primary values that mean the cable motor is holding load */
+  engaged: number[];
+  /** Primary values that mean the cable motor has released */
+  released: number[];
 }
 
 /** Field names of a decoded guided-load status snapshot, in wire order. */
@@ -236,6 +277,31 @@ export interface TelemetryConfig {
   trainingModes: TrainingModesConfig;
   /** Vendor frame sub-type definitions */
   vendorMessages: VendorMessagesConfig;
+  /** Connection-acceptance report descriptor; optional for older protocol data */
+  acceptanceReport?: AcceptanceReportConfig;
+}
+
+/**
+ * Descriptor for the device's own reply to the handshake finish.
+ *
+ * Distinct from the transport-level ack, which only says the write landed.
+ * All offsets are frame-absolute.
+ */
+export interface AcceptanceReportConfig {
+  /** Offset of the cmd byte */
+  cmdByteOffset: number;
+  /** cmd byte value the report carries */
+  cmdValue: number;
+  /** Offset of the reply-discriminator bytes */
+  identifierOffset: number;
+  /** Reply-discriminator bytes, in wire order */
+  identifierBytes: number[];
+  /** Total frame length in bytes */
+  frameLength: number;
+  /** Offset of the status byte */
+  statusOffset: number;
+  /** Status value that means the device accepted the connection */
+  acceptedStatus: number;
 }
 
 /**
@@ -495,6 +561,12 @@ export interface DeviceSettings {
    * notification.
    */
   damperLevel?: number;
+  /**
+   * What the device reported about the cable motor. Present only when the
+   * report carried the engagement register with a value the protocol data
+   * classifies; absent means the report said nothing about the motor.
+   */
+  motorState?: MotorReport;
 }
 
 // <Decoder-statedump-asyncstate> ==========================================================

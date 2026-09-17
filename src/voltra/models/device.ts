@@ -31,6 +31,26 @@ export interface VoltraDeviceSettings {
 }
 
 /**
+ * Confirmation state of the cable motor.
+ *
+ * Only `'engaged'` and `'unloaded'` mean the device said so. `'pending'` is a
+ * motor command written and not yet answered; `'unknown'` is every other
+ * case, including a write that failed, a report that never arrived, and a
+ * fresh connection before the first report.
+ */
+export type VoltraMotorState = 'unknown' | 'pending' | 'engaged' | 'unloaded';
+
+/**
+ * Settings the SDK has written but the device has not echoed back, and
+ * settings the device has reported on the current connection.
+ *
+ * Kept apart from {@link VoltraDeviceSettings} — which carries last-known
+ * values and survives a reconnect — so a caller can tell a value the device
+ * confirmed from one it was merely asked for.
+ */
+export type VoltraPartialSettings = Partial<VoltraDeviceSettings>;
+
+/**
  * Recording state for a Voltra device.
  *
  * A "recording" is when the device is actively streaming telemetry data,

@@ -7,7 +7,12 @@
 import type { BLEAdapter, Peripheral } from '../bluetooth/adapters/types';
 import type { TelemetryFrame } from '../voltra/models/telemetry';
 import type { VoltraConnectionState } from '../voltra/models/connection';
-import type { VoltraDeviceSettings, VoltraRecordingState } from '../voltra/models/device';
+import type {
+  VoltraDeviceSettings,
+  VoltraMotorState,
+  VoltraPartialSettings,
+  VoltraRecordingState,
+} from '../voltra/models/device';
 import type { TrainingMode, VendorSchemaVersion } from '../voltra/protocol/constants';
 import type { DeviceSettings, StateDumpEvent } from '../voltra/protocol/types';
 
@@ -53,6 +58,18 @@ export interface VoltraClientOptions {
    * Default: 1000
    */
   reconnectDelayMs?: number;
+
+  /**
+   * How long to wait for the device to report the result of a motor command
+   * (stop, unload, end-of-set) before giving up on confirming it.
+   *
+   * On timeout the SDK re-reads device state once, and if that is also
+   * unanswered it reports the motor state as `'unknown'` rather than
+   * assuming the command took effect.
+   *
+   * Default: 2000
+   */
+  motorConfirmationTimeoutMs?: number;
 }
 
 /**
@@ -577,7 +594,14 @@ export interface VoltraClientState {
   isReconnecting: boolean;
   connectedDeviceId: string | null;
   connectedDeviceName: string | null;
+  /** Last-known values. Survives a reconnect; not proof of anything current. */
   settings: VoltraDeviceSettings;
+  /** Values written to the device and not yet echoed back. */
+  requestedSettings: VoltraPartialSettings;
+  /** Values the device has reported on the current connection. */
+  confirmedSettings: VoltraPartialSettings;
+  /** What the device last said about the cable motor. */
+  motorState: VoltraMotorState;
   recordingState: VoltraRecordingState;
   isRecording: boolean;
   error: Error | null;

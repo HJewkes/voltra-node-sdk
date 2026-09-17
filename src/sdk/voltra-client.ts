@@ -47,12 +47,28 @@
  *   connected'` before reaching the wire.
  * - Recovery requires `await client.connect(...)` again (or `manager.connect`)
  *   before any further setter calls.
- * - Setters that mutate `_settings` only do so on the *success* path; the
- *   cached settings always reflect the last successful write.
+ * - Setters that mutate `settings` only do so on the *success* path.
  *
- * Async device-side echoes (`onSettingsUpdate`, `onConnectionStateChange`)
- * are the canonical way to confirm a setting landed — the SDK does not have
- * a write-and-await (T4) primitive that round-trips a confirmation frame.
+ * ## Requested vs confirmed (VW-402)
+ *
+ * A write landing on the wire is not the device agreeing. The client keeps
+ * the two apart:
+ *
+ * - `settings` — last-known values. Survives a reconnect. A convenience, not
+ *   evidence.
+ * - `requestedSettings` — written, not yet echoed back.
+ * - `confirmedSettings` — reported by the device on *this* connection.
+ *   Cleared on disconnect.
+ * - `motorState` — `'engaged'` / `'unloaded'` mean the device said so;
+ *   `'pending'` means a motor command is unanswered; `'unknown'` means we do
+ *   not know, including after a failed write.
+ *
+ * The motor primitives (`stopRecording`, `unloadDevice`, `endSet`) are the
+ * one place this is enforced: each waits for a device report newer than the
+ * one it saw before writing, re-reads state once if none arrives, and reports
+ * `'unknown'` rather than assuming. A failed stop throws. The ordinary
+ * setters still resolve on the write; their confirmation arrives later
+ * through `onSettingsUpdate`.
  */
 
 import type { BLEAdapter } from '../bluetooth/adapters/types';
@@ -60,7 +76,12 @@ import { PeripheralAdapterBridge } from './peripheral-adapter-bridge';
 import type { DiscoveredDevice } from '../bluetooth/models/device';
 import type { VoltraConnectionState } from '../voltra/models/connection';
 import { DEFAULT_SETTINGS } from '../voltra/models/device';
-import type { VoltraDeviceSettings, VoltraRecordingState } from '../voltra/models/device';
+import type {
+  VoltraDeviceSettings,
+  VoltraMotorState,
+  VoltraPartialSettings,
+  VoltraRecordingState,
+} from '../voltra/models/device';
 import { isValidVoltraTransition } from '../voltra/models/connection';
 import { filterVoltraDevices } from '../voltra/models/device-filter';
 import { Auth, Init, Timing, Workout } from '../voltra/protocol/constants';
@@ -157,6 +178,8 @@ import type {
   ModeRevert,
 } from './types';
 import type { DeviceSettings } from '../voltra/protocol/types';
+import { buildCoreStateReadFrame } from '../voltra/protocol/device-state';
+import type { MotorReport } from '../voltra/protocol/device-state';
 import {
   buildGuidedLoadTriggerFrame,
   buildGuidedLoadStatusReadFrame,
@@ -178,7 +201,18 @@ const DEFAULT_OPTIONS: Required<Omit<VoltraClientOptions, 'adapter' | 'periphera
   autoReconnect: false,
   maxReconnectAttempts: 3,
   reconnectDelayMs: 1000,
+  motorConfirmationTimeoutMs: 2000,
 };
+
+/**
+ * A caller parked on the next motor report. `check` re-tests the pending
+ * condition when a report lands; `abort` settles the wait as unconfirmed
+ * when the connection goes away.
+ */
+interface MotorReportWaiter {
+  check: () => void;
+  abort: () => void;
+}
 
 /**
  * High-level client for connecting to and controlling a Voltra device.
@@ -204,7 +238,19 @@ export class VoltraClient {
   private _connectedDeviceId: string | null = null;
   private _connectedDeviceName: string | null = null;
   private _settings: VoltraDeviceSettings = { ...DEFAULT_SETTINGS };
+  private _requestedSettings: VoltraPartialSettings = {};
+  private _confirmedSettings: VoltraPartialSettings = {};
   private _recordingState: VoltraRecordingState = 'idle';
+
+  // VW-402: what the device last said about the cable motor, and enough
+  // bookkeeping to tell a report that answers the command we just wrote from
+  // one that arrived before it. `_motorReportGeneration` counts reports that
+  // carried the engagement register; a command records the count before its
+  // write and only accepts a report from a later generation.
+  private _motorState: VoltraMotorState = 'unknown';
+  private _motorReportGeneration = 0;
+  private _lastMotorReport: MotorReport | null = null;
+  private readonly motorReportWaiters = new Set<MotorReportWaiter>();
   private _isReconnecting = false;
   private _reconnectAttempt = 0;
   private _error: Error | null = null;
@@ -357,6 +403,37 @@ export class VoltraClient {
   }
 
   /**
+   * Values written to the device that it has not echoed back.
+   *
+   * A key here is a request, not a fact. Once the device reports the value it
+   * moves to {@link confirmedSettings}.
+   */
+  get requestedSettings(): VoltraPartialSettings {
+    return { ...this._requestedSettings };
+  }
+
+  /**
+   * Values the device has reported on the current connection.
+   *
+   * Cleared on disconnect — a value confirmed by the last connection says
+   * nothing about this one.
+   */
+  get confirmedSettings(): VoltraPartialSettings {
+    return { ...this._confirmedSettings };
+  }
+
+  /**
+   * What the device last said about the cable motor.
+   *
+   * `'engaged'` and `'unloaded'` are device-confirmed. `'pending'` means a
+   * motor command is written and unanswered. `'unknown'` covers everything
+   * else, including a failed write and a command the device never answered.
+   */
+  get motorState(): VoltraMotorState {
+    return this._motorState;
+  }
+
+  /**
    * Get current recording state.
    */
   get recordingState(): VoltraRecordingState {
@@ -388,6 +465,9 @@ export class VoltraClient {
       connectedDeviceId: this._connectedDeviceId,
       connectedDeviceName: this._connectedDeviceName,
       settings: { ...this._settings },
+      requestedSettings: { ...this._requestedSettings },
+      confirmedSettings: { ...this._confirmedSettings },
+      motorState: this._motorState,
       recordingState: this._recordingState,
       isRecording: this.isRecording,
       error: this._error,
@@ -624,9 +704,12 @@ export class VoltraClient {
     this._voluntaryDisconnectInFlight = true;
 
     try {
-      // Stop recording if active
+      // Best-effort release on the way out. Teardown must not block on a
+      // device report, so this does not go through the confirming path —
+      // which is why the motor state ends `'unknown'`, not `'unloaded'`.
       if (this._recordingState !== 'idle') {
-        await this.stopRecording().catch(() => {});
+        await this.writeFrame(Workout.STOP).catch(() => {});
+        this._motorState = 'unknown';
       }
 
       await this.adapter?.disconnect();
@@ -661,7 +744,7 @@ export class VoltraClient {
 
     try {
       await this.writeFrame(cmd);
-      this._settings.weight = lbs;
+      this.recordRequestedSetting('weight', lbs);
     } catch (e) {
       if (e instanceof ConnectionError) throw e;
       throw new CommandError(`Failed to set weight: ${this.getErrorMessage(e)}`, 'setWeight');
@@ -683,7 +766,7 @@ export class VoltraClient {
 
     try {
       await this.writeFrame(cmd);
-      this._settings.chains = lbs;
+      this.recordRequestedSetting('chains', lbs);
     } catch (e) {
       if (e instanceof ConnectionError) throw e;
       throw new CommandError(`Failed to set chains: ${this.getErrorMessage(e)}`, 'setChains');
@@ -708,7 +791,7 @@ export class VoltraClient {
 
     try {
       await this.writeFrame(cmd);
-      this._settings.inverseChains = lbs;
+      this.recordRequestedSetting('inverseChains', lbs);
     } catch (e) {
       if (e instanceof ConnectionError) throw e;
       throw new CommandError(
@@ -738,7 +821,7 @@ export class VoltraClient {
 
     try {
       await this.writeFrame(cmd);
-      this._settings.eccentric = overloadLbs;
+      this.recordRequestedSetting('eccentric', overloadLbs);
     } catch (e) {
       if (e instanceof ConnectionError) throw e;
       throw new CommandError(`Failed to set eccentric: ${this.getErrorMessage(e)}`, 'setEccentric');
@@ -1476,18 +1559,19 @@ export class VoltraClient {
    *
    * Idempotent — safe to call when the cable is already slack; the
    * firmware accepts repeated STOP frames.
+   *
+   * **VW-402: resolving is not proof the cable released.** Read
+   * {@link motorState} afterwards. It is `'unloaded'` only when the device
+   * reported the release, and `'unknown'` when it did not — in which case the
+   * recording state is left where it was rather than moved to idle. A failed
+   * write throws and leaves the motor state `'unknown'`.
    */
   async unloadDevice(): Promise<void> {
     this.ensureConnected();
 
-    try {
-      await this.writeFrame(Workout.STOP);
-      if (this._recordingState !== 'idle') {
-        this.setRecordingState('idle');
-      }
-    } catch (e) {
-      if (e instanceof ConnectionError) throw e;
-      throw new CommandError(`Failed to unload device: ${this.getErrorMessage(e)}`, 'unloadDevice');
+    const state = await this.writeMotorCommand(Workout.STOP, 'released', 'unloadDevice');
+    if (state === 'unloaded' && this._recordingState !== 'idle') {
+      this.setRecordingState('idle');
     }
   }
 
@@ -1714,7 +1798,11 @@ export class VoltraClient {
    * `prepareRecording` was already awaited and `_recordingState` is
    * `'ready'`, this is a single `Workout.GO` write.
    *
-   * Transitions `_recordingState` to `'active'` on the successful write.
+   * Transitions `_recordingState` to `'active'` on the successful write and
+   * leaves {@link motorState} `'pending'` until the device reports. Unlike the
+   * stop primitives this does not wait — a set start blocking on a report
+   * would be worse than an unconfirmed engage.
+   *
    * Pair with {@link stopRecording} (or {@link endSet}) to release the motor.
    */
   async startRecording(): Promise<void> {
@@ -1727,6 +1815,9 @@ export class VoltraClient {
 
     try {
       await this.writeFrame(Workout.GO);
+      // Engaging is not confirmed here: a set start must not block on a
+      // device report. The next report resolves `motorState` from 'pending'.
+      this._motorState = 'pending';
       this.setRecordingState('active');
     } catch (e) {
       if (e instanceof ConnectionError) throw e;
@@ -1736,23 +1827,24 @@ export class VoltraClient {
 
   /**
    * Stop recording (disengage motor and exit workout mode).
+   *
+   * **VW-402: a stop the device did not confirm is not a stop.** The write
+   * failing throws instead of being swallowed, and the recording state
+   * reaches `'idle'` only once the device reports the release. Without that
+   * report the state stays `'stopping'` and {@link motorState} is
+   * `'unknown'`, which is a retryable state rather than a false all-clear.
    */
   async stopRecording(): Promise<void> {
     if (this._recordingState === 'idle') {
       return;
     }
+    this.ensureConnected();
 
     this.setRecordingState('stopping');
-
-    try {
-      if (this.adapter) {
-        await this.writeFrame(Workout.STOP);
-      }
-    } catch (e) {
-      console.warn('[VoltraClient] Stop error:', e);
+    const state = await this.writeMotorCommand(Workout.STOP, 'released', 'stopRecording');
+    if (state === 'unloaded') {
+      this.setRecordingState('idle');
     }
-
-    this.setRecordingState('idle');
   }
 
   /**
@@ -1764,11 +1856,9 @@ export class VoltraClient {
       return;
     }
 
-    try {
-      await this.writeFrame(Workout.STOP);
+    const state = await this.writeMotorCommand(Workout.STOP, 'released', 'endSet');
+    if (state === 'unloaded') {
       this.setRecordingState('ready');
-    } catch (e) {
-      console.warn('[VoltraClient] End set error:', e);
     }
   }
 
@@ -2431,6 +2521,18 @@ export class VoltraClient {
     // every connect; keeping last-known settings here gives `getState()`
     // callers stable values across the brief reconnect window.
     this._recordingState = 'idle';
+    // VW-402: confirmation belongs to a connection. Requested and confirmed
+    // values, and the motor state, all reset; `_settings` deliberately does
+    // not, so last-known values stay available and plainly separate from what
+    // this connection has confirmed.
+    this._requestedSettings = {};
+    this._confirmedSettings = {};
+    this._motorState = 'unknown';
+    this._lastMotorReport = null;
+    this._motorReportGeneration = 0;
+    for (const waiter of [...this.motorReportWaiters]) {
+      waiter.abort();
+    }
     // <Bug-22>
     this.rowReassertScheduler.cancel();
     this._rowSubMenuOpen = false;
@@ -2729,23 +2831,133 @@ export class VoltraClient {
    * Called when the device sends a settings_update notification.
    */
   private syncSettingsFromDevice(deviceSettings: DeviceSettings): void {
-    if (deviceSettings.baseWeight !== undefined) {
-      this._settings.weight = deviceSettings.baseWeight;
+    this.recordConfirmedSetting('weight', deviceSettings.baseWeight);
+    this.recordConfirmedSetting('chains', deviceSettings.chains);
+    this.recordConfirmedSetting('inverseChains', deviceSettings.inverseChains);
+    this.recordConfirmedSetting('eccentric', deviceSettings.eccentric);
+    this.recordConfirmedSetting('mode', deviceSettings.trainingMode);
+    this.recordConfirmedSetting('damperLevel', deviceSettings.damperLevel);
+    if (deviceSettings.motorState !== undefined) {
+      this.recordMotorReport(deviceSettings.motorState);
     }
-    if (deviceSettings.chains !== undefined) {
-      this._settings.chains = deviceSettings.chains;
+  }
+
+  /**
+   * Write a motor command and report what the device said afterwards.
+   *
+   * The write landing is not the outcome: only a report from a later
+   * generation than the one recorded before the write can confirm. On timeout
+   * the device is asked to re-read its state once; if that is also unanswered
+   * the motor state is `'unknown'` — never the state we asked for.
+   *
+   * @throws ConnectionError | CommandError if the write itself fails.
+   */
+  private async writeMotorCommand(
+    frame: Uint8Array,
+    expected: MotorReport,
+    operation: string
+  ): Promise<VoltraMotorState> {
+    const since = this._motorReportGeneration;
+    this._motorState = 'pending';
+
+    try {
+      await this.writeFrame(frame);
+    } catch (e) {
+      this._motorState = 'unknown';
+      if (e instanceof ConnectionError) throw e;
+      throw new CommandError(`Failed to ${operation}: ${this.getErrorMessage(e)}`, operation);
     }
-    if (deviceSettings.inverseChains !== undefined) {
-      this._settings.inverseChains = deviceSettings.inverseChains;
+
+    const confirmed = await this.confirmMotorReport(expected, since);
+    if (confirmed) {
+      this._motorState = expected === 'released' ? 'unloaded' : 'engaged';
+    } else if (this._motorState === 'pending') {
+      // Still pending means nothing was reported at all. A report that landed
+      // during the wait already set the state, even when it contradicts what
+      // we asked for — that is the device speaking, and it stands.
+      this._motorState = 'unknown';
     }
-    if (deviceSettings.eccentric !== undefined) {
-      this._settings.eccentric = deviceSettings.eccentric;
+    return this._motorState;
+  }
+
+  /** Wait for the report, then once more behind an explicit state re-read. */
+  private async confirmMotorReport(expected: MotorReport, since: number): Promise<boolean> {
+    const timeoutMs = this.options.motorConfirmationTimeoutMs;
+    if (await this.waitForMotorReport(expected, since, timeoutMs)) return true;
+    if (!this.isConnected) return false;
+
+    try {
+      await this.writeFrame(buildCoreStateReadFrame());
+    } catch {
+      return false;
     }
-    if (deviceSettings.trainingMode !== undefined) {
-      this._settings.mode = deviceSettings.trainingMode;
-    }
-    if (deviceSettings.damperLevel !== undefined) {
-      this._settings.damperLevel = deviceSettings.damperLevel;
+    return this.waitForMotorReport(expected, since, timeoutMs);
+  }
+
+  /** True once a report newer than `since` says `expected`. */
+  private hasMotorReport(expected: MotorReport, since: number): boolean {
+    return this._motorReportGeneration > since && this._lastMotorReport === expected;
+  }
+
+  /** Park until {@link hasMotorReport} holds, the link drops, or time runs out. */
+  private waitForMotorReport(
+    expected: MotorReport,
+    since: number,
+    timeoutMs: number
+  ): Promise<boolean> {
+    if (this.hasMotorReport(expected, since)) return Promise.resolve(true);
+
+    return new Promise<boolean>((resolve) => {
+      const settle = (confirmed: boolean): void => {
+        clearTimeout(timer);
+        this.motorReportWaiters.delete(waiter);
+        resolve(confirmed);
+      };
+      const waiter: MotorReportWaiter = {
+        check: () => {
+          if (this.hasMotorReport(expected, since)) settle(true);
+        },
+        abort: () => settle(false),
+      };
+      const timer = setTimeout(() => settle(false), timeoutMs);
+      this.motorReportWaiters.add(waiter);
+    });
+  }
+
+  /** Record a value we asked the device for but that it has not echoed. */
+  private recordRequestedSetting<K extends keyof VoltraDeviceSettings>(
+    key: K,
+    value: VoltraDeviceSettings[K]
+  ): void {
+    this._settings[key] = value;
+    this._requestedSettings[key] = value;
+  }
+
+  /**
+   * Record a value the device reported. It leaves the requested set — the
+   * device has now spoken for that key, whatever we asked for.
+   */
+  private recordConfirmedSetting<K extends keyof VoltraDeviceSettings>(
+    key: K,
+    value: VoltraDeviceSettings[K] | undefined
+  ): void {
+    if (value === undefined) return;
+    this._settings[key] = value;
+    this._confirmedSettings[key] = value;
+    delete this._requestedSettings[key];
+  }
+
+  /**
+   * Record a device report of motor engagement and release anyone waiting on
+   * one. The generation counter is what lets a pending command tell this
+   * report from one that arrived before its write.
+   */
+  private recordMotorReport(report: MotorReport): void {
+    this._motorReportGeneration++;
+    this._lastMotorReport = report;
+    this._motorState = report === 'released' ? 'unloaded' : 'engaged';
+    for (const waiter of [...this.motorReportWaiters]) {
+      waiter.check();
     }
   }
 }
