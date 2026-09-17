@@ -44,6 +44,19 @@ const CORE_STATE_PARAM_IDS = [
 /** `parameterCatalog` key of the register that reports motor engagement. */
 export const MOTOR_STATE_FIELD = deviceState.motorState.field;
 
+/** `parameterCatalog` keys the core-state read asks for, in wire order. */
+export const CORE_STATE_FIELDS = [
+  deviceState.readFields.weight,
+  deviceState.readFields.motorState,
+  deviceState.readFields.trainingMode,
+] as const;
+
+/** Report values that mean the motor is holding load, and that it released. */
+export const MOTOR_REPORT_VALUES: Record<MotorReport, number> = {
+  engaged: deviceState.motorState.engaged[0],
+  released: deviceState.motorState.released[0],
+};
+
 /**
  * Build the read frame that asks the device to report weight, motor state
  * and training mode.
@@ -74,4 +87,20 @@ export function classifyMotorReport(value: number): MotorReport | null {
   if (deviceState.motorState.engaged.includes(primary)) return 'engaged';
   if (deviceState.motorState.released.includes(primary)) return 'released';
   return null;
+}
+
+/**
+ * True when the frame is the core-state read {@link buildCoreStateReadFrame}
+ * produces. The sequence field and checksums are ignored, so a read built with
+ * any sequence matches.
+ */
+export function isCoreStateRead(data: Uint8Array): boolean {
+  const reference = buildCoreStateReadFrame();
+  if (data.length !== reference.length) return false;
+  const from = 10;
+  const to = reference.length - 2;
+  for (let i = from; i < to; i++) {
+    if (data[i] !== reference[i]) return false;
+  }
+  return true;
 }

@@ -35,3 +35,14 @@ export {
   type CaptureSkip,
   type CaptureSkipReason,
 } from './capture-loader';
+
+export {
+  ACCEPTANCE_STATUS_OK,
+  DEFAULT_SIMULATED_STATE,
+  connectSetupReply,
+  buildAcceptanceReport,
+  buildCoreStateReply,
+  isCoreStateRead,
+  isHandshakeFinishWrite,
+  type CoreStateReply,
+} from './device-replies';

@@ -128,6 +128,8 @@ import { setupDisconnectMonitor, attemptReconnect } from './reconnect-handler';
 import { ReassertScheduler } from './scheduler';
 import {
   ConnectionError,
+  ConnectionRefusedError,
+  DeviceStateUnknownError,
   AuthenticationError,
   NotConnectedError,
   InvalidSettingError,
@@ -202,6 +204,7 @@ const DEFAULT_OPTIONS: Required<Omit<VoltraClientOptions, 'adapter' | 'periphera
   maxReconnectAttempts: 3,
   reconnectDelayMs: 1000,
   motorConfirmationTimeoutMs: 2000,
+  acceptanceTimeoutMs: 30000,
 };
 
 /**
@@ -251,6 +254,17 @@ export class VoltraClient {
   private _motorReportGeneration = 0;
   private _lastMotorReport: MotorReport | null = null;
   private readonly motorReportWaiters = new Set<MotorReportWaiter>();
+
+  // VW-403: the connection is not established until the device reports that
+  // it accepted it, and control values are not known until it reports them.
+  private acceptanceWaiter: ((report: { accepted: boolean; status: number }) => void) | null = null;
+  /**
+   * An acceptance report that landed before anyone waited for it. The device
+   * can answer the handshake finish while the init writes are still settling,
+   * so the report is latched rather than dropped.
+   */
+  private pendingAcceptance: { accepted: boolean; status: number } | null = null;
+  private _coreStateConfirmed = false;
   private _isReconnecting = false;
   private _reconnectAttempt = 0;
   private _error: Error | null = null;
@@ -636,6 +650,7 @@ export class VoltraClient {
     this._expectedMode = null;
     this._expectedModeExpiresAt = 0;
     this._voluntaryDisconnectInFlight = false;
+    this.pendingAcceptance = null;
 
     try {
       // Connect. When backed by a pre-dialed Peripheral, the BLE-level
@@ -657,22 +672,25 @@ export class VoltraClient {
       // Initialize
       await this.initialize();
 
-      // Success
+      // VW-403: the init writes landing is not the device agreeing. Wait for
+      // its own acceptance report before calling this a connection.
+      this.setConnectionState('awaitingAcceptance');
+      await this.awaitAcceptance();
+
       this._connectedDeviceId = device.id;
       this._connectedDeviceName = device.name ?? null;
-      // Bug 17 fix: do NOT blanket-reset `_settings` here. The bootstrap
-      // step-10 query (`MODE_FEATURE_STATE_18PARAM_QUERY_HEX`) sent inside
-      // `initialize()` triggers a bulk-read response that populates
-      // `_settings` via `syncSettingsFromDevice`. Resetting _settings here
-      // would wipe whatever step-10 just populated. On the disconnect side,
-      // `cleanup()` also no longer resets, so last-known settings persist
-      // across reconnect until step-10 refreshes them.
+      // `_settings` is deliberately not reset: it is last-known values, and
+      // it is now plainly separate from `confirmedSettings`, which starts
+      // empty on every connection (VW-402).
       this.setConnectionState('connected');
 
       this.emit({ type: 'connected', deviceId: device.id, deviceName: device.name ?? null });
 
       // Setup disconnect handler for auto-reconnect
       this.setupDisconnectHandler();
+
+      // Nothing about this connection's control values is known yet. Ask.
+      await this.refreshDeviceState();
     } catch (e) {
       this.cleanup();
       this.setConnectionState('disconnected');
@@ -735,7 +753,7 @@ export class VoltraClient {
    * @param lbs Weight (5-200, any integer value)
    */
   async setWeight(lbs: number): Promise<void> {
-    this.ensureConnected();
+    this.ensureControlReady();
 
     const cmd = getWeightCommand(lbs);
     if (!cmd) {
@@ -757,7 +775,7 @@ export class VoltraClient {
    * @param lbs Chains weight (0-100)
    */
   async setChains(lbs: number): Promise<void> {
-    this.ensureConnected();
+    this.ensureControlReady();
 
     const cmd = getChainsCommand(lbs);
     if (!cmd) {
@@ -782,7 +800,7 @@ export class VoltraClient {
    * @param lbs Inverse chains weight in pounds (0-100)
    */
   async setInverseChains(lbs: number): Promise<void> {
-    this.ensureConnected();
+    this.ensureControlReady();
 
     const cmd = getInverseChainsCommand(lbs);
     if (!cmd) {
@@ -812,7 +830,7 @@ export class VoltraClient {
    *   it (assisted eccentric).
    */
   async setEccentric(overloadLbs: number): Promise<void> {
-    this.ensureConnected();
+    this.ensureControlReady();
 
     const cmd = getEccentricCommand(overloadLbs);
     if (!cmd) {
@@ -886,7 +904,7 @@ export class VoltraClient {
    * @param mode Training mode to set.
    */
   async setMode(mode: TrainingMode): Promise<void> {
-    this.ensureConnected();
+    this.ensureControlReady();
 
     // <Bug-22> Auto-route Rowing to the two-stage entry — never the
     // strength-arm. Default to Just Row; advanced callers that need a
@@ -961,7 +979,7 @@ export class VoltraClient {
    * Idempotent — calling repeatedly is safe.
    */
   async enterRowMode(): Promise<void> {
-    this.ensureConnected();
+    this.ensureControlReady();
 
     const cmd = getModeCommand(TrainingMode.Rowing);
     if (!cmd) {
@@ -1005,7 +1023,7 @@ export class VoltraClient {
    *   free row; `'M50'` is independently verified, the rest are inferred.
    */
   async startRow(distance: RowingDistancePreset = 'JustRow'): Promise<void> {
-    this.ensureConnected();
+    this.ensureControlReady();
 
     if (!this._rowSubMenuOpen) {
       throw new CommandError(
@@ -1106,7 +1124,7 @@ export class VoltraClient {
    * @param level Damper level (0-9)
    */
   async setDamperLevel(level: number): Promise<void> {
-    this.ensureConnected();
+    this.ensureControlReady();
 
     const cmd = getDamperLevelCommand(level);
     if (!cmd) {
@@ -1136,7 +1154,7 @@ export class VoltraClient {
    * @param mode 'off' or 'on'
    */
   async setAssistMode(mode: 'off' | 'on'): Promise<void> {
-    this.ensureConnected();
+    this.ensureControlReady();
 
     const cmd = getAssistModeCommand(mode);
     if (!cmd) {
@@ -1166,7 +1184,7 @@ export class VoltraClient {
    * @param lbs Max force in pounds (15-70)
    */
   async setBandMaxForce(lbs: number): Promise<void> {
-    this.ensureConnected();
+    this.ensureControlReady();
 
     const cmd = getBandMaxForceCommand(lbs);
     if (!cmd) {
@@ -1199,7 +1217,7 @@ export class VoltraClient {
    * @param mmPerSec Target speed in mm/s (0-2000, step 10)
    */
   async setIsokineticTargetSpeed(mmPerSec: number): Promise<void> {
-    this.ensureConnected();
+    this.ensureControlReady();
 
     const cmd = getIsokineticTargetSpeedCommand(mmPerSec);
     if (!cmd) {
@@ -1233,7 +1251,7 @@ export class VoltraClient {
    * @param mode 'isokinetic' or 'constant'
    */
   async setIsokineticEccMode(mode: 'isokinetic' | 'constant'): Promise<void> {
-    this.ensureConnected();
+    this.ensureControlReady();
 
     const cmd = getIsokineticEccModeCommand(mode);
     if (!cmd) {
@@ -1263,7 +1281,7 @@ export class VoltraClient {
    * @param mmPerSec Speed limit in mm/s; 0 = auto
    */
   async setIsokineticEccSpeedLimit(mmPerSec: number): Promise<void> {
-    this.ensureConnected();
+    this.ensureControlReady();
 
     const cmd = getIsokineticEccSpeedLimitCommand(mmPerSec);
     if (!cmd) {
@@ -1301,7 +1319,7 @@ export class VoltraClient {
    * @param lbs Weight in pounds (0-200)
    */
   async setIsokineticEccConstWeight(lbs: number): Promise<void> {
-    this.ensureConnected();
+    this.ensureControlReady();
 
     const cmd = getIsokineticEccConstWeightCommand(lbs);
     if (!cmd) {
@@ -1339,7 +1357,7 @@ export class VoltraClient {
    * @param lbs Weight in pounds (0-200)
    */
   async setIsokineticEccOverloadWeight(lbs: number): Promise<void> {
-    this.ensureConnected();
+    this.ensureControlReady();
 
     const cmd = getIsokineticEccOverloadWeightCommand(lbs);
     if (!cmd) {
@@ -1415,7 +1433,7 @@ export class VoltraClient {
    * @param hz Telemetry frame emission rate in Hz
    */
   async setTelemetryRate(hz: number): Promise<void> {
-    this.ensureConnected();
+    this.ensureControlReady();
 
     const cmd = getTelemetryRateCommand(hz);
     if (!cmd) {
@@ -1447,7 +1465,7 @@ export class VoltraClient {
    * @param mode 'none' or 'all'
    */
   async setTelemetrySubscribe(mode: 'none' | 'all'): Promise<void> {
-    this.ensureConnected();
+    this.ensureControlReady();
 
     const cmd = getTelemetrySubscribeCommand(mode);
     if (!cmd) {
@@ -1479,7 +1497,7 @@ export class VoltraClient {
    * @param mode 'open' or 'close'
    */
   async setCableTrigger(mode: 'open' | 'close'): Promise<void> {
-    this.ensureConnected();
+    this.ensureControlReady();
 
     const cmd = getCableTriggerCommand(mode);
     if (!cmd) {
@@ -1511,7 +1529,7 @@ export class VoltraClient {
    * @param mode 'intense' or 'standard'
    */
   async setResistanceExperience(mode: 'intense' | 'standard'): Promise<void> {
-    this.ensureConnected();
+    this.ensureControlReady();
 
     const cmd = getResistanceExperienceCommand(mode);
     if (!cmd) {
@@ -1532,6 +1550,34 @@ export class VoltraClient {
   /** Get available telemetry rates (Hz). @experimental */
   getAvailableTelemetryRates(): number[] {
     return getAvailableTelemetryRates();
+  }
+
+  /**
+   * Ask the device to report its core control values (weight, motor state,
+   * training mode) and wait for the reply.
+   *
+   * Runs once automatically after a connection is accepted. Call it again to
+   * clear a {@link DeviceStateUnknownError} — the SDK never re-reads on its
+   * own, so recovering from a device that stayed silent is the caller's
+   * explicit decision.
+   *
+   * Resolves whether or not the device answers; read
+   * {@link hasConfirmedState} to find out which happened.
+   */
+  async refreshDeviceState(): Promise<void> {
+    this.ensureConnected();
+    await this.writeFrame(buildCoreStateReadFrame());
+    await this.waitForConfirmedState(this.options.motorConfirmationTimeoutMs);
+  }
+
+  /**
+   * Whether the device has reported this connection's core control values.
+   *
+   * False until then, and false again after every disconnect. Control setters
+   * throw {@link DeviceStateUnknownError} while it is false.
+   */
+  get hasConfirmedState(): boolean {
+    return this._coreStateConfirmed;
   }
 
   // ===========================================================================
@@ -2284,6 +2330,9 @@ export class VoltraClient {
         this.batteryUpdateListeners.forEach((listener) => listener(battery));
         this.notifyBatteryUpdateEvent(battery);
       },
+      onConnectionAcceptance: (accepted, status) => {
+        this.handleAcceptanceReport(accepted, status);
+      },
     });
 
     const baseUnsub = this.adapter.onNotification(handler);
@@ -2512,14 +2561,10 @@ export class VoltraClient {
     this.notificationUnsubscribe = null;
     this._connectedDeviceId = null;
     this._connectedDeviceName = null;
-    // Bug 17 fix: do NOT blanket-reset `_settings` to defaults on cleanup.
-    // The previous reset (`this._settings = { ...DEFAULT_SETTINGS };`) was
-    // the proximate cause of post-reconnect SDK reading defaults — the
-    // 3-packet init produced no settings cascade, leaving `_settings`
-    // stuck at `DEFAULT_SETTINGS` until a write triggered an async-state
-    // update. The bootstrap step-10 query now refreshes `_settings` on
-    // every connect; keeping last-known settings here gives `getState()`
-    // callers stable values across the brief reconnect window.
+    // `_settings` is deliberately not reset here: it is last-known values,
+    // and since VW-402 it is plainly separate from `confirmedSettings`, which
+    // does reset. Keeping it gives `state` callers stable values across the
+    // brief reconnect window without anyone mistaking them for current.
     this._recordingState = 'idle';
     // VW-402: confirmation belongs to a connection. Requested and confirmed
     // values, and the motor state, all reset; `_settings` deliberately does
@@ -2530,6 +2575,9 @@ export class VoltraClient {
     this._motorState = 'unknown';
     this._lastMotorReport = null;
     this._motorReportGeneration = 0;
+    this._coreStateConfirmed = false;
+    this.acceptanceWaiter = null;
+    this.pendingAcceptance = null;
     for (const waiter of [...this.motorReportWaiters]) {
       waiter.abort();
     }
@@ -2837,8 +2885,92 @@ export class VoltraClient {
     this.recordConfirmedSetting('eccentric', deviceSettings.eccentric);
     this.recordConfirmedSetting('mode', deviceSettings.trainingMode);
     this.recordConfirmedSetting('damperLevel', deviceSettings.damperLevel);
+    this.refreshConfirmedStateFlag();
     if (deviceSettings.motorState !== undefined) {
       this.recordMotorReport(deviceSettings.motorState);
+    } else {
+      this.notifyMotorReportWaiters();
+    }
+  }
+
+  /**
+   * Wait for the device's own report of whether it accepted the connection.
+   *
+   * @throws ConnectionRefusedError on a status other than accepted, and on a
+   *   silent device once the acceptance window closes. Never retries — that
+   *   is the caller's decision.
+   */
+  private async awaitAcceptance(): Promise<void> {
+    const report =
+      this.pendingAcceptance ??
+      (await new Promise<{ accepted: boolean; status: number } | null>((resolve) => {
+        const timer = setTimeout(() => {
+          this.acceptanceWaiter = null;
+          resolve(null);
+        }, this.options.acceptanceTimeoutMs);
+        this.acceptanceWaiter = (result) => {
+          clearTimeout(timer);
+          this.acceptanceWaiter = null;
+          resolve(result);
+        };
+      }));
+    this.pendingAcceptance = null;
+
+    if (!report) {
+      throw new ConnectionRefusedError(
+        'Device did not report whether it accepted the connection',
+        null
+      );
+    }
+    if (!report.accepted) {
+      throw new ConnectionRefusedError('Device refused the connection', report.status);
+    }
+  }
+
+  /** Hand an inbound acceptance report to whoever is waiting for it. */
+  private handleAcceptanceReport(accepted: boolean, status: number): void {
+    if (this.acceptanceWaiter) {
+      this.acceptanceWaiter({ accepted, status });
+      return;
+    }
+    this.pendingAcceptance = { accepted, status };
+  }
+
+  /** Park until the device has reported core state, or the window closes. */
+  private waitForConfirmedState(timeoutMs: number): Promise<void> {
+    if (this._coreStateConfirmed) return Promise.resolve();
+
+    return new Promise<void>((resolve) => {
+      const settle = (): void => {
+        clearTimeout(timer);
+        this.motorReportWaiters.delete(waiter);
+        resolve();
+      };
+      const waiter: MotorReportWaiter = {
+        check: () => {
+          if (this._coreStateConfirmed) settle();
+        },
+        abort: settle,
+      };
+      const timer = setTimeout(settle, timeoutMs);
+      this.motorReportWaiters.add(waiter);
+    });
+  }
+
+  /**
+   * Guard for control writes: connected, and the device has reported this
+   * connection's control values.
+   *
+   * The stop primitives deliberately do not use this — refusing to release the
+   * cable because state is unknown would be the more dangerous failure.
+   */
+  private ensureControlReady(): void {
+    this.ensureConnected();
+    if (!this._coreStateConfirmed) {
+      throw new DeviceStateUnknownError(
+        'Device has not reported its state on this connection yet — ' +
+          'call refreshDeviceState() before writing a control value'
+      );
     }
   }
 
@@ -2956,8 +3088,23 @@ export class VoltraClient {
     this._motorReportGeneration++;
     this._lastMotorReport = report;
     this._motorState = report === 'released' ? 'unloaded' : 'engaged';
+    this.notifyMotorReportWaiters();
+  }
+
+  /** Re-test every parked waiter against the state it is waiting for. */
+  private notifyMotorReportWaiters(): void {
     for (const waiter of [...this.motorReportWaiters]) {
       waiter.check();
     }
+  }
+
+  /**
+   * The device has reported this connection's control values once it has named
+   * both the weight and the training mode. An empty reply names neither, so it
+   * leaves the flag where it was rather than standing in for a real report.
+   */
+  private refreshConfirmedStateFlag(): void {
+    this._coreStateConfirmed =
+      this._confirmedSettings.weight !== undefined && this._confirmedSettings.mode !== undefined;
   }
 }

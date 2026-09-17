@@ -6,6 +6,7 @@
  * Uses offset-based lookups from protocol.json - no hardcoded byte positions.
  */
 
+import protocolData from './data/protocol-data.generated';
 import {
   MessageTypes,
   VendorMessages,
@@ -21,10 +22,11 @@ import {
 } from './constants';
 import { createFrame, type TelemetryFrame } from '../models/telemetry/frame';
 import { classifyMotorReport, MOTOR_STATE_FIELD } from './device-state';
-import { bytesEqual, bytesToHex } from '../../shared/utils';
+import { bytesEqual, bytesToHex, hexToBytes } from '../../shared/utils';
 import type {
   BulkParamResponse,
   DeviceSettings,
+  ProtocolData,
   StateDumpEvent,
   RowingSummaryEvent,
   RowingStatusEvent,
@@ -53,6 +55,13 @@ import type { PerRepEvent, SummaryEvent, SetSummaryEvent, InProgressEvent } from
  * sync that promotes it into `protocol.telemetry.paramIds`.
  */
 const DAMPER_LEVEL_PARAM_ID_HEX = '0351';
+
+/**
+ * Descriptor for the device's own reply to the handshake finish (VW-403).
+ * Absent on protocol data older than the group that introduced it, in which
+ * case no frame is ever classified as an acceptance report.
+ */
+const ACCEPTANCE_REPORT = (protocolData as ProtocolData).telemetry.acceptanceReport;
 
 // <Decoder-statedump-asyncstate> ==========================================================
 // Frame-byte offsets and constants for the async-state and state-dump
@@ -224,6 +233,7 @@ export type MessageType =
   // eslint-disable-next-line voltras/no-private-provenance -- exported `MessageType` member; renaming it is a breaking API change (VW-214, see CONTRIBUTING.md)
   | 'cmd_0f_bulk_response'
   | 'device_init'
+  | 'connection_acceptance'
   | 'unknown';
 
 /**
@@ -252,6 +262,10 @@ export function identifyMessageType(data: Uint8Array): MessageType {
     return 'vendor_summary';
   } else if (matchesVendorSubType(data, VendorMessages.subTypes.setSummary)) {
     return 'vendor_set_summary';
+  }
+
+  if (isAcceptanceReport(data)) {
+    return 'connection_acceptance';
   }
 
   // <Bug-17> bulk-read response: matched on the frame-type byte
@@ -357,6 +371,7 @@ export type DecodeResult =
   | { type: 'rowing_status'; event: RowingStatusEvent }
   | { type: 'waveform_chunk'; event: WaveformChunkEvent }
   | { type: 'device_status'; battery: number } // Battery/status update
+  | { type: 'connection_acceptance'; accepted: boolean; status: number } // VW-403
   | { type: 'unknown'; data: Uint8Array } // Unknown notification with raw data
   | null;
 
@@ -903,6 +918,45 @@ function applyParamToSettings(settings: DeviceSettings, paramIdHex: string, valu
 }
 
 /**
+ * Build the reply a device sends to a multi-parameter read.
+ *
+ * The inverse of {@link decodeBulkParamResponse}, for device simulators and
+ * tests. Throws for a paramId whose value width the SDK does not model, since
+ * guessing one would mis-align every field after it.
+ */
+export function encodeBulkParamResponse(
+  params: ReadonlyArray<{ paramIdHex: string; value: number }>
+): Uint8Array {
+  const widths = params.map(({ paramIdHex }) => {
+    const width = resolveParamValueWidth(paramIdHex);
+    if (width === null) {
+      throw new Error(`encodeBulkParamResponse: unmodelled value width for '${paramIdHex}'`);
+    }
+    return width;
+  });
+
+  const size = BULK_PARAM_FIRST_OFFSET + widths.reduce((n, w) => n + 2 + w, 0) + 2;
+  const frame = new Uint8Array(size);
+  frame[0] = 0x55;
+  frame[1] = size;
+  frame[2] = RESPONSE_FRAME_TYPE;
+  frame[CMD_BYTE_OFFSET] = CMD_PARAM_READ;
+  frame[BULK_PARAM_COUNT_OFFSET] = params.length & 0xff;
+  frame[BULK_PARAM_COUNT_OFFSET + 1] = (params.length >> 8) & 0xff;
+
+  let offset = BULK_PARAM_FIRST_OFFSET;
+  params.forEach(({ paramIdHex, value }, i) => {
+    frame.set(hexToBytes(paramIdHex), offset);
+    offset += 2;
+    for (let byte = 0; byte < widths[i]; byte++) {
+      frame[offset + byte] = (value >> (byte * 8)) & 0xff;
+    }
+    offset += widths[i];
+  });
+  return frame;
+}
+
+/**
  * Decode a bulk-read response into a {@link BulkParamResponse}.
  *
  * Walks the `[count, ...(paramId + value)]` payload using
@@ -979,6 +1033,34 @@ function decodeDeviceStatus(data: Uint8Array): DecodeResult {
  * Decode a BLE notification.
  * Returns structured data based on message type.
  */
+/**
+ * True when the frame is the device's report of whether it accepted the
+ * connection — not the transport-level ack, which only says the write landed.
+ */
+function isAcceptanceReport(data: Uint8Array): boolean {
+  if (!ACCEPTANCE_REPORT) return false;
+  if (data.length !== ACCEPTANCE_REPORT.frameLength) return false;
+  if (data[ACCEPTANCE_REPORT.cmdByteOffset] !== ACCEPTANCE_REPORT.cmdValue) return false;
+  return ACCEPTANCE_REPORT.identifierBytes.every(
+    (b, i) => data[ACCEPTANCE_REPORT.identifierOffset + i] === b
+  );
+}
+
+/**
+ * Decode the connection-acceptance report.
+ *
+ * `accepted` is true only for the one status value the device sends when it
+ * accepted; every other value is a refusal, since no refusal has been captured
+ * to map individually. Returns `null` for any frame that is not this report.
+ */
+export function decodeAcceptanceReport(
+  data: Uint8Array
+): { accepted: boolean; status: number } | null {
+  if (!ACCEPTANCE_REPORT || !isAcceptanceReport(data)) return null;
+  const status = data[ACCEPTANCE_REPORT.statusOffset];
+  return { accepted: status === ACCEPTANCE_REPORT.acceptedStatus, status };
+}
+
 export function decodeNotification(data: Uint8Array): DecodeResult {
   const msgType = identifyMessageType(data);
 
@@ -1026,6 +1108,11 @@ export function decodeNotification(data: Uint8Array): DecodeResult {
       // DeviceSettings shape as an async-state update.
       const decoded = decodeBulkParamResponse(data);
       return decoded ? { type: 'settings_update', settings: decoded.settings } : null;
+    }
+
+    case 'connection_acceptance': {
+      const report = decodeAcceptanceReport(data);
+      return report ? { type: 'connection_acceptance', ...report } : { type: 'unknown', data };
     }
 
     case 'device_init':

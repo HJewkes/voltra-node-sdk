@@ -45,6 +45,8 @@ export const ErrorCode = {
   // Device errors
   DEVICE_NOT_FOUND: 'DEVICE_NOT_FOUND',
   DEVICE_DISCONNECTED: 'DEVICE_DISCONNECTED',
+  CONNECTION_REFUSED: 'CONNECTION_REFUSED',
+  DEVICE_STATE_UNKNOWN: 'DEVICE_STATE_UNKNOWN',
 
   // Command errors
   COMMAND_FAILED: 'COMMAND_FAILED',
@@ -123,6 +125,38 @@ export class NotConnectedError extends VoltraSDKError {
   constructor(message: string = 'Device is not connected') {
     super(message, ErrorCode.NOT_CONNECTED);
     this.name = 'NotConnectedError';
+  }
+}
+
+/**
+ * Thrown when the device answered the connection request with a status other
+ * than the one that means accepted, or did not answer at all within the
+ * acceptance window (VW-403).
+ *
+ * Retrying is the caller's decision — the SDK never re-attempts on its own.
+ */
+export class ConnectionRefusedError extends VoltraSDKError {
+  /** Status the device reported, or `null` when it reported nothing. */
+  public readonly status: number | null;
+
+  constructor(message: string, status: number | null) {
+    super(message, ErrorCode.CONNECTION_REFUSED);
+    this.name = 'ConnectionRefusedError';
+    this.status = status;
+  }
+}
+
+/**
+ * Thrown when a control write is attempted before the device has reported
+ * this connection's control values (VW-403).
+ *
+ * The SDK will not write a control value on top of state it has not seen.
+ * Call `refreshDeviceState()` and try again.
+ */
+export class DeviceStateUnknownError extends VoltraSDKError {
+  constructor(message: string = 'Device has not reported its state on this connection yet') {
+    super(message, ErrorCode.DEVICE_STATE_UNKNOWN);
+    this.name = 'DeviceStateUnknownError';
   }
 }
 
