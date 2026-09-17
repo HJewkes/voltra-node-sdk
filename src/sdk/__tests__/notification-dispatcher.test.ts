@@ -104,6 +104,22 @@ describe('notification-dispatcher', () => {
     expect(callbacks.onBatteryUpdate).not.toHaveBeenCalled();
   });
 
+  it.each([['rowing_runtime'], ['isometric_summary'], ['waveform_chunk']])(
+    'reaches no typed callback for a %s result',
+    (type) => {
+      // These three families decode to raw bytes only, so there is no typed
+      // event to fire. A consumer that wants the bytes uses onRawFrame.
+      mockDecode.mockReturnValue({ type, event: { raw: new Uint8Array(4) } });
+
+      handler(dummyData);
+
+      for (const [name, callback] of Object.entries(callbacks)) {
+        if (name === 'onRawFrame') continue;
+        expect(callback, name).not.toHaveBeenCalled();
+      }
+    }
+  );
+
   it('ignores unknown notification types', () => {
     mockDecode.mockReturnValue({ type: 'unknown', data: dummyData });
 

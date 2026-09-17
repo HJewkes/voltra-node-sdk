@@ -233,8 +233,8 @@ export {
 // in a future Rowing-mode session). The decoder functions that produce these are
 // already exported above via `decodeNotification` / `decodeVendorPerRep` et al.
 export type {
-  RowingSummaryEvent,
-  RowingStatusEvent,
+  RowingRuntimeEvent,
+  IsometricSummaryEvent,
   WaveformChunkEvent,
 } from './voltra/protocol/types';
 

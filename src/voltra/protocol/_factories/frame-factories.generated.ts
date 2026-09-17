@@ -327,7 +327,11 @@ export function buildVendorInProgressFrame(
 // Vendor messages — raw payload
 // =============================================================================
 
-export type RawVendorSubType = 'rowing' | 'isometricSummary' | 'isometricWaveform';
+export type RawVendorSubType =
+  | 'rowingRuntime'
+  | 'workoutState'
+  | 'isometricSummary'
+  | 'isometricWaveform';
 
 /**
  * Build a vendor frame for a sub-type whose field layout is not yet validated.
