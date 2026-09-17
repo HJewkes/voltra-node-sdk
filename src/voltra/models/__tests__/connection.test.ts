@@ -15,8 +15,10 @@ describe('connection', () => {
       ['disconnected', 'connecting'],
       ['connecting', 'authenticating'],
       ['connecting', 'disconnected'],
-      ['authenticating', 'connected'],
+      ['authenticating', 'awaitingAcceptance'],
       ['authenticating', 'disconnected'],
+      ['awaitingAcceptance', 'connected'],
+      ['awaitingAcceptance', 'disconnected'],
       ['connected', 'disconnected'],
     ];
 
@@ -34,6 +36,8 @@ describe('connection', () => {
       ['connecting', 'connected'],
       ['authenticating', 'authenticating'],
       ['authenticating', 'connecting'],
+      ['authenticating', 'connected'],
+      ['awaitingAcceptance', 'authenticating'],
       ['connected', 'connecting'],
       ['connected', 'authenticating'],
       ['connected', 'connected'],
@@ -70,6 +74,10 @@ describe('connection', () => {
       expect(model.state).toBe('authenticating');
       expect(model.isConnecting).toBe(true);
 
+      model.transitionTo('awaitingAcceptance');
+      expect(model.state).toBe('awaitingAcceptance');
+      expect(model.isConnecting).toBe(true);
+
       model.transitionTo('connected');
       expect(model.state).toBe('connected');
       expect(model.isConnected).toBe(true);
@@ -96,6 +104,7 @@ describe('connection', () => {
       const model = new VoltraConnectionStateModel();
       model.transitionTo('connecting');
       model.transitionTo('authenticating');
+      model.transitionTo('awaitingAcceptance');
       model.transitionTo('connected');
 
       model.reset();

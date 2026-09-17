@@ -7,7 +7,17 @@
 /**
  * Voltra-specific connection states (includes auth step).
  */
-export type VoltraConnectionState = 'disconnected' | 'connecting' | 'authenticating' | 'connected';
+export type VoltraConnectionState =
+  | 'disconnected'
+  | 'connecting'
+  | 'authenticating'
+  /**
+   * Init writes are out; waiting for the device's own report of whether it
+   * accepted the connection. Control writes are refused here — the client is
+   * not connected yet (VW-403).
+   */
+  | 'awaitingAcceptance'
+  | 'connected';
 
 /**
  * Valid state transitions for Voltra connection.
@@ -15,7 +25,8 @@ export type VoltraConnectionState = 'disconnected' | 'connecting' | 'authenticat
 const VALID_VOLTRA_TRANSITIONS: Record<VoltraConnectionState, VoltraConnectionState[]> = {
   disconnected: ['connecting'],
   connecting: ['authenticating', 'disconnected'],
-  authenticating: ['connected', 'disconnected'],
+  authenticating: ['awaitingAcceptance', 'disconnected'],
+  awaitingAcceptance: ['connected', 'disconnected'],
   connected: ['disconnected'],
 };
 
@@ -44,7 +55,11 @@ export class VoltraConnectionStateModel {
   }
 
   get isConnecting(): boolean {
-    return this._state === 'connecting' || this._state === 'authenticating';
+    return (
+      this._state === 'connecting' ||
+      this._state === 'authenticating' ||
+      this._state === 'awaitingAcceptance'
+    );
   }
 
   get isDisconnected(): boolean {

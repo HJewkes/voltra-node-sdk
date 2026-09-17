@@ -294,7 +294,8 @@ describe('Phase 6 event wrappers', () => {
         const transitions = events.map((e) => `${e.payload.from}->${e.payload.to}`);
         expect(transitions).toContain('disconnected->connecting');
         expect(transitions).toContain('connecting->authenticating');
-        expect(transitions).toContain('authenticating->connected');
+        expect(transitions).toContain('authenticating->awaitingAcceptance');
+        expect(transitions).toContain('awaitingAcceptance->connected');
 
         for (const e of events) {
           expect(e.payload.deviceId).toBe(device.id);

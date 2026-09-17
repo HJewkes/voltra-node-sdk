@@ -15,6 +15,13 @@ import type { Device } from '../../bluetooth/adapters/types';
 import { VoltraClient } from '../voltra-client';
 import { ConnectionError, NotConnectedError } from '../../errors';
 import { hexToBytes } from '../../shared/utils';
+import {
+  DEFAULT_SIMULATED_STATE,
+  buildAcceptanceReport,
+  buildCoreStateReply,
+  isCoreStateRead,
+  isHandshakeFinishWrite,
+} from '../../testing/device-replies';
 import protocolData from '../../voltra/protocol/data/protocol-data.generated';
 import type { ProtocolData } from '../../voltra/protocol/types';
 
@@ -67,6 +74,11 @@ class FakeTransport extends BaseBLEAdapter {
   /** Pushed back at the caller when a stop write lands. */
   reportOnStop: Uint8Array | null = null;
   failStopWrites = false;
+  /**
+   * Whether the device answers a core-state read. Off for the tests that need
+   * the unload's fallback read to go unanswered.
+   */
+  answerStateReads = true;
 
   async scan(_timeout: number): Promise<Device[]> {
     return [];
@@ -88,6 +100,12 @@ class FakeTransport extends BaseBLEAdapter {
     this.writes.push(new Uint8Array(data));
     if (this.reportOnStop && isStopWrite(data)) {
       this.push(this.reportOnStop);
+    }
+    if (isHandshakeFinishWrite(data)) {
+      this.push(buildAcceptanceReport());
+    }
+    if (this.answerStateReads && isCoreStateRead(data)) {
+      this.push(buildCoreStateReply(DEFAULT_SIMULATED_STATE));
     }
   }
 
@@ -124,6 +142,9 @@ describe('VoltraClient — motor state is what the device reported', () => {
     adapter = new FakeTransport();
     client = new VoltraClient({ adapter });
     await flushAndAwait(client.connect(device));
+    // The connect-time read has answered; from here the device stays silent
+    // unless a test says otherwise, so an unconfirmed stop stays unconfirmed.
+    adapter.answerStateReads = false;
     adapter.writes.length = 0;
   });
 
@@ -132,8 +153,10 @@ describe('VoltraClient — motor state is what the device reported', () => {
     vi.useRealTimers();
   });
 
-  it('starts every connection with an unknown motor state', () => {
-    expect(client.motorState).toBe('unknown');
+  it('reports the motor state the connect-time state read returned', () => {
+    // The simulated device reports a released motor at connect; nothing here
+    // was inferred from a write.
+    expect(client.motorState).toBe('unloaded');
   });
 
   it('leaves the motor state unknown when the write lands but nothing is reported', async () => {
@@ -201,6 +224,7 @@ describe('VoltraClient — stopRecording no longer swallows a failed stop', () =
     client = new VoltraClient({ adapter });
     await flushAndAwait(client.connect(device));
     await flushAndAwait(client.startRecording());
+    adapter.answerStateReads = false;
     adapter.writes.length = 0;
   });
 
@@ -243,6 +267,9 @@ describe('VoltraClient — requested settings are separate from confirmed ones',
     adapter = new FakeTransport();
     client = new VoltraClient({ adapter });
     await flushAndAwait(client.connect(device));
+    // The connect-time read has answered; from here the device stays silent
+    // unless a test says otherwise, so an unconfirmed stop stays unconfirmed.
+    adapter.answerStateReads = false;
     adapter.writes.length = 0;
   });
 
@@ -252,18 +279,18 @@ describe('VoltraClient — requested settings are separate from confirmed ones',
   });
 
   it('records a written weight as requested, not confirmed', async () => {
-    await flushAndAwait(client.setWeight(50));
+    await flushAndAwait(client.setWeight(123));
 
-    expect(client.requestedSettings.weight).toBe(50);
-    expect(client.confirmedSettings.weight).toBeUndefined();
+    expect(client.requestedSettings.weight).toBe(123);
+    expect(client.confirmedSettings.weight).not.toBe(123);
   });
 
   it('moves the value from requested to confirmed once the device reports it', async () => {
-    await flushAndAwait(client.setWeight(50));
+    await flushAndAwait(client.setWeight(123));
 
-    adapter.push(reportFrame([{ field: WEIGHT_FIELD, value: 50 }]));
+    adapter.push(reportFrame([{ field: WEIGHT_FIELD, value: 123 }]));
 
-    expect(client.confirmedSettings.weight).toBe(50);
+    expect(client.confirmedSettings.weight).toBe(123);
     expect(client.requestedSettings.weight).toBeUndefined();
   });
 

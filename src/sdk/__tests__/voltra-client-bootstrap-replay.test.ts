@@ -9,6 +9,7 @@
  * realistic settings-cascade bytes.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { connectSetupReply } from '../../testing/device-replies';
 import { BaseBLEAdapter } from '../../bluetooth/adapters/base';
 import type { Device } from '../../bluetooth/adapters/types';
 import { VoltraClient } from '../voltra-client';
@@ -26,6 +27,12 @@ vi.mock('../../voltra/protocol/telemetry-decoder', async (importOriginal) => {
 import { decodeNotification } from '../../voltra/protocol/telemetry-decoder';
 const mockDecode = vi.mocked(decodeNotification);
 
+// VW-403: connect() now needs the acceptance report to decode for real, so the
+// mock falls back to the actual decoder until a test says otherwise.
+const { decodeNotification: realDecode } = await vi.importActual<
+  typeof import('../../voltra/protocol/telemetry-decoder')
+>('../../voltra/protocol/telemetry-decoder');
+
 class RecordingAdapter extends BaseBLEAdapter {
   async scan(_timeout: number): Promise<Device[]> {
     return [];
@@ -37,7 +44,12 @@ class RecordingAdapter extends BaseBLEAdapter {
   async disconnect(): Promise<void> {
     this.setConnectionState('disconnected');
   }
-  async write(_data: Uint8Array): Promise<void> {}
+  async write(data: Uint8Array): Promise<void> {
+    // VW-403: connect() waits for the device's acceptance report, and control
+    // setters wait for its core-state reply. Answer both as a device would.
+    const setupReply = connectSetupReply(data);
+    if (setupReply) this.emitNotification(setupReply);
+  }
   inject(data: Uint8Array): void {
     this.emitNotification(data);
   }
@@ -65,6 +77,7 @@ describe('VoltraClient — onRawFrame (0.6.2)', () => {
   beforeEach(async () => {
     vi.useFakeTimers();
     vi.clearAllMocks();
+    mockDecode.mockImplementation(realDecode);
     adapter = new RecordingAdapter();
     client = new VoltraClient({ adapter });
     await flushAndAwait(client.connect(device));
@@ -136,6 +149,7 @@ describe('VoltraClient — onSettingsUpdate bootstrap replay (0.6.2)', () => {
   beforeEach(async () => {
     vi.useFakeTimers();
     vi.clearAllMocks();
+    mockDecode.mockImplementation(realDecode);
     adapter = new RecordingAdapter();
     client = new VoltraClient({ adapter });
     await flushAndAwait(client.connect(device));
@@ -221,29 +235,34 @@ describe('VoltraClient — onSettingsUpdate bootstrap replay (0.6.2)', () => {
   });
 
   it('does NOT replay if no cascade has arrived yet', () => {
+    // A client that has never connected has nothing to replay. A connected one
+    // always does: connect reads core state back (VW-403).
+    const fresh = new VoltraClient({ adapter: new RecordingAdapter() });
     const listener = vi.fn();
-    client.onSettingsUpdate(listener);
+    fresh.onSettingsUpdate(listener);
 
     expect(listener).not.toHaveBeenCalled();
+    fresh.dispose();
   });
 
   it('clears the replay cache on disconnect', async () => {
-    const settings: DeviceSettings = {
+    const stale: DeviceSettings = {
       baseWeight: 25,
       chains: 0,
       eccentric: 0,
       trainingMode: TrainingMode.Damper,
     };
-    mockDecode.mockReturnValue({ type: 'settings_update', settings });
+    mockDecode.mockReturnValueOnce({ type: 'settings_update', settings: stale });
 
     adapter.inject(new Uint8Array([0x01]));
     await flushAndAwait(client.disconnect());
     await flushAndAwait(client.connect(device));
 
-    // After reconnect, no cached cascade — late listener should not see
-    // stale data from the previous connection.
+    // A late listener sees this connection's own cascade, never the previous
+    // connection's.
     const listener = vi.fn();
     client.onSettingsUpdate(listener);
-    expect(listener).not.toHaveBeenCalled();
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).not.toHaveBeenCalledWith(stale);
   });
 });

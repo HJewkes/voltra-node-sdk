@@ -13,6 +13,7 @@
  *   - the action-code byte differs across distance presets
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { connectSetupReply } from '../../testing/device-replies';
 import { BaseBLEAdapter } from '../../bluetooth/adapters/base';
 import type { Device } from '../../bluetooth/adapters/types';
 import { VoltraClient } from '../voltra-client';
@@ -42,6 +43,10 @@ class RecordingAdapter extends BaseBLEAdapter {
 
   async write(data: Uint8Array): Promise<void> {
     this.writes.push(new Uint8Array(data));
+    // VW-403: connect() waits for the device's acceptance report, and control
+    // setters wait for its core-state reply. Answer both as a device would.
+    const setupReply = connectSetupReply(data);
+    if (setupReply) this.emitNotification(setupReply);
   }
 }
 

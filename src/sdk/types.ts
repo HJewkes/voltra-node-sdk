@@ -70,6 +70,18 @@ export interface VoltraClientOptions {
    * Default: 2000
    */
   motorConfirmationTimeoutMs?: number;
+
+  /**
+   * How long to wait for the device's own report of whether it accepted the
+   * connection. On an already-paired unit the report is near-instant; on a
+   * first pairing the device asks the user to accept, which takes seconds.
+   *
+   * On timeout `connect()` rejects with `ConnectionRefusedError`. Retrying is
+   * the caller's decision — the SDK never re-attempts on its own.
+   *
+   * Default: 30000
+   */
+  acceptanceTimeoutMs?: number;
 }
 
 /**
