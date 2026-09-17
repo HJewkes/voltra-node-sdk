@@ -28,6 +28,7 @@ import {
   Uint16ParamIds,
   TrainingMode,
 } from '../constants';
+import { scanEnvelope } from '../frame-envelope';
 import { hexToBytes } from '../../../shared/utils';
 import type { TelemetryFrame } from '../../models/telemetry/frame';
 import type { VendorSubTypeConfig } from '../types';
@@ -475,7 +476,7 @@ describe('decodeNotification', () => {
 // =============================================================================
 
 describe('encodeTelemetryFrame', () => {
-  it('creates valid 30-byte buffer', () => {
+  it('creates a whole sealed frame', () => {
     const frame: TelemetryFrame = {
       sequence: 100,
       phase: MovementPhase.CONCENTRIC,
@@ -488,7 +489,7 @@ describe('encodeTelemetryFrame', () => {
     const encoded = encodeTelemetryFrame(frame);
 
     expect(encoded).toBeInstanceOf(Uint8Array);
-    expect(encoded.length).toBe(30);
+    expect(scanEnvelope(encoded)).toEqual({ kind: 'frame', length: encoded.length });
   });
 
   it('encodes telemetry stream header correctly', () => {

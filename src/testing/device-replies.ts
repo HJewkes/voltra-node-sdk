@@ -20,6 +20,7 @@ import {
   isCoreStateRead,
 } from '../voltra/protocol/device-state';
 import { encodeBulkParamResponse } from '../voltra/protocol/telemetry-decoder';
+import { sealEnvelope } from '../voltra/protocol/frame-envelope';
 import { hexToBytes } from '../shared/utils';
 
 const protocol = protocolData as ProtocolData;
@@ -55,14 +56,12 @@ export function isHandshakeFinishWrite(data: Uint8Array): boolean {
 export function buildAcceptanceReport(status: number = ACCEPTANCE_STATUS_OK): Uint8Array {
   const config = acceptanceConfig();
   const frame = new Uint8Array(config.frameLength);
-  frame[0] = 0x55;
-  frame[1] = config.frameLength;
   frame[config.cmdByteOffset] = config.cmdValue;
   config.identifierBytes.forEach((b, i) => {
     frame[config.identifierOffset + i] = b;
   });
   frame[config.statusOffset] = status;
-  return frame;
+  return sealEnvelope(frame);
 }
 
 /** Values a simulated device reports in answer to the core-state read. */

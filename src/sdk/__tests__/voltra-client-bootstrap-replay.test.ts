@@ -15,6 +15,7 @@ import type { Device } from '../../bluetooth/adapters/types';
 import { VoltraClient } from '../voltra-client';
 import { TrainingMode } from '../../voltra/protocol/constants';
 import type { DeviceSettings } from '../../voltra/protocol/types';
+import { buildEnvelopedFrame } from '../../voltra/protocol/_factories';
 
 vi.mock('../../voltra/protocol/telemetry-decoder', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../voltra/protocol/telemetry-decoder')>();
@@ -56,6 +57,14 @@ class RecordingAdapter extends BaseBLEAdapter {
 }
 
 const device: Device = { id: 'device-x', name: 'VTR-XYZXYZ', rssi: -55 };
+
+/**
+ * A whole frame the notification path accepts. Its contents do not matter —
+ * these tests mock the decoder — but it has to survive envelope validation.
+ */
+function wholeFrame(): Uint8Array {
+  return buildEnvelopedFrame(0, new Uint8Array(1));
+}
 
 async function flushAndAwait<T>(promise: Promise<T>): Promise<T> {
   while (true) {
@@ -170,7 +179,7 @@ describe('VoltraClient — onSettingsUpdate bootstrap replay (0.6.2)', () => {
     mockDecode.mockReturnValue({ type: 'settings_update', settings });
 
     // Bootstrap settings arrive BEFORE the consumer attaches.
-    adapter.inject(new Uint8Array([0xaa, 0xbb]));
+    adapter.inject(wholeFrame());
 
     // Consumer attaches AFTER bootstrap — must still see the cascade.
     const listener = vi.fn();
@@ -195,9 +204,9 @@ describe('VoltraClient — onSettingsUpdate bootstrap replay (0.6.2)', () => {
     };
 
     mockDecode.mockReturnValueOnce({ type: 'settings_update', settings: first });
-    adapter.inject(new Uint8Array([0x01]));
+    adapter.inject(wholeFrame());
     mockDecode.mockReturnValueOnce({ type: 'settings_update', settings: second });
-    adapter.inject(new Uint8Array([0x02]));
+    adapter.inject(wholeFrame());
 
     const listener = vi.fn();
     client.onSettingsUpdate(listener);
@@ -222,14 +231,14 @@ describe('VoltraClient — onSettingsUpdate bootstrap replay (0.6.2)', () => {
     };
 
     mockDecode.mockReturnValueOnce({ type: 'settings_update', settings: first });
-    adapter.inject(new Uint8Array([0x01]));
+    adapter.inject(wholeFrame());
 
     const listener = vi.fn();
     client.onSettingsUpdate(listener);
     expect(listener).toHaveBeenCalledTimes(1); // replay
 
     mockDecode.mockReturnValueOnce({ type: 'settings_update', settings: second });
-    adapter.inject(new Uint8Array([0x02]));
+    adapter.inject(wholeFrame());
     expect(listener).toHaveBeenCalledTimes(2); // live event
     expect(listener).toHaveBeenLastCalledWith(second);
   });
@@ -254,7 +263,7 @@ describe('VoltraClient — onSettingsUpdate bootstrap replay (0.6.2)', () => {
     };
     mockDecode.mockReturnValueOnce({ type: 'settings_update', settings: stale });
 
-    adapter.inject(new Uint8Array([0x01]));
+    adapter.inject(wholeFrame());
     await flushAndAwait(client.disconnect());
     await flushAndAwait(client.connect(device));
 

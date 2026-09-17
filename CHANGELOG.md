@@ -23,7 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`@voltras/node-sdk/testing` exports device-reply helpers** —
   `connectSetupReply`, `buildAcceptanceReport`, `buildCoreStateReply`,
   `isHandshakeFinishWrite`, `isCoreStateRead`, `ACCEPTANCE_STATUS_OK`,
-  `DEFAULT_SIMULATED_STATE`. A stub transport needs to answer the handshake
+  `DEFAULT_SIMULATED_STATE`, plus `sealEnvelope` / `scanEnvelope` for a stub
+  that builds its own frames. A stub transport needs to answer the handshake
   finish and the core-state read for `connect()` to complete; one call in its
   `write()` does both. `MockBLEAdapter` answers both already.
 
@@ -86,6 +87,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`startRecording()`** marks the motor `'pending'` rather than leaving a
   stale `'unloaded'` in place. It does not wait for the report — a set start
   blocking on the device would be worse than an unconfirmed engage.
+
+- **The notification path no longer assumes one notification is one frame**
+  (VW-409). Every notification went straight to the decoder, several fallback
+  classifications keyed on the first two header bytes alone, and no checksum
+  was verified before dispatch — so a split notification was dropped, a joined
+  one lost everything after the first frame, and a corrupted one could reach
+  device state.
+
+  Each device now has its own receive buffer. It finds the frame marker,
+  verifies the header checksum before trusting the declared length, waits for
+  the whole frame, verifies the frame checksum, dispatches, and repeats while
+  complete frames remain. Bytes that cannot start a frame are discarded
+  against a counter rather than logged. A frame type whose size does not fit
+  the length field is handed on untouched instead of guessed at.
+
+  All 4315 captured notifications on macOS CoreBluetooth were already exactly
+  one whole frame each, so this changes nothing there; it is hardening for
+  transports that make no such guarantee, react-native-ble-plx first among
+  them.
+
+  **`onRawFrame` semantics are unchanged: it still fires once per
+  notification, before reassembly.** A byte-level recorder wants the transport
+  as it arrived, including bytes no frame claims, so `voltras-mcp`'s debug
+  recorder needs no change. The typed callbacks are what now fire once per
+  reassembled frame.
+
+  **Behaviour change for callers.** Anything standing in for a device must
+  send whole, sealed frames — an unchecksummed fixture is now discarded.
+  `encodeTelemetryFrame()` returns a whole frame sized as the device sizes
+  one, rather than a truncated one, and `MockBLEAdapter`'s notifications and
+  the `@voltras/node-sdk/testing` reply builders seal what they build.
 
 ### Changed
 

@@ -26,6 +26,7 @@ import { BaseBLEAdapter } from '../../bluetooth/adapters/base';
 import type { Device } from '../../bluetooth/adapters/types';
 import { VoltraClient } from '../voltra-client';
 import { Init } from '../../voltra/protocol/constants';
+import { sealEnvelope } from '../../voltra/protocol/frame-envelope';
 import { ParamIdHex, TrainingMode } from '../../voltra/protocol/constants';
 
 const STEP_10_QUERY_HEX_MARKER = '553304c2'; // first 4 bytes of step-10 envelope
@@ -87,10 +88,9 @@ function bytesToHexLower(data: Uint8Array): string {
 }
 
 /**
- * Build a synthetic cmd=0x0F response carrying paramId+value pairs. Frame
- * structure mirrors the real wire format: `55 LEN 08 CRC8 SENDER RECEIVER
- * SEQ_LO SEQ_HI 20 00 0F 00 COUNT_LO COUNT_HI ...payload CRC16`. CRC values
- * are placeholders — the SDK decoder does not validate them.
+ * Build a synthetic cmd=0x0F response carrying paramId+value pairs, sealed
+ * with the real length and checksums — the notification path validates them
+ * before the decoder ever sees the frame (VW-409).
  */
 function buildBulkParamResponse(
   params: Array<{ paramIdHex: string; valueBytes: number[] }>
@@ -118,9 +118,7 @@ function buildBulkParamResponse(
     payload.push(...p.valueBytes);
   }
   const crc16 = [0x00, 0x00];
-  const all = [...header, ...payload, ...crc16];
-  all[1] = all.length - 1; // length = total - magic byte
-  return new Uint8Array(all);
+  return sealEnvelope(new Uint8Array([...header, ...payload, ...crc16]));
 }
 
 describe('Bug 30 regression — Init.SEQUENCE does NOT include step-10 query', () => {

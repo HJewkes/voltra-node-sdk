@@ -46,3 +46,7 @@ export {
   isHandshakeFinishWrite,
   type CoreStateReply,
 } from './device-replies';
+
+// A stub transport that builds its own frames needs to seal them, or the
+// notification path discards them (VW-409).
+export { sealEnvelope, scanEnvelope, type EnvelopeScan } from '../voltra/protocol/frame-envelope';

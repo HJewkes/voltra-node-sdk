@@ -4,6 +4,7 @@ import { TrainingMode, VendorSchemaVersion } from '../../voltra/protocol/constan
 import type { TelemetryFrame } from '../../voltra/models/telemetry';
 import type { DeviceSettings, StateDumpEvent } from '../../voltra/protocol/types';
 import type { PerRepEvent, SummaryEvent, SetSummaryEvent, InProgressEvent } from '../types';
+import { buildEnvelopedFrame } from '../../voltra/protocol/_factories';
 
 // Mock the decoder so we can control exactly what DecodeResult comes back
 vi.mock('../../voltra/protocol/telemetry-decoder', () => ({
@@ -33,7 +34,7 @@ function makeCallbacks(): NotificationCallbacks & {
 describe('notification-dispatcher', () => {
   let callbacks: ReturnType<typeof makeCallbacks>;
   let handler: (data: Uint8Array) => void;
-  const dummyData = new Uint8Array([0]);
+  const dummyData = buildEnvelopedFrame(0, new Uint8Array(1));
 
   beforeEach(() => {
     vi.clearAllMocks();

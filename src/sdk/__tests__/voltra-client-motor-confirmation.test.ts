@@ -24,6 +24,7 @@ import {
 } from '../../testing/device-replies';
 import protocolData from '../../voltra/protocol/data/protocol-data.generated';
 import type { ProtocolData } from '../../voltra/protocol/types';
+import { sealEnvelope } from '../../voltra/protocol/frame-envelope';
 
 const protocol = protocolData as ProtocolData;
 const motorConfig = protocol.commands.deviceState.motorState;
@@ -41,8 +42,6 @@ const ASYNC_STATE_CMD = 0x10;
  */
 function reportFrame(params: Array<{ field: string; value: number }>): Uint8Array {
   const frame = new Uint8Array(FIRST_PARAM_OFFSET + params.length * 4 + 2);
-  frame[0] = 0x55;
-  frame[1] = frame.length;
   frame[2] = 0x04;
   frame[CMD_OFFSET] = ASYNC_STATE_CMD;
   frame[PARAM_COUNT_OFFSET] = params.length;
@@ -54,7 +53,7 @@ function reportFrame(params: Array<{ field: string; value: number }>): Uint8Arra
     frame[at + 2] = value & 0xff;
     frame[at + 3] = (value >> 8) & 0xff;
   });
-  return frame;
+  return sealEnvelope(frame);
 }
 
 function motorReportFrame(value: number): Uint8Array {

@@ -6,6 +6,7 @@
  */
 
 import type { NotificationCallback } from '../bluetooth/adapters/types';
+import { FrameReassembler } from './frame-reassembler';
 import type { TelemetryFrame } from '../voltra/models/telemetry';
 import type { TrainingMode } from '../voltra/protocol/constants';
 import type { DeviceSettings, StateDumpEvent } from '../voltra/protocol/types';
@@ -41,63 +42,75 @@ export interface NotificationCallbacks {
 /**
  * Create a BLE notification handler that decodes and dispatches to typed callbacks.
  *
+ * The handler owns a receive buffer, so it must not be shared between devices.
+ * {@link NotificationCallbacks.onRawFrame} still fires once per notification,
+ * before reassembly, so byte-level consumers keep seeing the transport
+ * exactly as it arrived.
+ *
  * @param callbacks Typed callbacks for each notification type
  * @returns NotificationCallback to pass to adapter.onNotification()
  */
 export function createNotificationHandler(callbacks: NotificationCallbacks): NotificationCallback {
+  const reassembler = new FrameReassembler();
+
   return (data: Uint8Array) => {
     // Fire raw-frame callback first so consumers can capture bytes for
     // every inbound notification, including frames the decoder cannot
     // classify (e.g. async-update family until 1a lands).
     callbacks.onRawFrame(data);
 
-    const result = decodeNotification(data);
-    if (!result) return;
-
-    switch (result.type) {
-      case 'frame':
-        callbacks.onFrame(result.frame);
-        break;
-
-      case 'perRep':
-        callbacks.onPerRep(result.event);
-        break;
-
-      case 'inProgress':
-        callbacks.onInProgress(result.event);
-        break;
-
-      case 'summary':
-        callbacks.onSummary(result.event);
-        break;
-
-      case 'setSummary':
-        callbacks.onSetSummary(result.event);
-        break;
-
-      case 'mode_confirmation':
-        callbacks.onModeConfirmed(result.mode);
-        break;
-
-      case 'settings_update':
-        callbacks.onSettingsUpdate(result.settings);
-        break;
-
-      case 'state_dump':
-        callbacks.onStateDump(result.event);
-        break;
-
-      case 'device_status':
-        callbacks.onBatteryUpdate(result.battery);
-        break;
-
-      case 'connection_acceptance':
-        callbacks.onConnectionAcceptance(result.accepted, result.status);
-        break;
-
-      case 'unknown':
-        // Silently ignore unknown notifications
-        break;
-    }
+    reassembler.push(data, (frame) => dispatchFrame(frame, callbacks));
   };
+}
+
+/** Decode one whole frame and hand it to the callback it belongs to. */
+function dispatchFrame(data: Uint8Array, callbacks: NotificationCallbacks): void {
+  const result = decodeNotification(data);
+  if (!result) return;
+
+  switch (result.type) {
+    case 'frame':
+      callbacks.onFrame(result.frame);
+      break;
+
+    case 'perRep':
+      callbacks.onPerRep(result.event);
+      break;
+
+    case 'inProgress':
+      callbacks.onInProgress(result.event);
+      break;
+
+    case 'summary':
+      callbacks.onSummary(result.event);
+      break;
+
+    case 'setSummary':
+      callbacks.onSetSummary(result.event);
+      break;
+
+    case 'mode_confirmation':
+      callbacks.onModeConfirmed(result.mode);
+      break;
+
+    case 'settings_update':
+      callbacks.onSettingsUpdate(result.settings);
+      break;
+
+    case 'state_dump':
+      callbacks.onStateDump(result.event);
+      break;
+
+    case 'device_status':
+      callbacks.onBatteryUpdate(result.battery);
+      break;
+
+    case 'connection_acceptance':
+      callbacks.onConnectionAcceptance(result.accepted, result.status);
+      break;
+
+    case 'unknown':
+      // Silently ignore unknown notifications
+      break;
+  }
 }

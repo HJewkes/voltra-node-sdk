@@ -35,7 +35,7 @@ function collectNotifications(adapter: MockBLEAdapter): Uint8Array[] {
 }
 
 function isTelemetryFrame(data: Uint8Array): boolean {
-  return data.length === 30 && bytesEqual(data.subarray(0, 4), MessageTypes.TELEMETRY_STREAM);
+  return bytesEqual(data.subarray(0, 4), MessageTypes.TELEMETRY_STREAM);
 }
 
 function decodeTelemetry(notifications: Uint8Array[]) {
