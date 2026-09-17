@@ -93,9 +93,9 @@ describe('buildGuidedLoadExitFrame', () => {
     // reserved [0x01, 0x00]
     expect(frame[11]).toBe(0x01);
     expect(frame[12]).toBe(0x00);
-    // paramId BE: 0x3E 0x89
-    expect(frame[13]).toBe(0x3e);
-    expect(frame[14]).toBe(0x89);
+    // paramId LE: 0x89 0x3E
+    expect(frame[13]).toBe(0x89);
+    expect(frame[14]).toBe(0x3e);
     // value LE: 0x04 0x00 (STRENGTH_READY)
     expect(frame[15]).toBe(0x04);
     expect(frame[16]).toBe(0x00);
