@@ -28,7 +28,7 @@ const IDLE_SAMPLES = 5;
 const CONCENTRIC_SAMPLES = 9;
 
 function isTelemetryFrame(data: Uint8Array): boolean {
-  return data.length === 30 && bytesEqual(data.subarray(0, 4), MessageTypes.TELEMETRY_STREAM);
+  return bytesEqual(data.subarray(0, 4), MessageTypes.TELEMETRY_STREAM);
 }
 
 async function connectAdapter(adapter: MockBLEAdapter): Promise<void> {

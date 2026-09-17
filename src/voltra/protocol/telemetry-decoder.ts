@@ -22,6 +22,7 @@ import {
 } from './constants';
 import { createFrame, type TelemetryFrame } from '../models/telemetry/frame';
 import { classifyMotorReport, MOTOR_STATE_FIELD } from './device-state';
+import { FRAME_MARKER, sealEnvelope } from './frame-envelope';
 import { bytesEqual, bytesToHex, hexToBytes } from '../../shared/utils';
 import type {
   BulkParamResponse,
@@ -852,7 +853,7 @@ export function decodeWaveformChunk(data: Uint8Array): WaveformChunkEvent | null
  */
 function isBulkParamResponse(data: Uint8Array): boolean {
   if (data.length <= CMD_BYTE_OFFSET) return false;
-  if (data[0] !== 0x55) return false;
+  if (data[0] !== FRAME_MARKER) return false;
   const frameType = data[2];
   if (frameType !== RESPONSE_FRAME_TYPE && frameType !== RESPONSE_FRAME_TYPE_EXTENDED) {
     return false;
@@ -937,8 +938,6 @@ export function encodeBulkParamResponse(
 
   const size = BULK_PARAM_FIRST_OFFSET + widths.reduce((n, w) => n + 2 + w, 0) + 2;
   const frame = new Uint8Array(size);
-  frame[0] = 0x55;
-  frame[1] = size;
   frame[2] = RESPONSE_FRAME_TYPE;
   frame[CMD_BYTE_OFFSET] = CMD_PARAM_READ;
   frame[BULK_PARAM_COUNT_OFFSET] = params.length & 0xff;
@@ -953,7 +952,7 @@ export function encodeBulkParamResponse(
     }
     offset += widths[i];
   });
-  return frame;
+  return sealEnvelope(frame);
 }
 
 /**
@@ -1153,18 +1152,16 @@ export function decodeNotification(data: Uint8Array): DecodeResult {
 
 /**
  * Encode a TelemetryFrame into a BLE notification payload.
- * Creates a minimal message that can be decoded by decodeTelemetryFrame.
+ * Creates a message that can be decoded by decodeTelemetryFrame.
  * Used for replay functionality.
+ *
+ * The result is a whole sealed frame, sized as the device sizes one, so it
+ * survives the notification path's envelope validation (VW-409).
  */
 export function encodeTelemetryFrame(frame: TelemetryFrame): Uint8Array {
-  const data = new Uint8Array(30);
-
-  // Message type header (telemetry stream)
   const header = MessageTypes.TELEMETRY_STREAM;
-  data[0] = header[0];
-  data[1] = header[1];
-  data[2] = header[2];
-  data[3] = header[3];
+  const data = new Uint8Array(header[1]);
+  data.set(header);
 
   writeUint16LE(data, TelemetryOffsets.SEQUENCE, frame.sequence);
 
@@ -1176,5 +1173,5 @@ export function encodeTelemetryFrame(frame: TelemetryFrame): Uint8Array {
   writeUint16LE(data, TelemetryOffsets.FORCE, frame.force);
   writeInt16LE(data, TelemetryOffsets.VELOCITY, frame.velocity);
 
-  return data;
+  return sealEnvelope(data);
 }

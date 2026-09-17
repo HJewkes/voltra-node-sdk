@@ -8,6 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import { encodeTelemetryFrame, decodeTelemetryFrame } from '../telemetry-decoder';
 import { createFrame } from '../../models/telemetry';
+import { scanEnvelope } from '../frame-envelope';
 import { MovementPhase } from '../constants';
 
 // =============================================================================
@@ -193,11 +194,11 @@ describe('Telemetry Codec', () => {
   });
 
   describe('encodeTelemetryFrame()', () => {
-    it('produces 30-byte output', () => {
+    it('produces a whole frame the notification path accepts', () => {
       const frame = createFrame(1, MovementPhase.IDLE, 0, 0, 0);
       const encoded = encodeTelemetryFrame(frame);
 
-      expect(encoded.length).toBe(30);
+      expect(scanEnvelope(encoded)).toEqual({ kind: 'frame', length: encoded.length });
     });
 
     it('sets correct message type header', () => {
