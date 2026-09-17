@@ -95,7 +95,6 @@ const BULK_PARAM_COUNT_OFFSET = 12;
 /** Frame offset of the first param pair in a bulk-read response. */
 const BULK_PARAM_FIRST_OFFSET = 14;
 
-
 // =============================================================================
 // Byte Parsing Helpers
 // =============================================================================

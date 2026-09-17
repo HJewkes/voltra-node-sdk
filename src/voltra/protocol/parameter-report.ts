@@ -70,12 +70,7 @@ function isSigned(paramIdHex: string): boolean {
 }
 
 /** Read one value of `width` bytes, little-endian, with its own signedness. */
-function readValue(
-  data: Uint8Array,
-  offset: number,
-  width: 1 | 2 | 4,
-  paramIdHex: string
-): number {
+function readValue(data: Uint8Array, offset: number, width: 1 | 2 | 4, paramIdHex: string): number {
   let value = 0;
   for (let i = 0; i < width; i++) {
     value += data[offset + i] << (i * 8);
