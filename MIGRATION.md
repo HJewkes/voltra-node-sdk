@@ -2,6 +2,117 @@
 
 Breaking changes and migration steps for consumers upgrading to the latest version of `@voltras/node-sdk`.
 
+## Migrating to 0.15.0
+
+Several telemetry fields and report types are renamed, two values change
+meaning, and connecting and stopping now wait for the device to answer. The
+CHANGELOG entries for 0.15.0 carry the evidence behind each change.
+
+### Renamed fields and types
+
+| 0.14.0                               | 0.15.0                                                    |
+| ------------------------------------ | --------------------------------------------------------- |
+| `InProgressEvent.peakForceTenths`    | `meanPullForceTenths`                                     |
+| `InProgressEvent.currentForceTenths` | `meanReturnForceTenths`                                   |
+| `InProgressEvent.velocityCmPerSec`   | `meanReturnSpeedMmPerSec`                                 |
+| `InProgressEvent.targetWeightTenths` | `pullVolumeRawTenths`                                     |
+| `SetSummaryEvent.repDurationMs`      | `totalPullMovingTimeMs`                                   |
+| `RowingSummaryEvent`                 | `RowingRuntimeEvent`                                      |
+| `RowingStatusEvent`                  | `IsometricSummaryEvent`                                   |
+| `decodeRowingSummary`                | `decodeRowingRuntime`                                     |
+| `decodeRowingStatus`                 | `decodeIsometricSummary`                                  |
+| `DecodeResult` `'rowing_summary'`    | `'rowing_runtime'`                                        |
+| `DecodeResult` `'rowing_status'`     | `'isometric_summary'`                                     |
+| `DecodeResult` `'device_status'`     | removed; read `settings.battery` from `'settings_update'` |
+
+The `MessageType` members for the two rowing-era families change to match.
+`onBatteryUpdate` and the `batteryUpdate` client event are unchanged.
+
+**Action:** rename at each use site. The four `InProgressEvent` values are
+per-rep means the device repeats until the next rep, not peak or live
+readings. `pullVolumeRawTenths` is a relative accumulator over the set, not a
+weight. `RowingRuntimeEvent` and `IsometricSummaryEvent` now carry `raw`
+only: their stroke rate, pace, stroke count and distance fields are removed
+with no replacement, so treat both families as undecoded.
+
+### Two values change meaning, not just name
+
+`meanReturnSpeedMmPerSec` is read from a different position than
+`velocityCmPerSec` was, and it is in mm/s rather than cm/s. The old field
+returned values in the thousands that meant nothing on their own.
+
+`totalPullMovingTimeMs` is the whole set's pull moving time, not one rep's
+duration. It is equal to the old reading for a one-rep set and larger for
+every longer set.
+
+**Action:** do not rescale old stored values into the new unit; the old
+speed values are not recoverable. Anything presenting the duration as a rep
+time should divide by the rep count or use the per-rep reports instead.
+
+### Connecting waits for the device to accept
+
+`VoltraConnectionState` gains `'awaitingAcceptance'`, between the init writes
+and `'connected'`. `connect()` rejects with `ConnectionRefusedError` if the
+device refuses or stays silent past `acceptanceTimeoutMs` (default 30000).
+The SDK never retries a refused connection itself. After acceptance, control
+setters throw `DeviceStateUnknownError` until the device answers its state
+read; `client.hasConfirmedState` says whether it has. `DecodeResult` and
+`MessageType` gain `'connection_acceptance'`.
+
+```typescript
+import { ConnectionRefusedError, DeviceStateUnknownError } from '@voltras/node-sdk';
+
+try {
+  await client.connect(device);
+} catch (err) {
+  if (err instanceof ConnectionRefusedError) {
+    // ask the user to accept on the device, then retry
+  }
+}
+```
+
+**Action:** add an `'awaitingAcceptance'` case to any exhaustive switch over
+connection state, and a `'connection_acceptance'` case to any over
+`DecodeResult['type']` or `MessageType`. Decide your own retry policy for
+`ConnectionRefusedError`.
+
+### Stops are confirmed by the device
+
+`stopRecording()`, `unloadDevice()` and `endSet()` wait for a device report
+before reaching `'idle'` / `'ready'`. Without one the recording state stays
+`'stopping'`, which is retryable. `stopRecording()` and `endSet()` now reject
+on a failed write where they used to resolve.
+
+**Action:** handle rejection from both calls, and read `client.motorState`
+(`'engaged'`, `'unloaded'`, `'pending'` or `'unknown'`) to tell a confirmed
+stop from an unconfirmed one. `disconnect()` is unchanged.
+
+### `exitGuidedLoad()` now unloads the motor
+
+It used to report success while the device stayed loaded.
+
+**Action:** remove any extra unload you added after `exitGuidedLoad()` to
+compensate. It is harmless but no longer needed.
+
+### Device stand-ins must behave like a device
+
+A stub transport must answer the connect handshake and the post-connect state
+read, and every notification it sends must be a whole, sealed frame;
+anything else is discarded. `MockBLEAdapter` already does both.
+
+```typescript
+import { connectSetupReply } from '@voltras/node-sdk/testing';
+
+write(data: Uint8Array) {
+  const reply = connectSetupReply(data);
+  if (reply) this.emitNotification(reply);
+}
+```
+
+**Action:** use `connectSetupReply` in a hand-written stub's `write()`, and
+build fixtures with `sealEnvelope` or `encodeTelemetryFrame()` rather than
+hand-assembled bytes.
+
 ## Migrating to 0.12.0
 
 No API signatures changed. Three behavioral changes may affect you.
