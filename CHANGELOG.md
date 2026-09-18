@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.15.0] - 2026-09-17
 
+This release closes an independent protocol review of 0.14.0 published on
+2026-09-17 by a community developer who built their own client from BLE
+captures and app analysis. Every one of the review's offline findings
+reproduced on our code; nine of its thirteen groups were then confirmed
+against our own captures before the fixes below were made. The mapping from
+the review's items to what shipped is in the README's Acknowledgements
+section. Thank you.
+
 ### Breaking
 
 Every removed or renamed public symbol, and every behaviour a caller may
