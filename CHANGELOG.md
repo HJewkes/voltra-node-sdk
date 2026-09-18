@@ -77,7 +77,8 @@ depend on that changed. The entries below carry the evidence and detail.
   `DEFAULT_SIMULATED_STATE`, plus `sealEnvelope` / `scanEnvelope` for a stub
   that builds its own frames. A stub transport needs to answer the handshake
   finish and the core-state read for `connect()` to complete; one call in its
-  `write()` does both. `MockBLEAdapter` answers both already.
+  `write()` does both. `MockBLEAdapter` and `ReplayBLEAdapter` answer both
+  already.
 
 - **`client.motorState`** — what the device last said about the cable motor.
   `'engaged'` and `'unloaded'` mean the device reported it; `'pending'` means a
@@ -175,6 +176,20 @@ depend on that changed. The entries below carry the evidence and detail.
   `encodeTelemetryFrame()` returns a whole frame sized as the device sizes
   one, rather than a truncated one, and `MockBLEAdapter`'s notifications and
   the `@voltras/node-sdk/testing` reply builders seal what they build.
+
+- **`connect()` rejects with the error that happened, not a generic
+  connection failure.** It re-wrapped every error as `ConnectionError` with
+  code `CONNECTION_FAILED`, so a refusal reached callers with
+  `ConnectionRefusedError` only in `.cause`, and `err instanceof
+  ConnectionRefusedError` never matched. It now rethrows SDK errors as they
+  are: a refusal is `ConnectionRefusedError` with code `CONNECTION_REFUSED`
+  (`status` is `null` when the device never answered), and a failed
+  handshake is `AuthenticationError` with code `AUTH_FAILED`. Errors from
+  outside the SDK are still wrapped as `ConnectionError`.
+- **`connect()` completes over `ReplayBLEAdapter`.** The replay adapter did
+  not answer the handshake finish or the core-state read, so `connect()` over
+  a recording waited out `acceptanceTimeoutMs` and rejected. It now answers
+  both the way `MockBLEAdapter` does, then replays the recording unchanged.
 
 ### Documentation
 

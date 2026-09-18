@@ -135,6 +135,7 @@ import {
   InvalidSettingError,
   CommandError,
   TimeoutError,
+  VoltraSDKError,
   ErrorCode,
 } from '../errors';
 import type {
@@ -2707,6 +2708,8 @@ export class VoltraClient {
   }
 
   private wrapError(e: unknown, context: string): Error {
+    // A typed SDK error already says what went wrong; re-wrapping hides it in `cause`.
+    if (e instanceof VoltraSDKError) return e;
     if (e instanceof Error) {
       if (e.message.includes('timeout')) {
         return new TimeoutError(`${context}: ${e.message}`, Timing.AUTH_TIMEOUT_MS, e);
