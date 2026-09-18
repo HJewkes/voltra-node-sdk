@@ -216,6 +216,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   magnitude. Both peak offsets now come from the generated telemetry config
   instead of being hardcoded in the decoder.
 
+- **Three report families are named for what they are** (VW-411). The family
+  the SDK called rowing status is the isometric summary; the one it called a
+  rowing summary is rowing runtime information; and the identifier the
+  generated metadata attached to an isometric summary belongs to the
+  workout-state family the SDK already decodes as a state dump. The evidence
+  is the vendor app's own command catalog — no frame of either renamed family
+  appears in any capture we have, rowing sessions included.
+
+  **Migration.** `RowingSummaryEvent` → `RowingRuntimeEvent`,
+  `RowingStatusEvent` → `IsometricSummaryEvent`, `decodeRowingSummary` →
+  `decodeRowingRuntime`, `decodeRowingStatus` → `decodeIsometricSummary`. The
+  `DecodeResult` variants `'rowing_summary'` and `'rowing_status'` become
+  `'rowing_runtime'` and `'isometric_summary'`, and the `MessageType` members
+  change to match.
+
+  **Both events now carry raw bytes only.** The stroke rates, paces, stroke
+  counts and distances they used to report came from an external layout that
+  overflows the frame length one of these families declares, and the other
+  family is not rowing at all, so its "distance" described nothing. A
+  consumer that was reading those fields has no replacement and should treat
+  the family as undecoded.
+
+  Routing is driven by the generated identifiers, and a frame's family no
+  longer depends on its length. The dispatcher now names these three families
+  plus the waveform chunk explicitly as unsupported rather than falling
+  through silently, and a compile-time exhaustiveness check makes a new
+  decode result impossible to leave unrouted by accident.
+
 ### Removed
 
 - **The `device_status` decode result** (VW-406). Nothing produces it: it only

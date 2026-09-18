@@ -247,8 +247,8 @@ export {
 } from '../voltra/protocol/telemetry-decoder';
 
 export type {
-  RowingSummaryEvent,
-  RowingStatusEvent,
+  RowingRuntimeEvent,
+  IsometricSummaryEvent,
   WaveformChunkEvent,
 } from '../voltra/protocol/types';
 

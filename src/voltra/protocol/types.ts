@@ -393,8 +393,10 @@ export interface VendorSubTypesConfig {
    * see SetSummaryEvent for the misnomer history.
    */
   setSummary: VendorSubTypeConfig;
-  /** Rowing-mode telemetry. Field offsets unvalidated. */
-  rowing: VendorSubTypeConfig;
+  /** Rowing runtime information. Field layout unvalidated. */
+  rowingRuntime: VendorSubTypeConfig;
+  /** Workout-state family; the state-dump frames sit under this identifier. */
+  workoutState: VendorSubTypeConfig;
   /** Per-set isometric summary. Field layout unknown. */
   isometricSummary: VendorSubTypeConfig;
   /** Indexed batches of isometric force samples. */
@@ -637,51 +639,45 @@ export interface StateDumpEvent {
 }
 
 // <Decoder-statedump-asyncstate> ==========================================================
-// Rowing telemetry payload types. All fields are HYPOTHESIS until
-// on-device validation in a future Rowing-mode session — the prior on-device
-// session (Bug 22) was unable to engage Rowing mode successfully.
+// Families the device sends whose layouts we have never seen a frame of.
+//
+// Both carry raw bytes and nothing else. Their identifiers come from the
+// vendor app's own command catalog; no capture of ours contains either
+// family, rowing sessions included, so there is nothing to derive a field
+// layout from and none is offered.
 // ==========================================================
 /**
- * Decoded rowing summary frame.
+ * Decoded rowing runtime frame.
  *
- * Pace is reported in **milliseconds per 500 m** and distance in **meters**.
+ * Named `RowingSummaryEvent` in earlier releases, and decoded then into a
+ * pace, a stroke count and a distance. Those fields came from an external
+ * layout that overflows the frame this family declares, and no frame of
+ * this family has ever been captured, so they are gone rather than wrong.
  */
-export interface RowingSummaryEvent {
-  /** Stroke rate in strokes per minute. */
-  strokeRateSpm: number;
-  /** Current 500 m pace in milliseconds. */
-  currentPaceMs: number;
-  /** Average 500 m pace in milliseconds. */
-  averagePaceMs: number;
-  /** Stroke count, reported as whole strokes. */
-  strokeCount: number;
-  /** Distance in meters. */
-  distanceMeters: number;
+export interface RowingRuntimeEvent {
   /** Raw payload bytes (excludes the CRC trailer). */
   raw: Uint8Array;
 }
 
 /**
- * Decoded rowing status frame.
+ * Decoded isometric summary frame.
  *
- * Distance is reported in **meters**, converted by the decoder from the
- * finer unit this frame uses.
+ * Named `RowingStatusEvent` in earlier releases, and decoded then into a
+ * stroke rate and a rowing distance — this family is not rowing at all, so
+ * those readings described nothing. Raw bytes only until a capture settles
+ * the layout.
  */
-export interface RowingStatusEvent {
-  /** Stroke-rate fallback, in strokes per minute. */
-  strokeRateSpm: number;
-  /** Distance in meters. */
-  distanceMeters: number;
-  /** Raw payload following the sub-type byte (excludes CRC). */
+export interface IsometricSummaryEvent {
+  /** Raw payload bytes (excludes the CRC trailer). */
   raw: Uint8Array;
 }
 
 /**
- * Decoded rowing/isometric waveform chunk.
+ * Decoded waveform chunk.
  *
- * In rowing mode each sample is a force value in **tenths of pounds** (NOT
- * Newtons — the isometric-mode parser converts to newtons, but rowing
- * samples are reported as tenths-lb directly).
+ * Each sample is a force value in **tenths of pounds**; a consumer wanting
+ * newtons converts. The variant marker distinguishes the flows that emit
+ * this family, and its layout is unvalidated like the two above.
  *
  * `chunkIndex` lets the consumer reassemble multi-chunk waveforms. Reset the
  * buffer whenever the index fails to advance.

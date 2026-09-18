@@ -30,8 +30,8 @@ import type {
   DeviceSettings,
   ProtocolData,
   StateDumpEvent,
-  RowingSummaryEvent,
-  RowingStatusEvent,
+  RowingRuntimeEvent,
+  IsometricSummaryEvent,
   WaveformChunkEvent,
   AsyncStateFrame,
   AsyncStateParam,
@@ -69,10 +69,7 @@ const STATE_DUMP_SUBTYPE_0: number = 0x80;
 const STATE_DUMP_SUBTYPE_1: number = 0x25;
 /** Total length of the state-dump frame (envelope + payload + CRC). */
 const STATE_DUMP_FRAME_LENGTH = 52;
-/** Rowing-mode AA-frame sub-type identifiers (see types.ts comments). */
-const ROWING_SUMMARY_SUBTYPE_0 = 0x95;
-const ROWING_SUMMARY_SUBTYPE_1 = 0x25;
-const ROWING_STATUS_SUBTYPE_0 = 0x92;
+/** Waveform-chunk sub-type marker (see types.ts comments). */
 const WAVEFORM_SUBTYPE_0 = 0x93;
 /**
  * Variant markers for the waveform-chunk family. The first is the
@@ -168,8 +165,8 @@ export type MessageType =
   | 'vendor_set_summary'
   // <Decoder-statedump-asyncstate>
   | 'vendor_state_dump'
-  | 'vendor_rowing_summary'
-  | 'vendor_rowing_status'
+  | 'vendor_rowing_runtime'
+  | 'vendor_isometric_summary'
   | 'vendor_waveform_chunk'
   // eslint-disable-next-line voltras/no-private-provenance -- exported `MessageType` member; renaming it is a breaking API change (VW-214, see CONTRIBUTING.md)
   | 'cmd10_async_state'
@@ -229,26 +226,21 @@ export function identifyMessageType(data: Uint8Array): MessageType {
   // These checks must precede the header dispatch — the state-dump
   // frame aliases the `statusBattery` header and was previously yielding
   // spurious battery readings.
+  // Identified by its own bytes, never by its length: a family a frame
+  // belongs to cannot depend on how much of it arrived. A frame too short to
+  // decode fails in the decoder, where the length actually matters.
   if (
-    data.length >= STATE_DUMP_FRAME_LENGTH &&
     data[CMD_BYTE_OFFSET] === VendorMessages.cmdValue &&
     data[CMD_BYTE_OFFSET + 1] === STATE_DUMP_SUBTYPE_0 &&
     data[CMD_BYTE_OFFSET + 2] === STATE_DUMP_SUBTYPE_1
   ) {
     return 'vendor_state_dump';
   }
-  if (
-    data[CMD_BYTE_OFFSET] === VendorMessages.cmdValue &&
-    data[CMD_BYTE_OFFSET + 1] === ROWING_SUMMARY_SUBTYPE_0 &&
-    data[CMD_BYTE_OFFSET + 2] === ROWING_SUMMARY_SUBTYPE_1
-  ) {
-    return 'vendor_rowing_summary';
+  if (matchesVendorSubType(data, VendorMessages.subTypes.rowingRuntime)) {
+    return 'vendor_rowing_runtime';
   }
-  if (
-    data[CMD_BYTE_OFFSET] === VendorMessages.cmdValue &&
-    data[CMD_BYTE_OFFSET + 1] === ROWING_STATUS_SUBTYPE_0
-  ) {
-    return 'vendor_rowing_status';
+  if (matchesVendorSubType(data, VendorMessages.subTypes.isometricSummary)) {
+    return 'vendor_isometric_summary';
   }
   if (
     data[CMD_BYTE_OFFSET] === VendorMessages.cmdValue &&
@@ -315,8 +307,8 @@ export type DecodeResult =
   | { type: 'settings_update'; settings: DeviceSettings } // Device settings
   // <Decoder-statedump-asyncstate> State dump + rowing telemetry.
   | { type: 'state_dump'; event: StateDumpEvent }
-  | { type: 'rowing_summary'; event: RowingSummaryEvent }
-  | { type: 'rowing_status'; event: RowingStatusEvent }
+  | { type: 'rowing_runtime'; event: RowingRuntimeEvent }
+  | { type: 'isometric_summary'; event: IsometricSummaryEvent }
   | { type: 'waveform_chunk'; event: WaveformChunkEvent }
   | { type: 'connection_acceptance'; accepted: boolean; status: number } // VW-403
   | { type: 'unknown'; data: Uint8Array } // Unknown notification with raw data
@@ -671,73 +663,46 @@ function decodeStateDumpToResult(data: Uint8Array): DecodeResult {
 }
 
 // =============================================================================
-// Rowing-mode telemetry decoders (HYPOTHESIS — see types.ts)
+// Families with no captured frame behind them (see types.ts)
+//
+// Both decoders hand back raw bytes. Their identifiers come from the vendor
+// app's own catalog and nothing else, so parsing a field out of either would
+// be inventing a layout rather than reading one.
 // =============================================================================
 
-/**
- * Decode a rowing summary frame.
- *
- * Pace is reported in **milliseconds per 500 m** and distance in **meters**.
- * Stroke count is reported as whole strokes (rounded toward zero).
- *
- * Returns `null` if the buffer doesn't match the sub-type bytes or is too
- * short to safely read all documented fields. Callers needing partial data
- * should fall back to walking `event.raw`.
- */
-export function decodeRowingSummary(data: Uint8Array): RowingSummaryEvent | null {
-  if (data[CMD_BYTE_OFFSET] !== VendorMessages.cmdValue) return null;
-  if (data[CMD_BYTE_OFFSET + 1] !== ROWING_SUMMARY_SUBTYPE_0) return null;
-  if (data[CMD_BYTE_OFFSET + 2] !== ROWING_SUMMARY_SUBTYPE_1) return null;
-
+/** Payload bytes of a vendor frame, from the sub-type marker to the CRC. */
+function vendorPayload(data: Uint8Array): Uint8Array {
   const payloadStart = CMD_BYTE_OFFSET + 1;
-  // Exclude the CRC trailer from raw if the frame is long enough.
-  const rawEnd = Math.max(payloadStart, data.length - 2);
-  const raw = data.slice(payloadStart, rawEnd);
-
-  // The distance field sits near the end of the body, so verify the length
-  // before reading it.
-  if (raw.length < 39) return null;
-
-  return {
-    strokeRateSpm: raw[2],
-    currentPaceMs: readUint32LE(raw, 3) * 100,
-    averagePaceMs: readUint32LE(raw, 7) * 100,
-    strokeCount: Math.trunc(readUint32LE(raw, 19) / 100),
-    distanceMeters: readUint32LE(raw, 35),
-    raw,
-  };
+  return data.slice(payloadStart, Math.max(payloadStart, data.length - 2));
 }
 
 /**
- * Decode a rowing status frame. Distance unit on the
- * decoder converts to meters.
+ * Decode a rowing runtime frame to its raw bytes.
  *
- * Returns `null` if the body is shorter than the documented field span.
+ * Returns `null` for anything that is not this family.
  */
-export function decodeRowingStatus(data: Uint8Array): RowingStatusEvent | null {
-  if (data[CMD_BYTE_OFFSET] !== VendorMessages.cmdValue) return null;
-  if (data[CMD_BYTE_OFFSET + 1] !== ROWING_STATUS_SUBTYPE_0) return null;
-
-  const payloadStart = CMD_BYTE_OFFSET + 1;
-  const rawEnd = Math.max(payloadStart, data.length - 2);
-  const raw = data.slice(payloadStart, rawEnd);
-  if (raw.length < 15) return null;
-
-  return {
-    strokeRateSpm: raw[2],
-    distanceMeters: readUint32LE(raw, 11) / 100,
-    raw,
-  };
+export function decodeRowingRuntime(data: Uint8Array): RowingRuntimeEvent | null {
+  if (!matchesVendorSubType(data, VendorMessages.subTypes.rowingRuntime)) return null;
+  return { raw: vendorPayload(data) };
 }
 
 /**
- * Decode a waveform chunk frame. The variant byte distinguishes isometric
- * from rowing. Caller is responsible for assembling chunks across frames
- * using `chunkIndex`.
+ * Decode an isometric summary frame to its raw bytes.
  *
- * **Sample units:** `tenths-of-pounds`. Rowing samples are tenths-of-lb
- * directly; isometric callers must scale tenths-of-pounds by 4.4482216 to
- * get newtons.
+ * Returns `null` for anything that is not this family.
+ */
+export function decodeIsometricSummary(data: Uint8Array): IsometricSummaryEvent | null {
+  if (!matchesVendorSubType(data, VendorMessages.subTypes.isometricSummary)) return null;
+  return { raw: vendorPayload(data) };
+}
+
+/**
+ * Decode a waveform chunk frame. The variant byte distinguishes the flows
+ * that emit this family. Caller is responsible for assembling chunks across
+ * frames using `chunkIndex`.
+ *
+ * **Sample units:** `tenths-of-pounds`. A consumer wanting newtons scales
+ * tenths-of-pounds by 4.4482216.
  */
 export function decodeWaveformChunk(data: Uint8Array): WaveformChunkEvent | null {
   if (data[CMD_BYTE_OFFSET] !== VendorMessages.cmdValue) return null;
@@ -953,14 +918,14 @@ export function decodeNotification(data: Uint8Array): DecodeResult {
     case 'vendor_state_dump':
       return decodeStateDumpToResult(data);
 
-    case 'vendor_rowing_summary': {
-      const event = decodeRowingSummary(data);
-      return event ? { type: 'rowing_summary', event } : { type: 'unknown', data };
+    case 'vendor_rowing_runtime': {
+      const event = decodeRowingRuntime(data);
+      return event ? { type: 'rowing_runtime', event } : { type: 'unknown', data };
     }
 
-    case 'vendor_rowing_status': {
-      const event = decodeRowingStatus(data);
-      return event ? { type: 'rowing_status', event } : { type: 'unknown', data };
+    case 'vendor_isometric_summary': {
+      const event = decodeIsometricSummary(data);
+      return event ? { type: 'isometric_summary', event } : { type: 'unknown', data };
     }
 
     case 'vendor_waveform_chunk': {

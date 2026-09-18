@@ -20,12 +20,13 @@ import {
   decodeNotification,
   decodeStateDump,
   decodeAsyncState,
-  decodeRowingSummary,
-  decodeRowingStatus,
+  decodeRowingRuntime,
+  decodeIsometricSummary,
   decodeWaveformChunk,
   identifyMessageType,
 } from '../telemetry-decoder';
 import { TrainingMode, ParamIdHex } from '../constants';
+import { buildVendorRawFrame } from '../_factories';
 import { hexToBytes } from '../../../shared/utils';
 
 // =============================================================================
@@ -365,189 +366,58 @@ describe('decodeNotification - cmd=0x07 routing', () => {
 });
 
 // =============================================================================
-// Rowing telemetry — synthetic frames built to the Android-deep-scrub layout
+// Families with no captured frame behind them
+//
+// These three identifiers are routed from the generated metadata, so a test
+// builds each frame through the same metadata the router reads. Nothing here
+// asserts a field: the layouts are unvalidated, and the decoders hand back
+// raw bytes.
 // =============================================================================
 
-/**
- * Synthesize a rowing summary frame with the documented byte layout. The
- * 6-byte envelope (`55 <len> 04 <crc8> 10 aa`) and 2-byte trailing CRC are
- * filled with zeros — `decodeRowingSummary` doesn't validate CRC, so this
- * is sufficient for byte-layout regression.
- *
- * Sub-type bytes `aa 95 25` start at frame offset 10. Payload offsets in
- * the params object are payload-relative (i.e. payload[0] = `0x95`).
- */
-function buildRowingSummaryFrame(params: {
-  strokeRateSpm: number;
-  currentPaceTenthSeconds: number;
-  averagePaceTenthSeconds: number;
-  strokeCountCenti: number;
-  distanceMeters: number;
-}): Uint8Array {
-  const frame = new Uint8Array(52);
-  frame[0] = 0x55;
-  frame[1] = 0x34;
-  frame[2] = 0x04;
-  frame[3] = 0xac;
-  frame[4] = 0x10;
-  frame[5] = 0xaa;
-  // seq + proto (6..9): leave as zero.
-  frame[10] = 0xaa;
-  frame[11] = 0x95;
-  frame[12] = 0x25;
-  // Payload starts at frame[11]; the sub-type byte itself is payload[0].
-  // strokeRateSpm at payload offset 2 = frame offset 13.
-  frame[13] = params.strokeRateSpm & 0xff;
-  // currentPace tenth-seconds at payload offsets 3..6 = frame 14..17.
-  writeUint32LE(frame, 14, params.currentPaceTenthSeconds);
-  // averagePace tenth-seconds at payload offsets 7..10 = frame 18..21.
-  writeUint32LE(frame, 18, params.averagePaceTenthSeconds);
-  // Stroke count *100 at payload offsets 19..22 = frame 30..33.
-  writeUint32LE(frame, 30, params.strokeCountCenti);
-  // Distance meters at payload offsets 35..38 = frame 46..49.
-  writeUint32LE(frame, 46, params.distanceMeters);
-  return frame;
-}
+describe('routing the families that carry raw bytes', () => {
+  it('routes the rowing runtime identifier to its own family', () => {
+    const frame = buildVendorRawFrame('rowingRuntime', new Uint8Array([1, 2, 3]));
 
-function writeUint32LE(buf: Uint8Array, offset: number, value: number): void {
-  buf[offset] = value & 0xff;
-  buf[offset + 1] = (value >>> 8) & 0xff;
-  buf[offset + 2] = (value >>> 16) & 0xff;
-  buf[offset + 3] = (value >>> 24) & 0xff;
-}
-
-describe('decodeRowingSummary', () => {
-  it('decodes pace as tenths-of-seconds → ms (×100)', () => {
-    // Pace 1200 tenths-of-seconds = 120s = 2 min/500m → 120000 ms.
-    const frame = buildRowingSummaryFrame({
-      strokeRateSpm: 28,
-      currentPaceTenthSeconds: 1200,
-      averagePaceTenthSeconds: 1300,
-      strokeCountCenti: 4200, // 42 strokes
-      distanceMeters: 250,
-    });
-
-    const event = decodeRowingSummary(frame);
-
-    expect(event).not.toBeNull();
-    expect(event!.strokeRateSpm).toBe(28);
-    expect(event!.currentPaceMs).toBe(120000);
-    expect(event!.averagePaceMs).toBe(130000);
-    expect(event!.strokeCount).toBe(42);
-    expect(event!.distanceMeters).toBe(250);
+    expect(identifyMessageType(frame)).toBe('vendor_rowing_runtime');
+    expect(decodeNotification(frame)!.type).toBe('rowing_runtime');
+    expect(decodeRowingRuntime(frame)).not.toBeNull();
+    expect(decodeIsometricSummary(frame)).toBeNull();
   });
 
-  it('decodes distance in meters (NOT centimeters — different from aa-92)', () => {
-    const frame = buildRowingSummaryFrame({
-      strokeRateSpm: 30,
-      currentPaceTenthSeconds: 1100,
-      averagePaceTenthSeconds: 1100,
-      strokeCountCenti: 0,
-      distanceMeters: 1000,
-    });
+  it('routes the isometric summary identifier to its own family', () => {
+    const frame = buildVendorRawFrame('isometricSummary', new Uint8Array([1, 2, 3]));
 
-    const event = decodeRowingSummary(frame);
-
-    expect(event!.distanceMeters).toBe(1000);
+    expect(identifyMessageType(frame)).toBe('vendor_isometric_summary');
+    expect(decodeNotification(frame)!.type).toBe('isometric_summary');
+    expect(decodeIsometricSummary(frame)).not.toBeNull();
+    expect(decodeRowingRuntime(frame)).toBeNull();
   });
 
-  it('returns null for a frame that is not aa-95-25', () => {
-    const data = hexToBytes(FRAME_STATE_DUMP_ASSIST_ON);
+  it('routes the workout-state identifier to the state dump', () => {
+    const frame = hexToBytes(FRAME_STATE_DUMP_ASSIST_ON);
 
-    expect(decodeRowingSummary(data)).toBeNull();
+    expect(identifyMessageType(frame)).toBe('vendor_state_dump');
+    expect(decodeRowingRuntime(frame)).toBeNull();
+    expect(decodeIsometricSummary(frame)).toBeNull();
   });
 
-  it('returns null when the frame is too short to read distance', () => {
-    const frame = buildRowingSummaryFrame({
-      strokeRateSpm: 0,
-      currentPaceTenthSeconds: 0,
-      averagePaceTenthSeconds: 0,
-      strokeCountCenti: 0,
-      distanceMeters: 0,
-    });
-    const truncated = frame.slice(0, 30);
+  it('does not let a payload length decide which family a frame belongs to', () => {
+    const payload = new Uint8Array([0, 0, 0, 0, 0]);
+    const rowing = buildVendorRawFrame('rowingRuntime', payload, { totalLength: 40 });
+    const isometric = buildVendorRawFrame('isometricSummary', payload, { totalLength: 40 });
 
-    expect(decodeRowingSummary(truncated)).toBeNull();
+    expect(rowing.length).toBe(isometric.length);
+    expect(identifyMessageType(rowing)).toBe('vendor_rowing_runtime');
+    expect(identifyMessageType(isometric)).toBe('vendor_isometric_summary');
   });
 
-  it('decodeNotification routes aa-95-25 frame to rowing_summary', () => {
-    const frame = buildRowingSummaryFrame({
-      strokeRateSpm: 24,
-      currentPaceTenthSeconds: 1500,
-      averagePaceTenthSeconds: 1500,
-      strokeCountCenti: 100,
-      distanceMeters: 50,
-    });
+  it('carries the payload through as raw bytes and reads no field out of it', () => {
+    const frame = buildVendorRawFrame('isometricSummary', new Uint8Array([9, 8, 7]));
 
-    const result = decodeNotification(frame);
+    const event = decodeIsometricSummary(frame)!;
 
-    expect(result).not.toBeNull();
-    expect(result!.type).toBe('rowing_summary');
-    if (result?.type === 'rowing_summary') {
-      expect(result.event.strokeRateSpm).toBe(24);
-      expect(result.event.distanceMeters).toBe(50);
-    }
-  });
-});
-
-/**
- * Synthesize a rowing status frame (`aa 92`). Payload offset 11..14 holds
- * distance in centimeters (uint32 LE).
- */
-function buildRowingStatusFrame(params: { strokeRateSpm: number; distanceCm: number }): Uint8Array {
-  // Frame layout: 10 envelope + cmd byte (0xaa) + 15-byte payload (sub-type
-  // 0x92 + 14 bytes carrying stroke rate + reserved + distance) + 2 CRC = 28.
-  const frame = new Uint8Array(28);
-  frame[0] = 0x55;
-  frame[1] = 0x1c;
-  frame[2] = 0x04;
-  frame[3] = 0x00;
-  frame[4] = 0x10;
-  frame[5] = 0xaa;
-  frame[10] = 0xaa;
-  frame[11] = 0x92;
-  // strokeRate at payload offset 2 = frame offset 13.
-  frame[13] = params.strokeRateSpm & 0xff;
-  // Distance cm at payload offsets 11..14 = frame offsets 22..25.
-  writeUint32LE(frame, 22, params.distanceCm);
-  return frame;
-}
-
-describe('decodeRowingStatus', () => {
-  it('decodes distance from centimeters to meters', () => {
-    const frame = buildRowingStatusFrame({ strokeRateSpm: 26, distanceCm: 12345 });
-
-    const event = decodeRowingStatus(frame);
-
-    expect(event).not.toBeNull();
-    expect(event!.strokeRateSpm).toBe(26);
-    expect(event!.distanceMeters).toBe(123.45);
-  });
-
-  it('decodes zero distance', () => {
-    const frame = buildRowingStatusFrame({ strokeRateSpm: 0, distanceCm: 0 });
-
-    const event = decodeRowingStatus(frame);
-
-    expect(event!.distanceMeters).toBe(0);
-  });
-
-  it('returns null for a frame that is not aa-92', () => {
-    const data = hexToBytes(FRAME_CMD10_DAMPER_LEVEL_7);
-
-    expect(decodeRowingStatus(data)).toBeNull();
-  });
-
-  it('decodeNotification routes aa-92 frame to rowing_status', () => {
-    const frame = buildRowingStatusFrame({ strokeRateSpm: 30, distanceCm: 100 });
-
-    const result = decodeNotification(frame);
-
-    expect(result).not.toBeNull();
-    expect(result!.type).toBe('rowing_status');
-    if (result?.type === 'rowing_status') {
-      expect(result.event.distanceMeters).toBe(1);
-    }
+    expect(Object.keys(event)).toEqual(['raw']);
+    expect(Array.from(event.raw.slice(0, 4))).toEqual([0x92, 9, 8, 7]);
   });
 });
 

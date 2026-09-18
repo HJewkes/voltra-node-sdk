@@ -110,8 +110,30 @@ function dispatchFrame(data: Uint8Array, callbacks: NotificationCallbacks): void
       callbacks.onConnectionAcceptance(result.accepted, result.status);
       break;
 
+    // Three families the device can send that no typed callback covers.
+    // Each decodes to raw bytes only — their layouts have never been seen in
+    // a capture — so there is nothing to hand a caller that would not be
+    // invented. A consumer that needs the bytes reads them through
+    // `onRawFrame`, which fires for every notification.
+    case 'rowing_runtime':
+    case 'isometric_summary':
+    case 'waveform_chunk':
+      break;
+
     case 'unknown':
       // Silently ignore unknown notifications
       break;
+
+    default:
+      assertHandled(result);
   }
+}
+
+/**
+ * Fails to compile when a decode result gains a variant no case above
+ * handles, so a new typed event cannot reach listeners by accident or fail
+ * to reach them unnoticed.
+ */
+function assertHandled(result: never): void {
+  void result;
 }
