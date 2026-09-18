@@ -15,6 +15,7 @@ import {
 } from '../../../voltra/protocol/telemetry-decoder';
 import { MovementPhase } from '../../../voltra/protocol/constants/enums';
 import type { TelemetryFrame } from '../../../voltra/models/telemetry/frame';
+import { VoltraClient } from '../../../sdk/voltra-client';
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -346,5 +347,37 @@ describe('ReplayBLEAdapter', () => {
     expect(devices).toHaveLength(1);
     expect(devices[0].id).toBe('VTR-CUSTOM');
     expect(devices[0].name).toBe('Capture Replay');
+  });
+});
+
+describe('ReplayBLEAdapter — driven by VoltraClient', () => {
+  async function connectOverReplay(adapter: ReplayBLEAdapter, client: VoltraClient) {
+    const connecting = client.connect({ id: 'replay-device', name: 'VTR-REPLAY', rssi: -50 });
+    const settled = connecting.then(
+      () => 'connected',
+      (e: unknown) => e
+    );
+    await vi.advanceTimersByTimeAsync(40_000);
+    expect(await settled).toBe('connected');
+    expect(adapter.isLinkAlive()).toBe(true);
+  }
+
+  it('lets connect() complete, then delivers the recording in order', async () => {
+    const adapter = new ReplayBLEAdapter({ frames: buildFrames(5, 100), autoStart: false });
+    const client = new VoltraClient({ adapter });
+    const sequences: number[] = [];
+    client.subscribe((event) => {
+      if (event.type === 'frame') sequences.push(event.frame.sequence);
+    });
+
+    await connectOverReplay(adapter, client);
+    expect(client.connectionState).toBe('connected');
+    expect(client.hasConfirmedState).toBe(true);
+
+    adapter.play();
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(sequences).toEqual([0, 1, 2, 3, 4]);
+    client.dispose();
   });
 });

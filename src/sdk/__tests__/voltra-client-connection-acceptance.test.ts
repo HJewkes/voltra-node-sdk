@@ -11,7 +11,12 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { BaseBLEAdapter } from '../../bluetooth/adapters/base';
 import type { Device } from '../../bluetooth/adapters/types';
 import { VoltraClient } from '../voltra-client';
-import { ConnectionError, DeviceStateUnknownError } from '../../errors';
+import {
+  AuthenticationError,
+  ConnectionRefusedError,
+  DeviceStateUnknownError,
+  ErrorCode,
+} from '../../errors';
 import { TrainingMode } from '../../voltra/protocol/constants';
 import { hexToBytes } from '../../shared/utils';
 import {
@@ -53,6 +58,10 @@ class ScriptedDevice extends BaseBLEAdapter {
   reportsState = true;
   /** Core-state reads seen since the last reset. */
   stateReads = 0;
+  /** Milliseconds the device takes to answer a core-state read. */
+  stateReplyDelayMs = 0;
+  /** When true, every write fails at the transport. */
+  failWrites = false;
 
   async scan(_timeout: number): Promise<Device[]> {
     return [];
@@ -68,6 +77,7 @@ class ScriptedDevice extends BaseBLEAdapter {
   }
 
   async write(data: Uint8Array): Promise<void> {
+    if (this.failWrites) throw new Error('link write failed');
     this.writes.push(new Uint8Array(data));
     if (isHandshakeFinishWrite(data)) {
       this.answerHandshake();
@@ -75,9 +85,10 @@ class ScriptedDevice extends BaseBLEAdapter {
     }
     if (isCoreStateRead(data)) {
       this.stateReads++;
-      this.emitNotification(
-        this.reportsState ? buildCoreStateReply(this.state) : encodeBulkParamResponse([])
-      );
+      const reply = this.reportsState
+        ? buildCoreStateReply(this.state)
+        : encodeBulkParamResponse([]);
+      setTimeout(() => this.emitNotification(reply), this.stateReplyDelayMs);
     }
   }
 
@@ -143,24 +154,32 @@ describe('VoltraClient — connect waits for the device to accept', () => {
     expect(client.connectionState).toBe('connected');
   });
 
-  it('rejects and stays disconnected when the device refuses', async () => {
+  it('rejects with the refusal itself, not a wrapped connection failure', async () => {
     adapter.acceptance = 'refuse';
 
-    await expect(flushAndAwait(client.connect(device))).rejects.toBeInstanceOf(ConnectionError);
+    const error = await flushAndAwait(client.connect(device)).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ConnectionRefusedError);
+    expect(error).toMatchObject({ code: ErrorCode.CONNECTION_REFUSED, status: 0x02 });
     expect(client.connectionState).toBe('disconnected');
   });
 
-  it('rejects and stays disconnected when the device never answers', async () => {
+  it('rejects with a refusal carrying no status when the device never answers', async () => {
     adapter.acceptance = 'silent';
 
-    await expect(flushAndAwait(client.connect(device))).rejects.toBeInstanceOf(ConnectionError);
+    const error = await flushAndAwait(client.connect(device)).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ConnectionRefusedError);
+    expect(error).toMatchObject({ code: ErrorCode.CONNECTION_REFUSED, status: null });
     expect(client.connectionState).toBe('disconnected');
   });
 
   it('does not retry on its own after a refusal', async () => {
     adapter.acceptance = 'refuse';
 
-    await expect(flushAndAwait(client.connect(device))).rejects.toBeInstanceOf(ConnectionError);
+    await expect(flushAndAwait(client.connect(device))).rejects.toBeInstanceOf(
+      ConnectionRefusedError
+    );
     await vi.advanceTimersByTimeAsync(60_000);
 
     const handshakes = adapter.writes.filter(isHandshakeFinishWrite);
@@ -174,7 +193,10 @@ describe('VoltraClient — connect waits for the device to accept', () => {
     adapter.acceptanceDelayMs = 5_000;
     client = new VoltraClient({ adapter, acceptanceTimeoutMs: 1_000 });
 
-    await expect(flushAndAwait(client.connect(device))).rejects.toBeInstanceOf(ConnectionError);
+    await expect(flushAndAwait(client.connect(device))).rejects.toMatchObject({
+      name: 'ConnectionRefusedError',
+      status: null,
+    });
   });
 
   it('writes no load, unload, weight or mode command during connection setup', async () => {
@@ -199,7 +221,18 @@ describe('VoltraClient — connect waits for the device to accept', () => {
     adapter.acceptance = 'refuse';
     adapter.refusalStatus = ACCEPTANCE_STATUS_OK + 1;
 
-    await expect(flushAndAwait(client.connect(device))).rejects.toBeInstanceOf(ConnectionError);
+    await expect(flushAndAwait(client.connect(device))).rejects.toBeInstanceOf(
+      ConnectionRefusedError
+    );
+  });
+
+  it('rejects with the authentication failure when the first write fails', async () => {
+    adapter.failWrites = true;
+
+    const error = await flushAndAwait(client.connect(device)).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(AuthenticationError);
+    expect(error).toMatchObject({ code: ErrorCode.AUTH_FAILED });
   });
 });
 
@@ -262,6 +295,21 @@ describe('VoltraClient — control values are unknown until the device reports t
 
     expect(client.confirmedSettings.weight).toBe(90);
     expect(client.confirmedSettings.mode).toBe(TrainingMode.Damper);
+  });
+
+  it('refuses a control write after acceptance but before the state reply', async () => {
+    adapter.stateReplyDelayMs = 1_000;
+    const connecting = client.connect(device);
+    const attempts: Promise<unknown>[] = [];
+    client.subscribe((event) => {
+      if (event.type === 'connected') attempts.push(client.setWeight(50).catch((e: unknown) => e));
+    });
+
+    await flushAndAwait(connecting);
+
+    expect(attempts).toHaveLength(1);
+    await expect(attempts[0]).resolves.toBeInstanceOf(DeviceStateUnknownError);
+    expect(client.hasConfirmedState).toBe(true);
   });
 
   it('clears the refusal after an explicit refresh', async () => {

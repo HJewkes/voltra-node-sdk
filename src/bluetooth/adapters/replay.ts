@@ -12,14 +12,16 @@
  * `encodeTelemetryFrame()` so the consumer side cannot tell the
  * difference from a real device's `notify` callback.
  *
- * This adapter does NOT speak the writer side: `write()` is a no-op
- * that buffers bytes for test inspection. Replay is a one-way stream.
+ * The writer side is buffered for test inspection. The only writes it
+ * answers are the connect setup writes a real device answers (acceptance
+ * and core-state read), so `connect()` completes over a replay.
  */
 
 import { BaseBLEAdapter } from './base';
 import type { Device, ConnectOptions } from './types';
 import type { TelemetryFrame } from '../../voltra/models/telemetry/frame';
 import { encodeTelemetryFrame } from '../../voltra/protocol/telemetry-decoder';
+import { connectSetupReply } from '../../testing/device-replies';
 
 const DEFAULT_DEVICE_ID = 'replay-device';
 const DEFAULT_DEVICE_NAME = 'VTR-REPLAY';
@@ -111,8 +113,9 @@ export class ReplayBLEAdapter extends BaseBLEAdapter {
     if (!this.linkAlive) {
       throw new Error('Not connected to replay adapter');
     }
-    // Replay is a one-way stream — capture writes for test inspection.
     this.writeBuffer.push(data);
+    const reply = connectSetupReply(data);
+    if (reply) this.emitNotification(reply);
   }
 
   override isLinkAlive(): boolean {
