@@ -22,7 +22,11 @@ import {
 } from '../telemetry-decoder';
 import { VendorMessages, VendorSchemaVersion } from '../constants';
 import { hexToBytes } from '../../../shared/utils';
-import { buildVendorPerRepFrame, buildVendorSummaryFrame } from '../_factories';
+import {
+  buildVendorInProgressFrame,
+  buildVendorPerRepFrame,
+  buildVendorSummaryFrame,
+} from '../_factories';
 import { calculateCRC16 } from '../_factories/checksum.generated';
 
 // =============================================================================
@@ -145,46 +149,6 @@ function buildSetSummaryFrame(fields: {
   // the regen carries no `fields` entry for either.
   writeUint16LE(frame, 28, fields.peakForceTenths ?? 0);
   writeUint16LE(frame, 32, fields.peakPowerRaw ?? 0);
-
-  refreshCrc(frame);
-  return frame;
-}
-
-/**
- * Build a 79-byte inProgress frame from scratch.
- *
- * The regen has no `fields` block for inProgress — offsets are hardcoded
- * per the 2026-05-06 validation handoff. We build the envelope by hand
- * using the same sequence/sender bytes as buildVendorSummaryFrame.
- */
-function buildInProgressFrame(fields: {
-  peakForceTenths: number;
-  currentForceTenths: number;
-  velocityCmPerSec: number;
-  targetWeightTenths: number;
-}): Uint8Array {
-  const cfg = VendorMessages.subTypes.inProgress;
-  const frameLength = cfg.frameLength ?? 79;
-
-  // Borrow envelope from a summary frame.
-  const summaryFrame = buildVendorSummaryFrame({
-    schemaVersion: VendorSchemaVersion.Weight,
-    setCounter: 0,
-    repCount: 0,
-  });
-  const frame = new Uint8Array(frameLength);
-  for (let i = 0; i < 11; i++) frame[i] = summaryFrame[i];
-  frame[1] = frameLength;
-
-  // Sub-type identifier bytes (2 bytes).
-  frame[VendorMessages.cmdByteOffset + 1] = cfg.identifierBytes[0];
-  frame[VendorMessages.cmdByteOffset + 2] = cfg.identifierBytes[1];
-
-  // Hardcoded field offsets (same as in telemetry-decoder.ts).
-  writeUint16LE(frame, 17, fields.peakForceTenths);
-  writeUint16LE(frame, 25, fields.currentForceTenths);
-  writeUint16LE(frame, 28, fields.velocityCmPerSec);
-  writeUint32LE(frame, 49, fields.targetWeightTenths);
 
   refreshCrc(frame);
   return frame;
@@ -498,22 +462,34 @@ describe('decodeVendorSetSummary peak aggregates (real captures)', () => {
 // =============================================================================
 
 describe('decodeVendorInProgress', () => {
-  it('decodes a synthesized inProgress frame with all fields', () => {
-    const frame = buildInProgressFrame({
-      peakForceTenths: 1234,
-      currentForceTenths: 800,
-      velocityCmPerSec: 50,
-      targetWeightTenths: 500,
-    });
+  // Distinct per field: the two mean forces, the mean return speed and the
+  // accumulated pull volume all differ, so a decoder reading any one of them
+  // from another's offset fails rather than agreeing by coincidence.
+  const distinct = {
+    meanPullForceTenths: 1500,
+    meanReturnForceTenths: 1234,
+    meanReturnSpeedMmPerSec: 507,
+    pullVolumeRawTenths: 70000,
+  };
 
-    const event = decodeVendorInProgress(frame);
+  it('decodes each field from its own offset', () => {
+    const event = decodeVendorInProgress(buildVendorInProgressFrame(distinct));
 
     expect(event).not.toBeNull();
-    expect(event!.peakForceTenths).toBe(1234);
-    expect(event!.currentForceTenths).toBe(800);
-    expect(event!.velocityCmPerSec).toBe(50);
-    expect(event!.targetWeightTenths).toBe(500);
+    expect(event!.meanPullForceTenths).toBe(1500);
+    expect(event!.meanReturnForceTenths).toBe(1234);
+    expect(event!.meanReturnSpeedMmPerSec).toBe(507);
+    expect(event!.pullVolumeRawTenths).toBe(70000);
     expect(event!.raw).toBeInstanceOf(Uint8Array);
+  });
+
+  it('reads a return speed that does not run into the field after it', () => {
+    // Read one byte late, the speed's high byte and the next field's low
+    // byte combine into a value in the thousands. Pinning a four-figure
+    // volume next to a three-figure speed is what makes that visible.
+    const event = decodeVendorInProgress(buildVendorInProgressFrame(distinct));
+
+    expect(event!.meanReturnSpeedMmPerSec).toBeLessThan(1000);
   });
 
   it('returns null for an unrelated sub-type (summary)', () => {
@@ -523,22 +499,12 @@ describe('decodeVendorInProgress', () => {
       repCount: 5,
     });
 
-    const event = decodeVendorInProgress(summary);
-
-    expect(event).toBeNull();
+    expect(decodeVendorInProgress(summary)).toBeNull();
   });
 
   it('returns null for a truncated inProgress frame', () => {
-    const frame = buildInProgressFrame({
-      peakForceTenths: 0,
-      currentForceTenths: 0,
-      velocityCmPerSec: 0,
-      targetWeightTenths: 0,
-    });
-    const truncated = frame.slice(0, 30);
+    const frame = buildVendorInProgressFrame(distinct);
 
-    const event = decodeVendorInProgress(truncated);
-
-    expect(event).toBeNull();
+    expect(decodeVendorInProgress(frame.slice(0, 30))).toBeNull();
   });
 });

@@ -176,6 +176,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   register itself, exactly once per report that carries it, and stays absent
   when no report carries one.
 
+- **`InProgressEvent` carries what the heartbeat actually reports** (VW-404).
+  Every value in that frame is a per-rep mean the device repeats until the
+  next rep boundary, and all four names said otherwise. The field called a
+  peak force tracks the set weight exactly, which is what a mean pull force
+  does and a peak does not; the "current" force is the return phase's mean;
+  the velocity field was read one byte late, straddling the speed and the
+  field after it, so it returned values in the thousands that moved with the
+  speed and meant nothing on their own; and the "target weight" accumulates
+  over the set rather than describing the current rep.
+
+  **Migration.** `peakForceTenths` → `meanPullForceTenths`.
+  `currentForceTenths` → `meanReturnForceTenths`. `velocityCmPerSec` →
+  `meanReturnSpeedMmPerSec`, in mm/s and read at the right offset, so its
+  values change as well as its name. `targetWeightTenths` →
+  `pullVolumeRawTenths`, which is not a weight: it grows by roughly the set
+  weight per rep, and its scaling is not pinned, so treat it as relative.
+  There is no replacement for a live or peak reading in this frame; the
+  per-rep boundary frame and the set summary carry those.
+
+  The offsets now come from the generated telemetry config rather than being
+  hardcoded in the decoder, and the generated frame factories can build one,
+  so a test fixture and the decoder read the same metadata.
+
 ### Removed
 
 - **The `device_status` decode result** (VW-406). Nothing produces it: it only
@@ -183,7 +206,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `onBatteryUpdate` callback and the `batteryUpdate` client event are
   unchanged — a consumer switching on `DecodeResult['type']` should drop its
   `'device_status'` case and read `settings.battery` from `'settings_update'`.
-
 ## [0.14.0] - 2026-09-08
 
 ### Fixed

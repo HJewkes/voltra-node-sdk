@@ -10,10 +10,10 @@ import type { KinematicsValues, KinematicsProfile, ModeConstants, PhaseDef } fro
 
 /**
  * Velocity constants in this file (ModeConstants fields and the damper/isokinetic
- * builders' inline peaks) are authored in cm/s, the unit the vendor's own
- * `InProgressEvent.velocityCmPerSec` field uses. The telemetry frame's `velocity`
- * is mm/s (see protocol/telemetry-decoder.ts's `decodeTelemetryFrame` comment), so
- * every velocity computed here is scaled by this cm-to-mm factor before it is
+ * builders' inline peaks) are authored in cm/s, because that is the scale the
+ * numbers were tuned at. The telemetry frame's `velocity` is mm/s (see
+ * protocol/telemetry-decoder.ts's `decodeTelemetryFrame` comment), so every
+ * velocity computed here is scaled by this cm-to-mm factor before it is
  * returned.
  */
 export const VELOCITY_UNIT_FACTOR = 10;

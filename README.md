@@ -327,10 +327,12 @@ const unsubSummary = client.onSummary((event) => {
   logSetComplete(event.repCount);
 });
 
-// In-progress heartbeat (~1 Hz, typed payload — use sparingly)
+// In-progress heartbeat (~1 Hz, typed payload — use sparingly).
+// Every field is a per-rep mean the device repeats until the next rep.
 const unsubInProgress = client.onInProgress((event) => {
-  // event.peakForceTenths, event.currentForceTenths, event.velocityCmPerSec
-  updateForceGauge(event.currentForceTenths);
+  // event.meanPullForceTenths, event.meanReturnForceTenths,
+  // event.meanReturnSpeedMmPerSec, event.pullVolumeRawTenths
+  updateForceGauge(event.meanPullForceTenths);
 });
 
 // Per-set summary (renamed from onPreSummary in 0.9.0)

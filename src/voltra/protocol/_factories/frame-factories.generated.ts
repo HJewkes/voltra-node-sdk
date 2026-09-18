@@ -281,6 +281,48 @@ export function buildVendorSummaryFrame(
   });
 }
 
+/**
+ * Build a vendor in-progress heartbeat frame.
+ *
+ * Field positions and frame length come from the metadata rather than from
+ * this file. Sender/receiver defaults to `DEVICE_TO_APP`; every byte the
+ * metadata does not name stays zero.
+ */
+export function buildVendorInProgressFrame(
+  fields: {
+    meanPullForceTenths: number;
+    meanReturnForceTenths: number;
+    meanReturnSpeedMmPerSec: number;
+    pullVolumeRawTenths: number;
+  },
+  opts: FrameOpts = {},
+): Uint8Array {
+  const cfg = VENDOR_MESSAGES.subTypes.inProgress;
+  const payload = new Uint8Array(cfg.frameLength - 13);
+  payload[0] = cfg.identifierBytes[0];
+  payload[1] = cfg.identifierBytes[1];
+
+  const write = (
+    field: { payloadOffset: number; byteLength: number },
+    value: number,
+  ): void => {
+    for (let i = 0; i < field.byteLength; i++) {
+      payload[field.payloadOffset + i] = (value >> (i * 8)) & 0xff;
+    }
+  };
+
+  write(cfg.fields.meanPullForceTenths, fields.meanPullForceTenths);
+  write(cfg.fields.meanReturnForceTenths, fields.meanReturnForceTenths);
+  write(cfg.fields.meanReturnSpeedMmPerSec, fields.meanReturnSpeedMmPerSec);
+  write(cfg.fields.pullVolumeRawTenths, fields.pullVolumeRawTenths);
+
+  return buildEnvelopedFrame(VENDOR_MESSAGES.cmdValue, payload, {
+    senderReceiver: DEVICE_TO_APP,
+    totalLength: cfg.frameLength,
+    ...opts,
+  });
+}
+
 // =============================================================================
 // Vendor messages — raw payload
 // =============================================================================

@@ -185,10 +185,10 @@ describe('notification-dispatcher', () => {
 
   it('dispatches onInProgress for inProgress results', () => {
     const event: InProgressEvent = {
-      peakForceTenths: 1234,
-      currentForceTenths: 800,
-      velocityCmPerSec: 50,
-      targetWeightTenths: 500,
+      meanPullForceTenths: 1500,
+      meanReturnForceTenths: 1234,
+      meanReturnSpeedMmPerSec: 507,
+      pullVolumeRawTenths: 70000,
       raw: new Uint8Array(79),
     };
     mockDecode.mockReturnValue({ type: 'inProgress', event });
