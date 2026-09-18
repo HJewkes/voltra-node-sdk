@@ -149,6 +149,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every frame it builds is byte-identical — a fixture pins both builders and
   the module's exported constant.
 
+- **Parameter reports are decoded from the generated catalog, by one decoder**
+  (VW-406). The device reports its registers in two shapes — one when a value
+  changes, one in reply to a read — and the two used to be walked by separate
+  code that disagreed. A change report sized every value it did not recognise
+  at one byte, which moved every value after it, and read a signed register
+  unsigned, so an eccentric setting of -25 came back as 65511. Both shapes now
+  go through one decoder that sizes each value from the generated parameter
+  catalog and keeps signed registers signed. A register the catalog carries no
+  width for ends the walk instead of being guessed at: `AsyncStateFrame` and
+  `BulkParamResponse` gained a `complete` flag that says so, and the values
+  decoded before it stay usable. A read reply whose result byte says the
+  device refused the read decodes to no values at all.
+
+- **Set and rep counters keep their high byte** (VW-406). The per-phase report
+  and the workout summary carry two-byte counters; the SDK read one byte of
+  each, so any count of 256 arrived as 0. `PerRepEvent.setCounter`,
+  `PerRepEvent.repCount` and `SummaryEvent.setCounter` now carry what the
+  device counted.
+
+- **Battery arrives from the register that reports it** (VW-406). The device's
+  battery register was decoded and then dropped on the floor, while
+  `onBatteryUpdate` was fed by a frame-length coincidence — any 52-byte frame
+  on that header produced a battery reading, whatever it actually was.
+  Battery now reaches `onBatteryUpdate` and `settings.battery` from the
+  register itself, exactly once per report that carries it, and stays absent
+  when no report carries one.
+
+### Removed
+
+- **The `device_status` decode result** (VW-406). Nothing produces it: it only
+  ever carried the length-inferred battery reading described above. The
+  `onBatteryUpdate` callback and the `batteryUpdate` client event are
+  unchanged — a consumer switching on `DecodeResult['type']` should drop its
+  `'device_status'` case and read `settings.battery` from `'settings_update'`.
+
 ## [0.14.0] - 2026-09-08
 
 ### Fixed

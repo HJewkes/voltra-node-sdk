@@ -25,7 +25,7 @@ import {
   MovementPhase,
   NotificationConfigs,
   ParamIdHex,
-  Uint16ParamIds,
+  ParameterCatalog,
   TrainingMode,
 } from '../constants';
 import { scanEnvelope } from '../frame-envelope';
@@ -428,18 +428,14 @@ describe('decodeNotification', () => {
     expect(result!.type).toBe('unknown');
   });
 
-  it('decodes status update to device_status result', () => {
+  it('does not read a battery level out of a status update', () => {
     const buffer = createStatusUpdateBuffer();
-    // Battery level field at the configured offset
     buffer[NotificationConfigs.statusBattery.batteryOffset!] = 85;
 
     const result = decodeNotification(buffer);
 
     expect(result).not.toBeNull();
-    expect(result!.type).toBe('device_status');
-    if (result?.type === 'device_status') {
-      expect(result.battery).toBe(85);
-    }
+    expect(result!.type).toBe('unknown');
   });
 
   it('returns unknown for unrecognized message type', () => {
@@ -721,7 +717,8 @@ function createModeConfirmationBuffer(modeValue: number): Uint8Array {
 /**
  * Create a settings_update notification buffer.
  * Header: 0x55 0x2e, length: 46, params at offsets from protocol config.
- * Uses mixed-size values: uint16 for params in Uint16ParamIds, uint8 otherwise.
+ * Each value is written at the width the catalog says the device reports it
+ * at, which is the same source the decoder reads.
  */
 function createSettingsUpdateBuffer(
   params: Array<{ paramIdHex: string; value: number }>
@@ -741,14 +738,12 @@ function createSettingsUpdateBuffer(
     buffer[offset + 1] = paramBytes[1];
     offset += 2;
 
-    if (Uint16ParamIds.has(param.paramIdHex)) {
-      buffer[offset] = param.value & 0xff;
-      buffer[offset + 1] = (param.value >> 8) & 0xff;
-      offset += 2;
-    } else {
-      buffer[offset] = param.value & 0xff;
-      offset += 1;
+    const catalogEntry = ParameterCatalog[param.paramIdHex];
+    const width = catalogEntry ? (catalogEntry.reportValueWidth ?? catalogEntry.valueWidth) : 1;
+    for (let i = 0; i < width; i++) {
+      buffer[offset + i] = (param.value >> (i * 8)) & 0xff;
     }
+    offset += width;
   }
 
   return buffer;
@@ -948,48 +943,27 @@ describe('decodeNotification – settings_update', () => {
   });
 });
 
-describe('decodeNotification – device_status (deviceInit & statusBattery)', () => {
-  // Phase 0.5.2 hotfix: byte [11] of the 35-byte `5523` deviceInit frame is
-  // a sub-cmd byte (`0xa7` in observed captures), NOT a battery percentage.
-  // The decoder no longer emits `device_status` for `5523` frames; battery
-  // arrives via paramID `2d4e` through the settings cascade.
-  it('does NOT emit device_status from a deviceInit (5523) notification', () => {
-    // byte [11] = 0xa7 (the actual on-wire sub-cmd byte) — must NOT be
-    // surfaced as a 167% battery reading.
+describe('decodeNotification – frames that do not carry a battery level', () => {
+  // The byte each of these frames was read for is a marker in one and a
+  // length coincidence in the other. Battery reaches listeners from the
+  // register that carries it, through a parameter report.
+  it('does not emit a battery reading from a device-init notification', () => {
     const buffer = createDeviceInitBuffer(0xa7);
 
     const result = decodeNotification(buffer);
 
     expect(result).not.toBeNull();
-    expect(result!.type).not.toBe('device_status');
     expect(result!.type).toBe('unknown');
-    if (result?.type === 'unknown') {
-      // No `battery` field should be present on the result.
-      expect((result as Record<string, unknown>).battery).toBeUndefined();
-    }
+    expect((result as Record<string, unknown>).battery).toBeUndefined();
   });
 
-  it('returns device_status with battery from statusBattery notification', () => {
+  it('does not emit a battery reading from an unrelated frame of that length', () => {
     const buffer = createStatusBatteryBuffer(45);
 
     const result = decodeNotification(buffer);
 
     expect(result).not.toBeNull();
-    expect(result!.type).toBe('device_status');
-    if (result?.type === 'device_status') {
-      expect(result.battery).toBe(45);
-    }
-  });
-
-  it('handles 100% battery level from statusBattery notification', () => {
-    const buffer = createStatusBatteryBuffer(100);
-
-    const result = decodeNotification(buffer);
-
-    expect(result).not.toBeNull();
-    expect(result!.type).toBe('device_status');
-    if (result?.type === 'device_status') {
-      expect(result.battery).toBe(100);
-    }
+    expect(result!.type).toBe('unknown');
+    expect((result as Record<string, unknown>).battery).toBeUndefined();
   });
 });

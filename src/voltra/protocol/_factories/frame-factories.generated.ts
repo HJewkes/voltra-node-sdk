@@ -194,6 +194,18 @@ function encodeAsciiNullTerminated(s: string): Uint8Array {
 // Vendor messages — typed (per-rep boundary + summary)
 // =============================================================================
 
+/** Write `value` little-endian into `payload`, `width` bytes from `offset`. */
+function writeLE(
+  payload: Uint8Array,
+  offset: number,
+  value: number,
+  width: number,
+): void {
+  for (let i = 0; i < width; i++) {
+    payload[offset + i] = (value >> (i * 8)) & 0xff;
+  }
+}
+
 export type PerRepMotionPhase = 'pull' | 'return';
 
 /**
@@ -225,8 +237,8 @@ export function buildVendorPerRepFrame(
 
   payload[cfg.fields.motionPhase.payloadOffset] = phaseValue & 0xff;
   payload[cfg.fields.frameCounter.payloadOffset] = fields.frameCounter & 0xff;
-  payload[cfg.fields.setCounter.payloadOffset] = fields.setCounter & 0xff;
-  payload[cfg.fields.repCount.payloadOffset] = fields.repCount & 0xff;
+  writeLE(payload, cfg.fields.setCounter.payloadOffset, fields.setCounter, 2);
+  writeLE(payload, cfg.fields.repCount.payloadOffset, fields.repCount, 2);
 
   return buildEnvelopedFrame(VENDOR_MESSAGES.cmdValue, payload, {
     senderReceiver: DEVICE_TO_APP,
@@ -259,11 +271,8 @@ export function buildVendorSummaryFrame(
   payload[1] = cfg.identifierBytes[1];
   payload[cfg.schemaVersionByteOffset] = fields.schemaVersion & 0xff;
 
-  payload[cfg.fields.setCounter.payloadOffset] = fields.setCounter & 0xff;
-
-  const off = cfg.fields.repCount.payloadOffset;
-  payload[off] = fields.repCount & 0xff;
-  payload[off + 1] = (fields.repCount >> 8) & 0xff;
+  writeLE(payload, cfg.fields.setCounter.payloadOffset, fields.setCounter, 2);
+  writeLE(payload, cfg.fields.repCount.payloadOffset, fields.repCount, 2);
 
   return buildEnvelopedFrame(VENDOR_MESSAGES.cmdValue, payload, {
     senderReceiver: DEVICE_TO_APP,

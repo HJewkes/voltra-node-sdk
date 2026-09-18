@@ -95,14 +95,15 @@ function dispatchFrame(data: Uint8Array, callbacks: NotificationCallbacks): void
 
     case 'settings_update':
       callbacks.onSettingsUpdate(result.settings);
+      // Battery rides in on the same report as every other register, so it
+      // reaches its own callback from here rather than from a frame shape.
+      if (result.settings.battery !== undefined) {
+        callbacks.onBatteryUpdate(result.settings.battery);
+      }
       break;
 
     case 'state_dump':
       callbacks.onStateDump(result.event);
-      break;
-
-    case 'device_status':
-      callbacks.onBatteryUpdate(result.battery);
       break;
 
     case 'connection_acceptance':
