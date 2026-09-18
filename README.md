@@ -687,6 +687,41 @@ Step-by-step tutorials for using the SDK in your app:
 - [Troubleshooting](./docs/troubleshooting.md) - Common issues and solutions
 - [Roadmap](./docs/roadmap/) - Planned features
 
+## Acknowledgements
+
+**Beyond Power** shared device details informally so a community SDK could
+exist. That trust is why this project documents behaviour and not wire
+format.
+
+**An independent protocol review (September 2026).** A community developer
+who built their own Voltra client from BLE captures and app analysis
+published a thirteen-item review of 0.14.0 with offline fixtures. All of the
+fixtures reproduced on our code, and most of the findings were then
+confirmed against our own captures. Release 0.15.0 is largely that review's
+work. Item by item:
+
+| Review item | What we found | Where it landed |
+| --- | --- | --- |
+| 1. Guided-load exit addressed the wrong setting | Confirmed; our own generator test had pinned the discrepancy days earlier | 0.15.0 (#118): `exitGuidedLoad()` now unloads the motor |
+| 2. Inverse chains treated a profile selector as a weight | Confirmed by our own app research | Open, needs a hardware read-back before the API changes; README marks it under review |
+| 3. Connection reported before the device accepted it | Confirmed; the acceptance report was in our captures all along | 0.15.0 (#115, #124): `awaitingAcceptance`, `ConnectionRefusedError` |
+| 4. Stale settings exposed as current after reconnect | Confirmed | 0.15.0 (#115): state read after acceptance, setters refuse until confirmed |
+| 5. Write completion reported as device state | Confirmed | 0.15.0 (#113): stops and unloads confirmed by a later device report |
+| 6. One notification treated as one frame | Not observed on macOS in 4315 captured notifications; hardening | 0.15.0 (#116): per-device reassembly with checksum validation |
+| 7. Parameter widths guessed, signed values lost | Confirmed | 0.15.0 (#119): catalog-driven typed decoder |
+| 8. Auto-load status decoder and phase register | Confirmed offline; the phase values differ by firmware | Open, needs the bench |
+| 9. Heartbeat fields mislabelled | Confirmed by our own captures (one field is a per-set accumulator) | 0.15.0 (#120): fields renamed to what they measure |
+| 10. Set summary duration is a set total; peak power width | Confirmed by our own captures | 0.15.0 (#121) |
+| 11. Counters truncated to one byte | Confirmed | 0.15.0 (#119) |
+| 12. Report families misnamed | App evidence only; no such frames in our captures | 0.15.0 (#122): renamed, layouts kept raw |
+| 13. Battery report never reached the battery API | Confirmed | 0.15.0 (#119) |
+| Compact runtime stream, device limits | Firmware-dependent; not seen on our unit | Open, needs the bench |
+| README corrections | Confirmed | 0.15.0 (#117) |
+
+The review also prompted a change in how we validate: an interactive
+capture rig and our own app analysis now replace the second-hand sources
+this SDK started from.
+
 ## License
 
 MIT - see [LICENSE](./LICENSE)
