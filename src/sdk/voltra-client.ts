@@ -2019,7 +2019,7 @@ export class VoltraClient {
   /**
    * Subscribe to typed set-summary frame events. The device emits one of
    * these per set in WT/RB/Damper modes after all reps complete, with the
-   * final `repCount` and `repDurationMs` baked in. This is the canonical
+   * final `repCount` and the set's pull moving time baked in. This is the canonical
    * per-set close marker — `onSummary` is workout-end / post-STOP only and
    * may not fire at all in some modes.
    *

@@ -248,7 +248,7 @@ export interface SummaryEvent {
 /**
  * Payload of a vendor set-summary frame. The device emits
  * one of these per set in WT/RB/Damper modes after all reps complete, with
- * the final `repCount` and `repDurationMs` baked in. (The legacy `preSummary`
+ * the final `repCount` and the set's pull moving time baked in. (The legacy `preSummary`
  * label and the "fires ~3s before final rep" comment were misnomers; the
  * frame fires post-final-rep with the device's own debounce, confirmed
  * on-device 2026-05-06.)
@@ -264,8 +264,15 @@ export interface SetSummaryEvent {
   targetWeightTenths: number;
   /** Rep count. */
   repCount: number;
-  /** Duration of the final rep in milliseconds. */
-  repDurationMs: number;
+  /**
+   * Total pull moving time for the SET, milliseconds.
+   *
+   * Named `repDurationMs` in earlier releases, which read as the final rep's
+   * duration. Across ten captured summaries it scales with rep count at a
+   * steady pace, which one rep's duration would not do; the single-rep
+   * captures that first pinned it could not tell the two readings apart.
+   */
+  totalPullMovingTimeMs: number;
   /**
    * Peak force over the set in tenths of pounds.
    *
@@ -284,6 +291,11 @@ export interface SetSummaryEvent {
    * against an instrumented reference — it may be watts, centiwatts or
    * another scaling. Treat as a relative quantity until a hardware set pins
    * the unit; do not present it to users as watts.
+   *
+   * Read at four bytes from this release on. Two bytes was enough for every value
+   * captured so far, so no captured value changes — but the layout carries
+   * four, and the truncation above 65535 was invisible by luck of
+   * magnitude.
    */
   peakPowerRaw: number;
   /**

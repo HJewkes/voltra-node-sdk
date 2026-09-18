@@ -337,8 +337,8 @@ const unsubInProgress = client.onInProgress((event) => {
 
 // Per-set summary (renamed from onPreSummary in 0.9.0)
 const unsubSetSummary = client.onSetSummary((event) => {
-  // event.repDurationMs, event.repCount, event.targetWeightTenths
-  showSetSummary(event.repDurationMs);
+  // event.totalPullMovingTimeMs, event.repCount, event.targetWeightTenths
+  showSetSummary(event.totalPullMovingTimeMs);
 });
 
 // Mode confirmations (after setMode())
