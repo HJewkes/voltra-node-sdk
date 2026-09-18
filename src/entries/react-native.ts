@@ -347,6 +347,8 @@ export {
   BluetoothUnavailableError,
   CommandError,
   TelemetryError,
+  ConnectionRefusedError,
+  DeviceStateUnknownError,
   ErrorCode,
   type ErrorCode as ErrorCodeType,
 } from '../errors';
