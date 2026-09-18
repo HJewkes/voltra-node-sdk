@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-09-17
+
+### Breaking
+
+Every removed or renamed public symbol, and every behaviour a caller may
+depend on that changed. The entries below carry the evidence and detail.
+
+- **`InProgressEvent` fields renamed, and one changed meaning** (VW-404).
+  `peakForceTenths` → `meanPullForceTenths` and `currentForceTenths` →
+  `meanReturnForceTenths` (per-rep means, not peak or live readings).
+  `velocityCmPerSec` → `meanReturnSpeedMmPerSec`: it is now read from the
+  right place and reported in mm/s, so its values change as well as its name.
+  `targetWeightTenths` → `pullVolumeRawTenths`: a relative accumulator over
+  the set, not a weight.
+- **`SetSummaryEvent.repDurationMs` → `totalPullMovingTimeMs`** (VW-405). The
+  value is the set's total pull moving time, not one rep's duration; it is
+  equal for a one-rep set and larger for every longer one.
+- **Rowing and isometric report types renamed, and now raw bytes only**
+  (VW-411). `RowingSummaryEvent` → `RowingRuntimeEvent`, `RowingStatusEvent`
+  → `IsometricSummaryEvent`, `decodeRowingSummary` → `decodeRowingRuntime`,
+  `decodeRowingStatus` → `decodeIsometricSummary`. `DecodeResult` variants
+  `'rowing_summary'` → `'rowing_runtime'` and `'rowing_status'` →
+  `'isometric_summary'`; the `MessageType` members change to match. Their
+  stroke rate, pace, stroke count and distance fields are removed with no
+  replacement.
+- **`DecodeResult` variant `'device_status'` removed** (VW-406). Read
+  `settings.battery` from `'settings_update'`, or keep using `onBatteryUpdate`.
+- **`DecodeResult` and `MessageType` gain `'connection_acceptance'`**, and
+  **`VoltraConnectionState` gains `'awaitingAcceptance'`** (VW-403). An
+  exhaustive switch over any of them needs the new case.
+- **`connect()` requires the device to accept** (VW-403). It rejects with
+  `ConnectionRefusedError` on a refusal or after `acceptanceTimeoutMs` of
+  silence, and control setters throw `DeviceStateUnknownError` until the
+  post-connect state read is answered.
+- **Stops are confirmed by the device** (VW-402). `stopRecording()` and
+  `endSet()` reject on a failed write where they used to resolve, and reaching
+  `'idle'` / `'ready'` now requires a device report. Read `client.motorState`
+  to tell a confirmed stop from an unconfirmed one.
+- **`exitGuidedLoad()` now unloads the motor** (VW-279). It previously
+  reported success while the device stayed loaded; a caller that ended guided
+  load some other way to compensate no longer needs to.
+- **Device stand-ins must send whole, sealed frames** (VW-403, VW-409). A
+  stub transport must answer the handshake finish and the core-state read
+  (see the new `@voltras/node-sdk/testing` helpers), and an unchecksummed
+  fixture is now discarded. `encodeTelemetryFrame()` returns a whole frame
+  rather than a truncated one.
+- **Counters and parameter values decode differently** (VW-406). Set and rep
+  counters keep their high byte, signed settings come back signed, and a
+  parameter report the catalog cannot size ends early with `complete: false`
+  instead of guessing.
+
 ### Added
 
 - **`connectionState` gains `'awaitingAcceptance'`** — the init writes are out
@@ -251,6 +302,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `onBatteryUpdate` callback and the `batteryUpdate` client event are
   unchanged — a consumer switching on `DecodeResult['type']` should drop its
   `'device_status'` case and read `settings.battery` from `'settings_update'`.
+
 ## [0.14.0] - 2026-09-08
 
 ### Fixed
