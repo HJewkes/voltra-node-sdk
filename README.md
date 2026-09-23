@@ -693,9 +693,11 @@ Step-by-step tutorials for using the SDK in your app:
 exist. That trust is why this project documents behaviour and not wire
 format.
 
-**An independent protocol review (September 2026).** A community developer
-who built their own Voltra client from BLE captures and app analysis
-published a thirteen-item review of 0.14.0 with offline fixtures. All of the
+**An independent protocol review (September 2026).**
+[u/alexsacr](https://www.reddit.com/user/alexsacr/), who built their own
+Voltra client from BLE captures and app analysis, published a
+[thirteen-item review of 0.14.0](https://www.reddit.com/r/BeyondPower/comments/1wck64e/comment/paevb57/?context=3)
+on r/BeyondPower with offline fixtures. All of the
 fixtures reproduced on our code, and most of the findings were then
 confirmed against our own captures. Release 0.15.0 is largely that review's
 work. Item by item:
