@@ -91,7 +91,7 @@ sweep() {
   shift
   git ls-files -- "$@" | while IFS= read -r file; do
     [ -f "$file" ] || continue
-    grep -anoE --binary-files=text -- "$pattern" "$file" 2>/dev/null | sed "s|^|$file:|"
+    grep -anoiE --binary-files=text -- "$pattern" "$file" 2>/dev/null | sed "s|^|$file:|"
   done | grep -avE -- "$SANCTIONED_HEADER" | grep -avE -- ":$SANCTIONED\$"
 }
 
@@ -146,12 +146,36 @@ fi
 echo "3. Checking for paths into the private repo"
 SANCTIONED='voltra-private/build\.ts'
 report "No path into the private repo beyond its build entry point" \
-  'voltra[-_]+private/[A-Za-z0-9_.-]+' "${RULE_TEXT[@]}"
+  'voltra[-_]+private[-_]*/[A-Za-z0-9_.-]+' "${RULE_TEXT[@]}"
 SANCTIONED='__no_sanctioned_form__'
+
+# The ESLint rule bans the bare name in `src/`, so this does too. Elsewhere the
+# bare name is ordinary: CI, the docs and the verify script have to say where
+# protocol data comes from. Whole lines are read here, not matches, so the
+# sanctioned header line can be dropped before the name is looked for.
+echo "3b. Checking for the private repo's name in src/"
+# Only a line that STARTS with the header is sanctioned. A header comment
+# appended to a line that names the repo is not the header.
+bare_all="$(git ls-files -- 'src/*' | while IFS= read -r file; do
+  [ -f "$file" ] || continue
+  grep -aniE --binary-files=text -- 'voltra[-_]+private' "$file" \
+    | grep -avE -- '^[0-9]+:// @generated .*Regenerate:' | sed "s|^|$file:|" | sed 's/^\([^:]*:[0-9]*\):.*/\1/'
+done)"
+bare_name="$(printf '%s' "$bare_all" | grep -avE -- "$TEST_PATH")"
+bare_deferred="$(printf '%s' "$bare_all" | grep -aE -- "$TEST_PATH")"
+if [ -n "$bare_deferred" ]; then
+  note "$(printf '%s\n' "$bare_deferred" | wc -l | tr -d ' ') in test paths, counted and deferred to w5-14"
+fi
+if [ -n "$bare_name" ]; then
+  fail "No reference to the private repo's name in src/"
+  printf '%s\n' "$bare_name" | sed 's/^/        /'
+else
+  pass "No reference to the private repo's name in src/"
+fi
 
 echo "4. Checking for capture, research and derivation references"
 report "No capture, research or derivation references" \
-  '(captures?/(sessions|frames)|research/[A-Za-z0-9_.-]+\.(md|json)|validation[-_]+phase|decompil|reverse.engineer)' \
+  '(captures?/(sessions|frames)|research/[A-Za-z0-9_.-]+\.(md|json)|validation[-_]+phase|decompil|reverse[-_ ]+engineer)' \
   "${RULE_TEXT[@]}"
 
 # A long hex run inside a .ts file is a value, and values ship here. The same
