@@ -180,12 +180,13 @@ fi
 # `npm pack` publishes dist plus whatever else package.json `files` and the
 # npm defaults select. The src/ check does not see those, so the list is asked
 # of npm itself and every non-dist file is read: adding a file to `files` puts
-# it under audit with no edit here. Offline, and no lifecycle scripts run.
+# it under audit with no edit here. Offline. npm 10 runs `prepare` on pack despite
+# --ignore-scripts, so the script shell is `true` to keep it from needing husky.
 echo "3c. Checking for the private repo's name in the non-dist files npm pack ships"
 PACK_LABEL="No reference to the private repo's name in the non-dist files npm pack ships"
 PACKAGE_LABEL="No reference to the private repo's name in package.json beyond its build entry point"
 pack_err="$(mktemp)"
-pack_json="$(npm pack --dry-run --json --ignore-scripts --offline 2>"$pack_err")"
+pack_json="$(npm pack --dry-run --json --ignore-scripts --script-shell=true --offline 2>"$pack_err")"
 pack_status=$?
 packed="$(printf '%s' "$pack_json" | node -e '
 const out = JSON.parse(require("fs").readFileSync(0, "utf8"));
