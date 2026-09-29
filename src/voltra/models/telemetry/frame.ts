@@ -15,7 +15,7 @@ export interface TelemetryFrame {
   sequence: number;
   /** Current movement phase */
   phase: MovementPhase;
-  /** Cable extension in mm (0=rest, ~600=full pull); see protocol/telemetry-decoder.ts's decodeTelemetryFrame comment */
+  /** Cable extension in mm (0=rest; a full pull runs roughly 850 to 1300 mm, depending on setup); see protocol/telemetry-decoder.ts's decodeTelemetryFrame comment */
   position: number;
   /** Force reading in lbs (positive=concentric, negative=eccentric) */
   force: number;

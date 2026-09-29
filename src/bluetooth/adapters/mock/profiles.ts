@@ -14,6 +14,19 @@ import {
   isometricBuildValues,
 } from './kinematics';
 
+/**
+ * Full-pull range of motion (mm) per mode. Hardware full pulls run roughly
+ * 850 to 1300 mm depending on setup, so every moving mode sits in that band.
+ */
+const FULL_PULL_ROM_MM = {
+  weightTraining: 950,
+  resistanceBand: 1000,
+  rowing: 1100,
+  damper: 950,
+  customCurves: 900,
+  isokinetic: 950,
+} as const;
+
 const STANDARD_PHASES: PhaseDef[] = [
   { phase: MovementPhase.IDLE, count: 5 },
   { phase: MovementPhase.CONCENTRIC, count: 9 },
@@ -30,7 +43,11 @@ export const WEIGHT_TRAINING_CONSTANTS: ModeConstants = {
   eccentricForce: (p, bf, f) => bf * 0.8 * (1 - p * 0.2) * f,
 };
 
-const WEIGHT_TRAINING_PROFILE = standardProfile(STANDARD_PHASES, 600, WEIGHT_TRAINING_CONSTANTS);
+const WEIGHT_TRAINING_PROFILE = standardProfile(
+  STANDARD_PHASES,
+  FULL_PULL_ROM_MM.weightTraining,
+  WEIGHT_TRAINING_CONSTANTS
+);
 
 export const KINEMATICS_PROFILES: Record<TrainingMode, KinematicsProfile> = {
   // Idle uses weight training as the default profile — the device boots into
@@ -45,7 +62,7 @@ export const KINEMATICS_PROFILES: Record<TrainingMode, KinematicsProfile> = {
       { phase: MovementPhase.HOLD, count: 3 },
       { phase: MovementPhase.ECCENTRIC, count: 14 },
     ],
-    650,
+    FULL_PULL_ROM_MM.resistanceBand,
     {
       concentricVelocityPeak: 70,
       eccentricVelocityPeak: 35,
@@ -62,7 +79,7 @@ export const KINEMATICS_PROFILES: Record<TrainingMode, KinematicsProfile> = {
       { phase: MovementPhase.HOLD, count: 2 },
       { phase: MovementPhase.ECCENTRIC, count: 20 },
     ],
-    700,
+    FULL_PULL_ROM_MM.rowing,
     {
       concentricVelocityPeak: 50,
       eccentricVelocityPeak: 25,
@@ -79,7 +96,7 @@ export const KINEMATICS_PROFILES: Record<TrainingMode, KinematicsProfile> = {
       { phase: MovementPhase.HOLD, count: 2 },
       { phase: MovementPhase.ECCENTRIC, count: 14 },
     ],
-    maxPosition: 600,
+    maxPosition: FULL_PULL_ROM_MM.damper,
     buildValues: damperBuildValues,
   },
 
@@ -90,7 +107,7 @@ export const KINEMATICS_PROFILES: Record<TrainingMode, KinematicsProfile> = {
       { phase: MovementPhase.HOLD, count: 3 },
       { phase: MovementPhase.ECCENTRIC, count: 15 },
     ],
-    550,
+    FULL_PULL_ROM_MM.customCurves,
     {
       concentricVelocityPeak: 65,
       eccentricVelocityPeak: 32,
@@ -107,7 +124,7 @@ export const KINEMATICS_PROFILES: Record<TrainingMode, KinematicsProfile> = {
       { phase: MovementPhase.HOLD, count: 2 },
       { phase: MovementPhase.ECCENTRIC, count: 12 },
     ],
-    maxPosition: 600,
+    maxPosition: FULL_PULL_ROM_MM.isokinetic,
     buildValues: isokineticBuildValues,
   },
 
