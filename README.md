@@ -224,7 +224,7 @@ const unsubscribe = client.onFrame((frame) => {
     sequence: frame.sequence,   // Packet sequence number
     timestamp: frame.timestamp, // Unix ms when received
     phase: frame.phase,         // MovementPhase enum
-    position: frame.position,   // Position in movement (0-600)
+    position: frame.position,   // Cable extension in mm (0=rest; a full pull runs roughly 850 to 1300 mm)
     velocity: frame.velocity,   // Current velocity
     force: frame.force,         // Force being applied
   });
@@ -659,7 +659,7 @@ interface TelemetryFrame {
   sequence: number;         // Packet sequence number
   timestamp: number;        // Unix ms when received
   phase: MovementPhase;     // Movement phase (see MovementPhase enum)
-  position: number;         // Position in movement (0-600)
+  position: number;         // Cable extension in mm (0=rest; a full pull runs roughly 850 to 1300 mm)
   velocity: number;         // Current velocity
   force: number;            // Force being applied (signed)
 }

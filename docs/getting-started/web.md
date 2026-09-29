@@ -347,6 +347,8 @@ const ctx = canvas.getContext('2d')!;
 
 const history: number[] = [];
 const MAX_POINTS = 200;
+// Plot range in mm; a full pull runs roughly 850 to 1300 mm
+const PLOT_RANGE_MM = 1300;
 
 client.onFrame((frame) => {
   history.push(frame.position);
@@ -363,7 +365,7 @@ client.onFrame((frame) => {
   
   history.forEach((pos, i) => {
     const x = (i / MAX_POINTS) * canvas.width;
-    const y = canvas.height - (pos / 600) * canvas.height;
+    const y = canvas.height - (pos / PLOT_RANGE_MM) * canvas.height;
     if (i === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   });
