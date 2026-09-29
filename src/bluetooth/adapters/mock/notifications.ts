@@ -2,7 +2,8 @@
  * Notification builders for mock BLE telemetry simulation.
  *
  * Pure functions that create encoded notification payloads (rep boundary,
- * set boundary, mode confirmation, idle frame, mode command detection).
+ * set boundary, mode confirmation, idle frame, settings echo) and detect the
+ * writes the simulated device answers (mode, weight and chains commands).
  */
 
 import {
@@ -12,13 +13,23 @@ import {
 } from '../../../voltra/protocol/constants/enums';
 import {
   NotificationConfigs,
+  ParamIdHex,
   VendorMessages,
 } from '../../../voltra/protocol/constants/message-types';
 import { createFrame } from '../../../voltra/models/telemetry/frame';
-import { encodeTelemetryFrame } from '../../../voltra/protocol/telemetry-decoder';
-import { getModeCommand } from '../../../voltra/protocol/commands';
+import {
+  encodeBulkParamResponse,
+  encodeTelemetryFrame,
+} from '../../../voltra/protocol/telemetry-decoder';
+import {
+  getAvailableChains,
+  getAvailableWeights,
+  getChainsCommand,
+  getModeCommand,
+  getWeightCommand,
+} from '../../../voltra/protocol/commands';
 import { sealEnvelope } from '../../../voltra/protocol/frame-envelope';
-import { bytesEqual, hexToBytes } from '../../../shared/utils';
+import { bytesEqual, bytesToHex, hexToBytes } from '../../../shared/utils';
 import type { VendorSubTypeConfig } from '../../../voltra/protocol/types';
 
 export function buildIdleFrame(sequence: number): Uint8Array {
@@ -72,4 +83,44 @@ export function detectModeCommand(data: Uint8Array): TrainingMode | null {
     }
   }
   return null;
+}
+
+/** A setting write the simulated device reports back, as register and value. */
+export interface SettingWrite {
+  paramIdHex: string;
+  value: number;
+}
+
+let settingWritesByCommand: Map<string, SettingWrite> | null = null;
+
+function indexSettingCommands(
+  paramIdHex: string,
+  values: number[],
+  commandFor: (value: number) => Uint8Array | null,
+  index: Map<string, SettingWrite>
+): void {
+  for (const value of values) {
+    const cmd = commandFor(value);
+    if (cmd) index.set(bytesToHex(cmd), { paramIdHex, value });
+  }
+}
+
+function settingCommandIndex(): Map<string, SettingWrite> {
+  if (!settingWritesByCommand) {
+    const index = new Map<string, SettingWrite>();
+    indexSettingCommands(ParamIdHex.BASE_WEIGHT, getAvailableWeights(), getWeightCommand, index);
+    indexSettingCommands(ParamIdHex.CHAINS, getAvailableChains(), getChainsCommand, index);
+    settingWritesByCommand = index;
+  }
+  return settingWritesByCommand;
+}
+
+/** Recognise a weight or chains write, or return `null` for any other write. */
+export function detectSettingWrite(data: Uint8Array): SettingWrite | null {
+  return settingCommandIndex().get(bytesToHex(data)) ?? null;
+}
+
+/** Build the report that tells listeners the device now holds `write`'s value. */
+export function buildSettingsEcho(write: SettingWrite): Uint8Array {
+  return encodeBulkParamResponse([write]);
 }

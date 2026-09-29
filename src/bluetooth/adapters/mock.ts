@@ -19,6 +19,7 @@ import { MovementPhase, TrainingMode } from '../../voltra/protocol/constants/enu
 import { createFrame } from '../../voltra/models/telemetry/frame';
 import { encodeTelemetryFrame } from '../../voltra/protocol/telemetry-decoder';
 import { isCoreStateRead } from '../../voltra/protocol/device-state';
+import { ParamIdHex } from '../../voltra/protocol/constants/message-types';
 import {
   buildAcceptanceReport,
   buildCoreStateReply,
@@ -30,8 +31,11 @@ import {
   buildRepBoundary,
   buildSetBoundary,
   buildModeConfirmation,
+  buildSettingsEcho,
   detectModeCommand,
+  detectSettingWrite,
 } from './mock/notifications';
+import type { SettingWrite } from './mock/notifications';
 import type {
   MockBLEConfig,
   MockSessionConfig,
@@ -176,7 +180,24 @@ export class MockBLEAdapter extends BaseBLEAdapter {
     if (detectedMode !== null) {
       this.setTrainingMode(detectedMode);
     }
+    const settingWrite = detectSettingWrite(data);
+    if (settingWrite !== null) {
+      this.echoSetting(settingWrite);
+    }
     this.answerHandshake(data);
+  }
+
+  /**
+   * Report a weight or chains write back as the device does, after the write
+   * resolves, so listeners see the setting confirmed rather than only requested.
+   */
+  private echoSetting(write: SettingWrite): void {
+    if (write.paramIdHex === ParamIdHex.BASE_WEIGHT) {
+      this.config.weight = write.value;
+    }
+    setTimeout(() => {
+      if (this.linkAlive) this.emitNotification(buildSettingsEcho(write));
+    }, 0);
   }
 
   /**
