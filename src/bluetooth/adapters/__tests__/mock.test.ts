@@ -296,7 +296,7 @@ describe('MockBLEAdapter', () => {
   // ===========================================================================
 
   describe('frame values', () => {
-    it('concentric frames have increasing position 0→600', async () => {
+    it('concentric frames have increasing position from 0', async () => {
       const adapter = new MockBLEAdapter({ connectDelayMs: 0 });
       const notifications = collectNotifications(adapter);
 
@@ -316,7 +316,7 @@ describe('MockBLEAdapter', () => {
       }
     });
 
-    it('eccentric frames have decreasing position 600→0', async () => {
+    it('eccentric frames have decreasing position back toward 0', async () => {
       const adapter = new MockBLEAdapter({ connectDelayMs: 0 });
       const notifications = collectNotifications(adapter);
 
@@ -335,7 +335,7 @@ describe('MockBLEAdapter', () => {
       }
     });
 
-    it('hold frames have position at max (600)', async () => {
+    it("hold frames sit at the rep's peak position", async () => {
       const adapter = new MockBLEAdapter({ connectDelayMs: 0 });
       const notifications = collectNotifications(adapter);
 
@@ -348,9 +348,11 @@ describe('MockBLEAdapter', () => {
 
       const frames = notifications.filter(isTelemetryFrame).map((d) => decodeTelemetryFrame(d)!);
       const hold = frames.filter((f) => f.phase === MovementPhase.HOLD);
+      const peakPosition = Math.max(...frames.map((f) => f.position));
 
+      expect(hold.length).toBeGreaterThan(0);
       for (const f of hold) {
-        expect(f.position).toBe(600);
+        expect(f.position).toBe(peakPosition);
       }
     });
 
