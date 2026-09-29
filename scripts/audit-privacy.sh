@@ -154,11 +154,18 @@ SANCTIONED='__no_sanctioned_form__'
 # protocol data comes from. Whole lines are read here, not matches, so the
 # sanctioned header line can be dropped before the name is looked for.
 echo "3b. Checking for the private repo's name in src/"
-bare_name="$(git ls-files -- 'src/*' | while IFS= read -r file; do
+# Only a line that STARTS with the header is sanctioned. A header comment
+# appended to a line that names the repo is not the header.
+bare_all="$(git ls-files -- 'src/*' | while IFS= read -r file; do
   [ -f "$file" ] || continue
   grep -aniE --binary-files=text -- 'voltra[-_]+private' "$file" \
-    | grep -avE -- "$SANCTIONED_HEADER" | sed "s|^|$file:|" | sed 's/^\([^:]*:[0-9]*\):.*/\1/'
-done | grep -avE -- "$TEST_PATH")"
+    | grep -avE -- '^[0-9]+:// @generated .*Regenerate:' | sed "s|^|$file:|" | sed 's/^\([^:]*:[0-9]*\):.*/\1/'
+done)"
+bare_name="$(printf '%s' "$bare_all" | grep -avE -- "$TEST_PATH")"
+bare_deferred="$(printf '%s' "$bare_all" | grep -aE -- "$TEST_PATH")"
+if [ -n "$bare_deferred" ]; then
+  note "$(printf '%s\n' "$bare_deferred" | wc -l | tr -d ' ') in test paths, counted and deferred to w5-14"
+fi
 if [ -n "$bare_name" ]; then
   fail "No reference to the private repo's name in src/"
   printf '%s\n' "$bare_name" | sed 's/^/        /'

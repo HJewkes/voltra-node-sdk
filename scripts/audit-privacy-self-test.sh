@@ -95,6 +95,7 @@ expect_caught "phase keyword, mixed case" "$KEYWORD_LABEL" notes.md "see the $(u
 expect_caught "repo path, upper case" "$PATH_LABEL" notes.md "read $(printf %s "$repo" | tr a-z A-Z)-PRIVATE/notes"
 expect_caught "repo path, trailing separator" "$PATH_LABEL" notes.md "read ${repo}-private-/notes"
 expect_caught "repo name without a path, in src" "$NAME_LABEL" src/a.ts "// see ${repo}-private"
+expect_caught "repo name before a trailing header comment" "$NAME_LABEL" src/a.generated.ts "const x = '${repo}-private'; // @generated x Regenerate: y"
 expect_caught "repo name, mixed case, in src" "$NAME_LABEL" src/a.ts "// see $(upper_first "$repo")_Private"
 expect_caught "engineer keyword, doubled separator" "$KEYWORD_LABEL" notes.md "${keyword}--engineer it"
 expect_caught "engineer keyword, mixed separators" "$KEYWORD_LABEL" notes.md "${keyword}_ engineer it"
