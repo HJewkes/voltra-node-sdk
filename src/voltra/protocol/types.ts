@@ -140,10 +140,7 @@ export interface MotorStateReportConfig {
 
 /** Field names of a decoded guided-load status snapshot, in wire order. */
 export type GuidedLoadStatusFieldName =
-  | 'primaryStatus'
-  | 'forceStatus'
-  | 'countdownMs'
-  | 'runtimeStatus';
+  'primaryStatus' | 'forceStatus' | 'countdownMs' | 'runtimeStatus';
 
 /**
  * Guided-load flow definition.

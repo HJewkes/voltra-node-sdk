@@ -156,11 +156,7 @@ export interface KinematicsProfile {
 // =============================================================================
 
 export type ErrorScenarioType =
-  | 'disconnect'
-  | 'authTimeout'
-  | 'notificationDrop'
-  | 'malformedFrame'
-  | 'reconnectCycle';
+  'disconnect' | 'authTimeout' | 'notificationDrop' | 'malformedFrame' | 'reconnectCycle';
 
 export interface DisconnectConfig {
   afterMs: number;
