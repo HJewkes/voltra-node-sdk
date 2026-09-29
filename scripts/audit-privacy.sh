@@ -46,6 +46,10 @@ note() { echo "  NOTE  $1"; }
 # unexamined in both directions.
 SANCTIONED_HEADER='// @generated .*Regenerate:'
 
+# The private repo's name, bare, in any case and separator form. Shared by the
+# src/ check and the shipped-files check so they cannot drift apart.
+BARE_NAME='voltra[-_]+private'
+
 # One matched FORM that a given check accepts, set immediately before that
 # check and reset immediately after, so it can never leak into another sweep.
 # Compared against the match, never the line.
@@ -158,8 +162,8 @@ echo "3b. Checking for the private repo's name in src/"
 # appended to a line that names the repo is not the header.
 bare_all="$(git ls-files -- 'src/*' | while IFS= read -r file; do
   [ -f "$file" ] || continue
-  grep -aniE --binary-files=text -- 'voltra[-_]+private' "$file" \
-    | grep -avE -- '^[0-9]+:// @generated .*Regenerate:' | sed "s|^|$file:|" | sed 's/^\([^:]*:[0-9]*\):.*/\1/'
+  grep -aniE --binary-files=text -- "$BARE_NAME" "$file" \
+    | grep -avE -- "^[0-9]+:$SANCTIONED_HEADER" | sed "s|^|$file:|" | sed 's/^\([^:]*:[0-9]*\):.*/\1/'
 done)"
 bare_name="$(printf '%s' "$bare_all" | grep -avE -- "$TEST_PATH")"
 bare_deferred="$(printf '%s' "$bare_all" | grep -aE -- "$TEST_PATH")"
@@ -172,6 +176,17 @@ if [ -n "$bare_name" ]; then
 else
   pass "No reference to the private repo's name in src/"
 fi
+
+# `npm pack` publishes dist, LICENSE, README.md and package.json. The src/ check
+# does not see the last three, so they are read here. package.json alone may
+# name the build entry point, because the regeneration script has to.
+echo "3c. Checking for the private repo's name in the non-dist files npm pack ships"
+report "No reference to the private repo's name in README.md or LICENSE" \
+  "$BARE_NAME" 'README.md' 'LICENSE'
+SANCTIONED='voltra-private/build\.ts'
+report "No reference to the private repo's name in package.json beyond its build entry point" \
+  "$BARE_NAME(/build\\.ts)?" 'package.json'
+SANCTIONED='__no_sanctioned_form__'
 
 echo "4. Checking for capture, research and derivation references"
 report "No capture, research or derivation references" \

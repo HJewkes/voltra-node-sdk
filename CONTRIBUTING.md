@@ -63,7 +63,7 @@ Protocol-derived findings belong in the private repository's research tree.
 | layer | covers | runs |
 | --- | --- | --- |
 | `voltras/no-private-provenance` (`eslint-rules/`) | provenance, command-code identifiers, and verbatim captures in comments, across `src/**/*.ts` | `npm run lint`, CI |
-| `scripts/audit-privacy.sh` | the whole tree git tracks, as text — including the generated files ESLint ignores, and markdown, shell and workflow files no linter reads | `npm run audit:privacy`, CI |
+| `scripts/audit-privacy.sh` | the whole tree git tracks, as text — including the generated files ESLint ignores, and markdown, shell and workflow files no linter reads; also names the private repo in the non-dist files `npm pack` ships (`README.md`, `LICENSE`, `package.json`, the last allowed only its build path) | `npm run audit:privacy`, CI |
 | `scripts/verify-generated.sh` | the generated files, against what the generator actually produces, byte for byte | `npm run verify:generated`, CI |
 
 All three name the file and the shape and never the token. A build log is as
