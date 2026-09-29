@@ -58,8 +58,8 @@ function tickSamples(n: number): void {
   }
 }
 
-// Standard rep cycle: IDLE(5) + CONCENTRIC(9) + HOLD(2) + ECCENTRIC(16) = 32
-const SAMPLES_PER_REP = 5 + 9 + 2 + 16;
+// Standard rep cycle: IDLE(5) + CONCENTRIC(15) + HOLD(2) + ECCENTRIC(16) = 38
+const SAMPLES_PER_REP = 5 + 15 + 2 + 16;
 
 async function connectAdapter(adapter: MockBLEAdapter): Promise<void> {
   const p = adapter.connect('x');
@@ -190,8 +190,8 @@ describe('MockBLEAdapter session config', () => {
         .filter(isTelemetryFrame)
         .map((d) => decodeTelemetryFrame(d)!);
       const concSet1 = framesSet1.filter((f) => f.phase === MovementPhase.CONCENTRIC);
-      // Last rep's concentric frames (last 9 concentric samples)
-      const lastRepConc = concSet1.slice(-9);
+      // Last rep's concentric frames (last 15 concentric samples)
+      const lastRepConc = concSet1.slice(-15);
       const peakVelSet1 = Math.max(...lastRepConc.map((f) => Math.abs(f.velocity)));
 
       // Rest

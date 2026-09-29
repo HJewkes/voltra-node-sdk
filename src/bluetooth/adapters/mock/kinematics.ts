@@ -86,11 +86,11 @@ export function damperBuildValues(
       // rawVelocity is the cm/s magnitude the force curve is calibrated
       // against; only the emitted velocity is scaled to the frame's mm/s
       // (see VELOCITY_UNIT_FACTOR).
-      const rawVelocity = Math.round(Math.sin(progress * Math.PI) * 75 * fatigue);
+      const rawVelocity = Math.round(Math.sin(progress * Math.PI) * 105 * fatigue);
       return {
         position: Math.round(progress * maxPosition),
         velocity: rawVelocity * VELOCITY_UNIT_FACTOR,
-        force: Math.round(rawVelocity * baseForce * 0.02 * fatigue),
+        force: Math.round(rawVelocity * baseForce * 0.0143 * fatigue),
       };
     }
     case MovementPhase.HOLD:
@@ -116,8 +116,8 @@ export function isokineticBuildValues(
   baseForce: number,
   maxPosition: number
 ): KinematicsValues {
-  // 45 cm/s, scaled to the frame's mm/s (see VELOCITY_UNIT_FACTOR).
-  const constantVelocity = 45 * VELOCITY_UNIT_FACTOR;
+  // 70 cm/s, scaled to the frame's mm/s (see VELOCITY_UNIT_FACTOR).
+  const constantVelocity = 70 * VELOCITY_UNIT_FACTOR;
   switch (phase) {
     case MovementPhase.CONCENTRIC:
       return {
