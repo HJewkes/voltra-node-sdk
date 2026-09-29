@@ -184,7 +184,8 @@ fi
 echo "3c. Checking for the private repo's name in the non-dist files npm pack ships"
 PACK_LABEL="No reference to the private repo's name in the non-dist files npm pack ships"
 PACKAGE_LABEL="No reference to the private repo's name in package.json beyond its build entry point"
-pack_json="$(npm pack --dry-run --json --ignore-scripts --offline 2>/dev/null)"
+pack_err="$(mktemp)"
+pack_json="$(npm pack --dry-run --json --ignore-scripts --offline 2>"$pack_err")"
 pack_status=$?
 packed="$(printf '%s' "$pack_json" | node -e '
 const out = JSON.parse(require("fs").readFileSync(0, "utf8"));
@@ -193,6 +194,7 @@ for (const f of out[0].files) if (!f.path.startsWith("dist/") && f.path !== "pac
 list_status=$?
 if [ "$pack_status" -ne 0 ] || [ "$list_status" -ne 0 ]; then
   fail "$PACK_LABEL (npm pack output could not be read)"
+  head -n 8 "$pack_err" | sed 's/^/        npm: /'
 else
   packed_hits="$(printf '%s\n' "$packed" | while IFS= read -r file; do
     [ -f "$file" ] || continue
@@ -205,6 +207,7 @@ else
     pass "$PACK_LABEL"
   fi
 fi
+rm -f "$pack_err"
 
 # The sanctioned build path is allowed in exactly one package.json field, the
 # script that runs it. Any other field naming the repo, or carrying the path,
