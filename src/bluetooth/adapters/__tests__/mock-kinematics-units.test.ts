@@ -28,12 +28,12 @@ const SAMPLE_INTERVAL_MS = 91;
 const SAMPLES_TO_COLLECT = 60;
 
 const MOVING_MODES = [
-  TrainingMode.WeightTraining,
-  TrainingMode.ResistanceBand,
-  TrainingMode.Rowing,
-  TrainingMode.Damper,
-  TrainingMode.CustomCurves,
-  TrainingMode.Isokinetic,
+  { name: 'weight training', mode: TrainingMode.WeightTraining },
+  { name: 'resistance band', mode: TrainingMode.ResistanceBand },
+  { name: 'rowing', mode: TrainingMode.Rowing },
+  { name: 'damper', mode: TrainingMode.Damper },
+  { name: 'custom curves', mode: TrainingMode.CustomCurves },
+  { name: 'isokinetic', mode: TrainingMode.Isokinetic },
 ];
 
 beforeEach(() => {
@@ -72,8 +72,8 @@ function peakConcentricVelocity(frames: TelemetryFrame[]): number {
 
 describe('mock kinematics units', () => {
   it.each(MOVING_MODES)(
-    'mode %s reaches a full pull inside the hardware mm range',
-    async (mode) => {
+    '$name reaches a full pull inside the hardware mm range',
+    async ({ mode }) => {
       const frames = await collectFrames(mode);
 
       const peakPosition = Math.max(...frames.map((f) => f.position));
@@ -84,8 +84,8 @@ describe('mock kinematics units', () => {
   );
 
   it.each(MOVING_MODES)(
-    'mode %s peaks concentric velocity inside the hardware mm/s range',
-    async (mode) => {
+    '$name peaks concentric velocity inside the hardware mm/s range',
+    async ({ mode }) => {
       const frames = await collectFrames(mode);
 
       const peakVelocity = peakConcentricVelocity(frames);
