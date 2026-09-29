@@ -33,3 +33,38 @@ if bash scripts/audit-privacy.sh >/dev/null 2>&1; then
 fi
 
 echo "PASS  audit-privacy.sh fails loudly with an untracked file present"
+
+# VW-697: the provenance patterns accept hyphen, underscore and mixed
+# separators. Fixtures are assembled from parts so this file never spells a
+# keyword itself. AUDIT_SCRIPT lets a run target another version of the audit.
+AUDIT_SCRIPT="${AUDIT_SCRIPT:-$REPO_ROOT/scripts/audit-privacy.sh}"
+SANDBOX="$(mktemp -d)"
+trap 'cleanup; rm -rf "$SANDBOX"' EXIT
+
+audit_flags_line() {
+  rm -rf "$SANDBOX/repo" && mkdir -p "$SANDBOX/repo/scripts" "$SANDBOX/repo/src"
+  cp "$AUDIT_SCRIPT" "$SANDBOX/repo/scripts/audit-privacy.sh"
+  printf '%s\n' "$1" > "$SANDBOX/repo/notes.md"
+  (cd "$SANDBOX/repo" && git init -q && git add -A && bash scripts/audit-privacy.sh >/dev/null 2>&1)
+  [ $? -ne 0 ]
+}
+
+expect() {
+  local verdict="$1" label="$2" line="$3" got=pass
+  audit_flags_line "$line" && got=caught
+  if [ "$got" != "$verdict" ]; then
+    echo "FAIL  $label: expected $verdict, got $got" >&2
+    exit 1
+  fi
+  echo "PASS  $label: $got"
+}
+
+phase="validation"
+repo="voltra"
+expect caught "phase keyword, hyphen" "see the ${phase}-phase notes"
+expect caught "phase keyword, underscore" "see the ${phase}_phase notes"
+expect caught "phase keyword, mixed" "see the ${phase}-_phase notes"
+expect caught "repo path, hyphen" "read ${repo}-private/notes"
+expect caught "repo path, underscore" "read ${repo}_private/notes"
+expect caught "repo path, mixed" "read ${repo}_-private/notes"
+expect pass "near miss, other words" "read ${repo}_public/notes and the ${phase}_step list"
