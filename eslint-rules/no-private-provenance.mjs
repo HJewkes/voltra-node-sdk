@@ -31,14 +31,17 @@
 // text and excludes only the sanctioned regeneration header.
 //
 // WHAT THIS RULE DOES NOT CATCH, named rather than left to be discovered.
-// A `+` chain of adjacent string literals (and templates with no `${}`) IS
-// joined and scanned as one string (VW-224); everything below is not:
+// A `+` chain of adjacent string literals IS joined and scanned as one string
+// (VW-224), through parentheses and `as`/`satisfies`/`!` around a piece or a
+// sub-chain, with a template's first and last quasi meeting its neighbours.
+// Everything below is not:
 //
 //   - A VALUE BUILT FROM VARIABLES OR CALLS. A literal split around an
 //     identifier, `[a, b].join('')`, `'a'.concat('b')`, `+=` and
 //     `String.fromCharCode(...)` are never evaluated.
 //   - A CHAIN PIECE THAT IS NOT A PLAIN STRING: a number literal, a tagged
-//     template, or a template holding a literal inside `${}`.
+//     template, a template holding a literal inside `${}`, or a conditional
+//     such as `(c ? 'a' : 'b') + 'c'`.
 //   - PROVENANCE PHRASED ORGANICALLY. A sentence saying where a number came
 //     from, carrying no path and no keyword, matches nothing here. That is out
 //     of scope by ruling rather than by oversight: this rule catches encoded
@@ -159,31 +162,44 @@ export function isCommandCodeIdentifier(name) {
 
 const TYPE_WRAPPERS = new Set(['TSAsExpression', 'TSSatisfiesExpression', 'TSNonNullExpression']);
 
-/** A literal's string value, or `null` for anything that would need evaluating. */
-function literalText(node) {
-  if (TYPE_WRAPPERS.has(node.type)) return literalText(node.expression);
-  if (node.type === 'Literal' && typeof node.value === 'string') return node.value;
-  if (node.type === 'TemplateLiteral' && node.expressions.length === 0) {
-    return node.quasis[0].value.cooked ?? null;
-  }
-  return null;
+function unwrapTypes(node) {
+  return TYPE_WRAPPERS.has(node.type) ? unwrapTypes(node.expression) : node;
+}
+
+/**
+ * The texts an operand puts at the chain's joins, with `null` wherever a value
+ * would need evaluating. A template with `${}` contributes its edge quasis.
+ */
+function operandTexts(node) {
+  const bare = unwrapTypes(node);
+  if (bare.type === 'Literal') return [typeof bare.value === 'string' ? bare.value : null];
+  if (bare.type !== 'TemplateLiteral') return [null];
+  const edges = [bare.quasis[0], bare.quasis.at(-1)].map((quasi) => quasi.value.cooked ?? null);
+  return bare.quasis.length === 1 ? [edges[0]] : [edges[0], null, edges[1]];
 }
 
 function isConcatenation(node) {
   return node?.type === 'BinaryExpression' && node.operator === '+';
 }
 
-/** The leaves of a `+` chain, left to right. */
+/** Whether `node` is the outermost `+` of its chain, looking through type wrappers. */
+function isChainTop(node) {
+  let parent = node.parent;
+  while (parent && TYPE_WRAPPERS.has(parent.type)) parent = parent.parent;
+  return !isConcatenation(parent);
+}
+
+/** The leaves of a `+` chain, left to right, including wrapped sub-chains. */
 function chainOperands(node) {
-  if (!isConcatenation(node)) return [node];
-  return [...chainOperands(node.left), ...chainOperands(node.right)];
+  const bare = unwrapTypes(node);
+  if (!isConcatenation(bare)) return [node];
+  return [...chainOperands(bare.left), ...chainOperands(bare.right)];
 }
 
 /** Runs of adjacent literal pieces, each as its pieces' texts, in source order. */
 function literalRuns(operands) {
   const runs = [[]];
-  for (const operand of operands) {
-    const text = literalText(operand);
+  for (const text of operands.flatMap(operandTexts)) {
     if (text === null) runs.push([]);
     else runs.at(-1).push(text);
   }
@@ -285,7 +301,7 @@ const rule = {
       },
       // Reported once per chain, at its start, and never for identifiers or calls.
       BinaryExpression(node) {
-        if (node.operator !== '+' || isConcatenation(node.parent)) return;
+        if (node.operator !== '+' || !isChainTop(node)) return;
         const messageId = literalRuns(chainOperands(node)).map(findAcrossJoin).find(Boolean);
         if (messageId) context.report({ node, messageId });
       },

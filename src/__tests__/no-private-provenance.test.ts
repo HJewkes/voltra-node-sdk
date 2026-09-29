@@ -148,6 +148,18 @@ describe('a value split across a concatenation or a separator (VW-224)', () => {
     ['an escaped piece beside a harmless join', `const v = '${REPO}\\x2d${PRIVATE}' + ' notes';`],
     ['an escaped template', `const v = \`${REPO}\\x2d${PRIVATE}\`;`],
     ['a literal split by a line continuation', `const v = '${REPO}-\\\n${PRIVATE}';`],
+    ['a sub-chain wrapped in `as`', `const v = '${REPO}-pri' + ('va' + 'te' as string);`],
+    ['a sub-chain wrapped in `!`', `const v = '${REPO}-pri' + ('va' + 'te')!;`],
+    [
+      'a sub-chain wrapped in `satisfies`',
+      `const v = ('${REPO}-' + 'pri' satisfies string) + 'vate';`,
+    ],
+    ['a template whose tail meets the join', `const v = \`\${x} ${REPO}-\` + '${PRIVATE}';`],
+    ['a template whose head meets the join', `const v = '${REPO}-' + \`${PRIVATE} \${x}\`;`],
+    [
+      'a wrapped sub-chain that is itself a hit',
+      `const v = 'x ' + ('${CMD}' + '${CODE}' as string);`,
+    ],
   ])('reports %s once', (_label, code) => {
     expect(run(code)).toHaveLength(1);
   });
@@ -202,6 +214,8 @@ describe('a value split across a concatenation or a separator (VW-224)', () => {
     ['a tagged template', `const v = String.raw\`${CMD}\` + '${CODE}';`],
     ['a number literal in the chain', `const v = '${CMD}_' + 0x${CODE};`],
     ['a template holding a literal', `const v = \`${CMD}\${'${CODE}'}\`;`],
+    ['a conditional in the chain', `const v = (c ? '${CMD}' : 'x') + '${CODE}';`],
+    ['String.fromCharCode', `const v = String.fromCharCode(99, 109, 100) + '${CODE}';`],
   ])('documents that %s is not caught', (_label, code) => {
     expect(run(code)).toEqual([]);
   });
