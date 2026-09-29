@@ -50,7 +50,7 @@ async function connectAdapter(adapter: MockBLEAdapter): Promise<void> {
   await p;
 }
 
-const SAMPLES_PER_REP = 32;
+const SAMPLES_PER_REP = 38;
 
 // =============================================================================
 // Disconnect Error

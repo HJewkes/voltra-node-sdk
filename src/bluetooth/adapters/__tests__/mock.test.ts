@@ -64,8 +64,8 @@ function tickSamples(n: number): void {
   }
 }
 
-// One full rep cycle: IDLE(5) + CONCENTRIC(9) + HOLD(2) + ECCENTRIC(16) = 32 samples
-const SAMPLES_PER_REP = 5 + 9 + 2 + 16;
+// One full rep cycle: IDLE(5) + CONCENTRIC(15) + HOLD(2) + ECCENTRIC(16) = 38 samples
+const SAMPLES_PER_REP = 5 + 15 + 2 + 16;
 
 // =============================================================================
 // Connection Lifecycle
@@ -285,7 +285,7 @@ describe('MockBLEAdapter', () => {
       }
 
       expect(phaseCounts.idle).toBe(5);
-      expect(phaseCounts.concentric).toBe(9);
+      expect(phaseCounts.concentric).toBe(15);
       expect(phaseCounts.hold).toBe(2);
       expect(phaseCounts.eccentric).toBe(16);
     });
@@ -568,34 +568,34 @@ describe('MockBLEAdapter', () => {
     }
 
     it('resistance band: force increases with position during concentric', async () => {
-      // Resistance Band: 5 idle + 10 con + 3 hold + 14 ecc = 32
-      const frames = await collectOneRep(TrainingMode.ResistanceBand, 32);
+      // Resistance Band: 5 idle + 17 con + 3 hold + 14 ecc = 39
+      const frames = await collectOneRep(TrainingMode.ResistanceBand, 39);
       const concentric = frames.filter((f) => f.phase === MovementPhase.CONCENTRIC);
 
-      expect(concentric.length).toBe(10);
+      expect(concentric.length).toBe(17);
 
       // Force should trend upward as position increases (non-linear band stretch)
-      const firstThird = concentric.slice(1, 4);
-      const lastThird = concentric.slice(7, 10);
+      const firstThird = concentric.slice(1, 5);
+      const lastThird = concentric.slice(13, 17);
       const avgForceEarly = firstThird.reduce((s, f) => s + f.force, 0) / firstThird.length;
       const avgForceLate = lastThird.reduce((s, f) => s + f.force, 0) / lastThird.length;
       expect(avgForceLate).toBeGreaterThan(avgForceEarly);
     });
 
     it('rowing: has longer phase durations than weight training', async () => {
-      // Rowing: 6 idle + 14 con + 2 hold + 20 ecc = 42
-      const frames = await collectOneRep(TrainingMode.Rowing, 42);
+      // Rowing: 6 idle + 21 con + 2 hold + 20 ecc = 49
+      const frames = await collectOneRep(TrainingMode.Rowing, 49);
       const concentric = frames.filter((f) => f.phase === MovementPhase.CONCENTRIC);
       const eccentric = frames.filter((f) => f.phase === MovementPhase.ECCENTRIC);
 
-      // Rowing has 14 concentric (vs 9 for weight training) and 20 eccentric (vs 16)
-      expect(concentric.length).toBe(14);
+      // Rowing has 21 concentric (vs 15 for weight training) and 20 eccentric (vs 16)
+      expect(concentric.length).toBe(21);
       expect(eccentric.length).toBe(20);
     });
 
     it('rowing: velocity peaks are lower than weight training', async () => {
-      const rowingFrames = await collectOneRep(TrainingMode.Rowing, 42);
-      const wtFrames = await collectOneRep(TrainingMode.WeightTraining, 32);
+      const rowingFrames = await collectOneRep(TrainingMode.Rowing, 49);
+      const wtFrames = await collectOneRep(TrainingMode.WeightTraining, 38);
 
       const rowingPeakVel = Math.max(
         ...rowingFrames.filter((f) => f.phase === MovementPhase.CONCENTRIC).map((f) => f.velocity)
@@ -622,11 +622,11 @@ describe('MockBLEAdapter', () => {
     });
 
     it('custom curves: force follows a sine-wave profile', async () => {
-      // Custom Curves: 4 idle + 11 con + 3 hold + 15 ecc = 33
-      const frames = await collectOneRep(TrainingMode.CustomCurves, 33);
+      // Custom Curves: 4 idle + 16 con + 3 hold + 15 ecc = 38
+      const frames = await collectOneRep(TrainingMode.CustomCurves, 38);
       const concentric = frames.filter((f) => f.phase === MovementPhase.CONCENTRIC);
 
-      expect(concentric.length).toBe(11);
+      expect(concentric.length).toBe(16);
 
       // Sine wave: starts at 0, peaks in middle, returns toward 0
       expect(concentric[0].force).toBe(0);
@@ -636,16 +636,16 @@ describe('MockBLEAdapter', () => {
     });
 
     it('isokinetic: constant velocity during concentric and eccentric', async () => {
-      // Isokinetic: 5 idle + 12 con + 2 hold + 12 ecc = 31
-      const frames = await collectOneRep(TrainingMode.Isokinetic, 31);
+      // Isokinetic: 5 idle + 15 con + 2 hold + 12 ecc = 34
+      const frames = await collectOneRep(TrainingMode.Isokinetic, 34);
       const concentric = frames.filter((f) => f.phase === MovementPhase.CONCENTRIC);
       const eccentric = frames.filter((f) => f.phase === MovementPhase.ECCENTRIC);
 
       // All concentric velocity values should be the same constant
-      // (45 cm/s scaled to the frame's mm/s — see kinematics.ts's VELOCITY_UNIT_FACTOR)
+      // (70 cm/s scaled to the frame's mm/s — see kinematics.ts's VELOCITY_UNIT_FACTOR)
       const conVelocities = new Set(concentric.map((f) => f.velocity));
       expect(conVelocities.size).toBe(1);
-      expect(concentric[0].velocity).toBe(450);
+      expect(concentric[0].velocity).toBe(700);
 
       // All eccentric velocity values should also be constant
       const eccVelocities = new Set(eccentric.map((f) => f.velocity));
@@ -693,12 +693,12 @@ describe('MockBLEAdapter', () => {
       // Sample counts derived from phase definitions in profiles.ts:
       // sum of all PhaseDef.count values for each mode's profile
       const modes: [TrainingMode, number][] = [
-        [TrainingMode.WeightTraining, 32], // 5 idle + 9 con + 2 hold + 16 ecc
-        [TrainingMode.ResistanceBand, 32], // 5 idle + 10 con + 3 hold + 14 ecc
-        [TrainingMode.Rowing, 42], // 6 idle + 14 con + 2 hold + 20 ecc
-        [TrainingMode.Damper, 31], // 5 idle + 10 con + 2 hold + 14 ecc
-        [TrainingMode.CustomCurves, 33], // 4 idle + 11 con + 3 hold + 15 ecc
-        [TrainingMode.Isokinetic, 31], // 5 idle + 12 con + 2 hold + 12 ecc
+        [TrainingMode.WeightTraining, 38], // 5 idle + 15 con + 2 hold + 16 ecc
+        [TrainingMode.ResistanceBand, 39], // 5 idle + 17 con + 3 hold + 14 ecc
+        [TrainingMode.Rowing, 49], // 6 idle + 21 con + 2 hold + 20 ecc
+        [TrainingMode.Damper, 37], // 5 idle + 16 con + 2 hold + 14 ecc
+        [TrainingMode.CustomCurves, 38], // 4 idle + 16 con + 3 hold + 15 ecc
+        [TrainingMode.Isokinetic, 34], // 5 idle + 15 con + 2 hold + 12 ecc
         [TrainingMode.Isometric, 25], // 5 idle + 20 con (2 phases only)
       ];
 
@@ -871,7 +871,7 @@ describe('MockBLEAdapter', () => {
 
       const frames = notifications.filter(isTelemetryFrame).map((d) => decodeTelemetryFrame(d)!);
       const concentric = frames.filter((f) => f.phase === MovementPhase.CONCENTRIC);
-      expect(concentric).toHaveLength(9);
+      expect(concentric).toHaveLength(15);
 
       // No mode confirmations should have been emitted
       const confirmations = notifications.filter(isModeConfirmation);

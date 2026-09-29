@@ -29,14 +29,14 @@ const FULL_PULL_ROM_MM = {
 
 const STANDARD_PHASES: PhaseDef[] = [
   { phase: MovementPhase.IDLE, count: 5 },
-  { phase: MovementPhase.CONCENTRIC, count: 9 },
+  { phase: MovementPhase.CONCENTRIC, count: 15 },
   { phase: MovementPhase.HOLD, count: 2 },
   { phase: MovementPhase.ECCENTRIC, count: 16 },
 ];
 
 /** Exported so tests can derive expectations from the real constants instead of re-hardcoding them. */
 export const WEIGHT_TRAINING_CONSTANTS: ModeConstants = {
-  concentricVelocityPeak: 80,
+  concentricVelocityPeak: 110,
   eccentricVelocityPeak: 40,
   holdForceMultiplier: 0.5,
   concentricForce: (p, bf, f) => bf * (1 - p * 0.3) * f,
@@ -58,13 +58,13 @@ export const KINEMATICS_PROFILES: Record<TrainingMode, KinematicsProfile> = {
   [TrainingMode.ResistanceBand]: standardProfile(
     [
       { phase: MovementPhase.IDLE, count: 5 },
-      { phase: MovementPhase.CONCENTRIC, count: 10 },
+      { phase: MovementPhase.CONCENTRIC, count: 17 },
       { phase: MovementPhase.HOLD, count: 3 },
       { phase: MovementPhase.ECCENTRIC, count: 14 },
     ],
     FULL_PULL_ROM_MM.resistanceBand,
     {
-      concentricVelocityPeak: 70,
+      concentricVelocityPeak: 100,
       eccentricVelocityPeak: 35,
       holdForceMultiplier: 0.9,
       concentricForce: (p, bf, f) => bf * (0.4 + p * 0.6) * f,
@@ -75,13 +75,13 @@ export const KINEMATICS_PROFILES: Record<TrainingMode, KinematicsProfile> = {
   [TrainingMode.Rowing]: standardProfile(
     [
       { phase: MovementPhase.IDLE, count: 6 },
-      { phase: MovementPhase.CONCENTRIC, count: 14 },
+      { phase: MovementPhase.CONCENTRIC, count: 21 },
       { phase: MovementPhase.HOLD, count: 2 },
       { phase: MovementPhase.ECCENTRIC, count: 20 },
     ],
     FULL_PULL_ROM_MM.rowing,
     {
-      concentricVelocityPeak: 50,
+      concentricVelocityPeak: 90,
       eccentricVelocityPeak: 25,
       holdForceMultiplier: 0.3,
       concentricForce: (p, bf, f) => bf * Math.exp(-p * 0.5) * f,
@@ -92,7 +92,7 @@ export const KINEMATICS_PROFILES: Record<TrainingMode, KinematicsProfile> = {
   [TrainingMode.Damper]: {
     phases: [
       { phase: MovementPhase.IDLE, count: 5 },
-      { phase: MovementPhase.CONCENTRIC, count: 10 },
+      { phase: MovementPhase.CONCENTRIC, count: 16 },
       { phase: MovementPhase.HOLD, count: 2 },
       { phase: MovementPhase.ECCENTRIC, count: 14 },
     ],
@@ -103,13 +103,13 @@ export const KINEMATICS_PROFILES: Record<TrainingMode, KinematicsProfile> = {
   [TrainingMode.CustomCurves]: standardProfile(
     [
       { phase: MovementPhase.IDLE, count: 4 },
-      { phase: MovementPhase.CONCENTRIC, count: 11 },
+      { phase: MovementPhase.CONCENTRIC, count: 16 },
       { phase: MovementPhase.HOLD, count: 3 },
       { phase: MovementPhase.ECCENTRIC, count: 15 },
     ],
     FULL_PULL_ROM_MM.customCurves,
     {
-      concentricVelocityPeak: 65,
+      concentricVelocityPeak: 100,
       eccentricVelocityPeak: 32,
       holdForceMultiplier: 0.5,
       concentricForce: (p, bf, f) => bf * Math.sin(p * Math.PI) * f,
@@ -120,7 +120,7 @@ export const KINEMATICS_PROFILES: Record<TrainingMode, KinematicsProfile> = {
   [TrainingMode.Isokinetic]: {
     phases: [
       { phase: MovementPhase.IDLE, count: 5 },
-      { phase: MovementPhase.CONCENTRIC, count: 12 },
+      { phase: MovementPhase.CONCENTRIC, count: 15 },
       { phase: MovementPhase.HOLD, count: 2 },
       { phase: MovementPhase.ECCENTRIC, count: 12 },
     ],

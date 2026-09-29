@@ -70,7 +70,37 @@ function peakConcentricVelocity(frames: TelemetryFrame[]): number {
   );
 }
 
+/** First contiguous concentric stretch, i.e. the first rep's pull. */
+function firstConcentricRun(frames: TelemetryFrame[]): TelemetryFrame[] {
+  const start = frames.findIndex((f) => f.phase === MovementPhase.CONCENTRIC);
+  const run: TelemetryFrame[] = [];
+  for (let i = start; i >= 0 && i < frames.length; i++) {
+    if (frames[i].phase !== MovementPhase.CONCENTRIC) break;
+    run.push(frames[i]);
+  }
+  return run;
+}
+
+/** How far the ramp-implied and field-implied mean speeds may differ. */
+const RAMP_VELOCITY_TOLERANCE = 0.2;
+
 describe('mock kinematics units', () => {
+  it.each(MOVING_MODES)(
+    '$name position ramp and velocity field imply the same mean concentric speed',
+    async ({ mode }) => {
+      const frames = await collectFrames(mode);
+      const run = firstConcentricRun(frames);
+
+      const rom = Math.max(...frames.map((f) => f.position));
+      const rampMeanSpeed = rom / ((run.length * SAMPLE_INTERVAL_MS) / 1000);
+      const fieldMeanSpeed = run.reduce((sum, f) => sum + Math.abs(f.velocity), 0) / run.length;
+
+      expect(Math.abs(rampMeanSpeed / fieldMeanSpeed - 1)).toBeLessThanOrEqual(
+        RAMP_VELOCITY_TOLERANCE
+      );
+    }
+  );
+
   it.each(MOVING_MODES)(
     '$name reaches a full pull inside the hardware mm range',
     async ({ mode }) => {
