@@ -88,9 +88,11 @@ continuations inside a literal. It does not catch:
   does not know. The rule is for accidents, not adversaries.
 
 `scripts/audit-privacy.sh` reads text, not a parse tree, so the join does not
-apply there. Its provenance patterns accept the same hyphen and underscore
-separators, mixed or repeated, for the private repository's name and the
-named-phase keyword.
+apply there. Its provenance patterns match case-insensitively and accept the
+same hyphen and underscore separators, mixed or repeated, for the private
+repository's name, the named-phase keyword and the reverse-engineer keyword.
+The private repository's name is banned bare only under `src/`, as in the
+rule; elsewhere only a path into it fails, since CI and the docs name it.
 
 The first two read this repository, so an edit to this repository can satisfy
 them: a reworded comment looks like legitimate content to a content guard, and
