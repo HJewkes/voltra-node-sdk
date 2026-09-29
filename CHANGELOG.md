@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`MockBLEAdapter` now reports weight and chains writes back** (VW-572).
+  A real device answers a weight or chains write with a settings report; the
+  mock did not, so `onSettingsUpdate` listeners never saw the new value and
+  `confirmedSettings` kept the old one. The mock now emits that report one
+  tick after the write, and answers later core-state reads with the weight
+  last written.
+
 ## [0.15.0] - 2026-09-17
 
 This release closes an independent protocol review of 0.14.0 published on
