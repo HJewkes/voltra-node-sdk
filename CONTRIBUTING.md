@@ -88,9 +88,9 @@ continuations inside a literal. It does not catch:
   does not know. The rule is for accidents, not adversaries.
 
 `scripts/audit-privacy.sh` reads text, not a parse tree, so the join does not
-apply there. Its provenance pattern also knows only hyphen separators, so an
-underscore spelling of the private repository's name or of the named-phase
-keyword passes it in generated files and markdown (VW-697 tracks the fix).
+apply there. Its provenance patterns accept the same hyphen and underscore
+separators, mixed or repeated, for the private repository's name and the
+named-phase keyword.
 
 The first two read this repository, so an edit to this repository can satisfy
 them: a reworded comment looks like legitimate content to a content guard, and

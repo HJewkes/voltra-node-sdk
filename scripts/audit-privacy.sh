@@ -146,12 +146,12 @@ fi
 echo "3. Checking for paths into the private repo"
 SANCTIONED='voltra-private/build\.ts'
 report "No path into the private repo beyond its build entry point" \
-  'voltra-private/[A-Za-z0-9_.-]+' "${RULE_TEXT[@]}"
+  'voltra[-_]+private/[A-Za-z0-9_.-]+' "${RULE_TEXT[@]}"
 SANCTIONED='__no_sanctioned_form__'
 
 echo "4. Checking for capture, research and derivation references"
 report "No capture, research or derivation references" \
-  '(captures?/(sessions|frames)|research/[A-Za-z0-9_.-]+\.(md|json)|validation-phase|decompil|reverse.engineer)' \
+  '(captures?/(sessions|frames)|research/[A-Za-z0-9_.-]+\.(md|json)|validation[-_]+phase|decompil|reverse.engineer)' \
   "${RULE_TEXT[@]}"
 
 # A long hex run inside a .ts file is a value, and values ship here. The same
