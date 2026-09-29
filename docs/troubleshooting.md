@@ -108,7 +108,7 @@ await adapter.connect(deviceId, { immediateWrite: Auth.DEVICE_ID });
 
 | Field | Range | Notes |
 |-------|-------|-------|
-| `position` | 0-600 | Raw encoder value, not normalized |
+| `position` | mm | Cable extension, 0 at rest; a full pull runs roughly 850 to 1300 mm depending on setup |
 | `velocity` | varies | Raw value, sign indicates direction |
 | `force` | signed int16 | Negative during eccentric phase |
 | `phase` | 0-3 | See `MovementPhase` enum |
@@ -116,7 +116,8 @@ await adapter.connect(deviceId, { immediateWrite: Auth.DEVICE_ID });
 The SDK intentionally exposes raw values. Normalize them for your use case:
 
 ```typescript
-const normalizedPosition = frame.position / 600;  // 0-1 range
+const POSITION_RANGE_MM = 1300;  // choose a range that covers your setup
+const normalizedPosition = Math.min(frame.position / POSITION_RANGE_MM, 1);  // 0-1 range
 ```
 
 ### Frames arriving out of order
