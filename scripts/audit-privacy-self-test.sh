@@ -44,23 +44,28 @@ trap 'cleanup; rm -rf "$SANDBOX"' EXIT
 failures=0
 PATH_LABEL="No path into the private repo beyond its build entry point"
 NAME_LABEL="No reference to the private repo's name in src/"
-DOCS_LABEL="No reference to the private repo's name in README.md or LICENSE"
+PACK_LABEL="No reference to the private repo's name in the non-dist files npm pack ships"
 PACKAGE_LABEL="No reference to the private repo's name in package.json beyond its build entry point"
 KEYWORD_LABEL="No capture, research or derivation references"
 
-# Prints the audit's output for a one-file repo holding `$2` at path `$1`.
+BASE_PACKAGE='{"name":"sandbox","version":"1.0.0","files":["dist"]}'
+
+# Prints the audit's output for a repo holding `$2` at path `$1`. The repo
+# always has a valid package.json, because check 3c asks npm what it ships;
+# `$3` replaces it when a case needs a different one.
 audit_output() {
   rm -rf "$SANDBOX/repo" && mkdir -p "$SANDBOX/repo/scripts" "$SANDBOX/repo/src"
   cp "$AUDIT_SCRIPT" "$SANDBOX/repo/scripts/audit-privacy.sh"
+  printf '%s\n' "${3:-$BASE_PACKAGE}" > "$SANDBOX/repo/package.json"
   printf '%s\n' "$2" > "$SANDBOX/repo/$1"
   (cd "$SANDBOX/repo" && git init -q && git add -A && bash scripts/audit-privacy.sh 2>&1)
 }
 
 # `caught` means the named check FAILED, not that the audit exited nonzero.
 expect_caught() {
-  local label="$1" check="$2" path="$3" line="$4"
+  local label="$1" check="$2" path="$3" line="$4" package="${5:-}"
   local out
-  out="$(audit_output "$path" "$line")"
+  out="$(audit_output "$path" "$line" "$package")"
   if ! printf '%s\n' "$out" | grep -qF -- "FAIL  $check"; then
     echo "FAIL  $label: check \"$check\" did not fail" >&2
     failures=$((failures + 1))
@@ -72,7 +77,7 @@ expect_caught() {
 expect_pass() {
   local label="$1" line="$2" path="${3:-notes.md}"
   local out
-  out="$(audit_output "$path" "$line")"
+  out="$(audit_output "$path" "$line" "")"
   if printf '%s\n' "$out" | grep -q -- "FAIL  "; then
     echo "FAIL  $label: expected pass, got a failure" >&2
     failures=$((failures + 1))
@@ -104,13 +109,23 @@ expect_caught "engineer keyword, mixed separators" "$KEYWORD_LABEL" notes.md "${
 expect_pass "near miss, other words" "read ${repo}_public/notes and the ${phase}_step list"
 expect_pass "bare repo name outside src" "clone ${repo}-private next to this repo"
 
-# VW-701: the files npm pack ships outside dist. The sanctioned build path is
-# the one form package.json may carry.
-expect_caught "repo name in README.md" "$DOCS_LABEL" README.md "clone ${repo}-private first"
-expect_caught "repo name in LICENSE" "$DOCS_LABEL" LICENSE "see ${repo}_private"
-expect_caught "repo name in package.json" "$PACKAGE_LABEL" package.json "  \"homepage\": \"https://example.test/${repo}-private\","
-expect_caught "repo name, upper case, in package.json" "$PACKAGE_LABEL" package.json "  \"name\": \"$(printf %s "$repo" | tr a-z A-Z)-PRIVATE\","
-expect_caught "sanctioned path named again in README.md" "$DOCS_LABEL" README.md "run ../${repo}-private/build.ts"
-expect_pass "only the sanctioned path in package.json" "  \"generate\": \"npx tsx ../${repo}-private/build.ts\"," package.json
+# VW-701, VW-702: the files npm pack ships outside dist. The sanctioned build
+# path is the one form package.json may carry, and only in the script that runs it.
+pkg_json() { printf '{"name":"sandbox","version":"1.0.0","files":["dist"],%s}' "$1"; }
+sanctioned="../${repo}-private/build.ts"
+expect_caught "repo name in README.md" "$PACK_LABEL" README.md "clone ${repo}-private first"
+expect_caught "repo name in LICENSE" "$PACK_LABEL" LICENSE "see ${repo}_private"
+expect_caught "repo name in package.json" "$PACKAGE_LABEL" package.json "$(pkg_json "\"homepage\":\"https://example.test/${repo}-private\"")"
+expect_caught "repo name, upper case, in package.json" "$PACKAGE_LABEL" package.json "$(pkg_json "\"author\":\"$(printf %s "$repo" | tr a-z A-Z)-PRIVATE\"")"
+expect_caught "sanctioned path named again in README.md" "$PACK_LABEL" README.md "run $sanctioned"
+expect_caught "sanctioned path in package.json description" "$PACKAGE_LABEL" package.json "$(pkg_json "\"description\":\"run $sanctioned\"")"
+expect_caught "sanctioned path in package.json repository" "$PACKAGE_LABEL" package.json "$(pkg_json "\"repository\":{\"type\":\"git\",\"url\":\"$sanctioned\"}")"
+expect_caught "sanctioned path in another script" "$PACKAGE_LABEL" package.json "$(pkg_json "\"scripts\":{\"build\":\"npx tsx $sanctioned\"}")"
+expect_caught "repo name beside the sanctioned path in its own script" "$PACKAGE_LABEL" package.json "$(pkg_json "\"scripts\":{\"generate:protocol\":\"npx tsx $sanctioned ${repo}-private\"}")"
+expect_caught "repo name in a file added to package.json files" "$PACK_LABEL" CHANGELOG.md "notes from ${repo}-private" \
+  '{"name":"sandbox","version":"1.0.0","files":["dist","CHANGELOG.md"]}'
+expect_pass "repo name in an unpacked file" "clone ${repo}-private first" CHANGELOG.md
+expect_pass "only the sanctioned path in its script" "" README.md
+expect_pass "sanctioned path in generate:protocol" "$(pkg_json "\"scripts\":{\"generate:protocol\":\"npx tsx $sanctioned\"}")" package.json
 
 [ "$failures" -eq 0 ] || exit 1

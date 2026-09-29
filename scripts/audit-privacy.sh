@@ -177,16 +177,60 @@ else
   pass "No reference to the private repo's name in src/"
 fi
 
-# `npm pack` publishes dist, LICENSE, README.md and package.json. The src/ check
-# does not see the last three, so they are read here. package.json alone may
-# name the build entry point, because the regeneration script has to.
+# `npm pack` publishes dist plus whatever else package.json `files` and the
+# npm defaults select. The src/ check does not see those, so the list is asked
+# of npm itself and every non-dist file is read: adding a file to `files` puts
+# it under audit with no edit here. Offline, and no lifecycle scripts run.
 echo "3c. Checking for the private repo's name in the non-dist files npm pack ships"
-report "No reference to the private repo's name in README.md or LICENSE" \
-  "$BARE_NAME" 'README.md' 'LICENSE'
-SANCTIONED='voltra-private/build\.ts'
-report "No reference to the private repo's name in package.json beyond its build entry point" \
-  "$BARE_NAME(/build\\.ts)?" 'package.json'
-SANCTIONED='__no_sanctioned_form__'
+PACK_LABEL="No reference to the private repo's name in the non-dist files npm pack ships"
+PACKAGE_LABEL="No reference to the private repo's name in package.json beyond its build entry point"
+pack_json="$(npm pack --dry-run --json --ignore-scripts --offline 2>/dev/null)"
+pack_status=$?
+packed="$(printf '%s' "$pack_json" | node -e '
+const out = JSON.parse(require("fs").readFileSync(0, "utf8"));
+for (const f of out[0].files) if (!f.path.startsWith("dist/") && f.path !== "package.json") console.log(f.path);
+' 2>/dev/null)"
+list_status=$?
+if [ "$pack_status" -ne 0 ] || [ "$list_status" -ne 0 ]; then
+  fail "$PACK_LABEL (npm pack output could not be read)"
+else
+  packed_hits="$(printf '%s\n' "$packed" | while IFS= read -r file; do
+    [ -f "$file" ] || continue
+    grep -anoiE --binary-files=text -- "$BARE_NAME" "$file" | sed "s|^|$file:|"
+  done)"
+  if [ -n "$packed_hits" ]; then
+    fail "$PACK_LABEL"
+    printf '%s\n' "$packed_hits" | sed 's/:[^:]*$//' | sed 's/^/        /'
+  else
+    pass "$PACK_LABEL"
+  fi
+fi
+
+# The sanctioned build path is allowed in exactly one package.json field, the
+# script that runs it. Any other field naming the repo, or carrying the path,
+# fails and is reported by field name, never by content.
+SANCTIONED_FIELD='scripts.generate:protocol'
+package_hits="$(BARE_NAME="$BARE_NAME" SANCTIONED_FIELD="$SANCTIONED_FIELD" node -e '
+const bare = new RegExp(process.env.BARE_NAME, "i");
+const walk = (value, path) => {
+  if (value && typeof value === "object") {
+    return Object.entries(value).flatMap(([k, v]) => walk(v, path ? path + "." + k : k));
+  }
+  const text = path + "\n" + String(value);
+  const rest = path === process.env.SANCTIONED_FIELD ? text.split("voltra-private/build.ts").join("") : text;
+  return bare.test(rest) ? [path] : [];
+};
+const pkg = JSON.parse(require("fs").readFileSync("package.json", "utf8"));
+console.log(walk(pkg, "").join("\n"));
+' 2>&1)"
+if [ "$?" -ne 0 ]; then
+  fail "$PACKAGE_LABEL (package.json could not be read)"
+elif [ -n "$package_hits" ]; then
+  fail "$PACKAGE_LABEL"
+  printf '%s\n' "$package_hits" | sed 's/^/        package.json field: /'
+else
+  pass "$PACKAGE_LABEL"
+fi
 
 echo "4. Checking for capture, research and derivation references"
 report "No capture, research or derivation references" \
