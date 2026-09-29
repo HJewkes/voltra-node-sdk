@@ -8,6 +8,7 @@
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { Linter } from 'eslint';
+import tseslint from 'typescript-eslint';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, relative } from 'node:path';
 // @ts-expect-error — the rule ships as plain ESM so `eslint.config.mjs` can load it.
@@ -104,6 +105,105 @@ describe('the rule visitors', () => {
 
   it('leaves an executable protocol value alone', () => {
     expect(run('const LEGAL = 0xa9c700041b2c3d;')).toEqual([]);
+  });
+});
+
+// VW-224. Every flagged token below is assembled at runtime, so no fixture in
+// this block spells one.
+describe('a value split across a concatenation or a separator (VW-224)', () => {
+  const CMD = ['c', 'm', 'd'].join('');
+  const CODE = ['1', '0'].join('');
+  const REPO = ['vol', 'tra'].join('');
+  const PRIVATE = ['pri', 'vate'].join('');
+
+  const run = (code: string) =>
+    new Linter()
+      .verify(
+        code,
+        [
+          {
+            files: ['**/*.ts'],
+            languageOptions: { parser: tseslint.parser },
+            plugins: { voltras: guard.default as never },
+            rules: { 'voltras/no-private-provenance': 'error' },
+          },
+        ],
+        'probe.ts'
+      )
+      .map((m) => m.messageId);
+
+  it.each([
+    ['a command code split after its name', `const v = '${CMD}' + '${CODE}';`],
+    ['a command code split out of a template', `const v = \`${CMD}\` + '${CODE}';`],
+    ['a private path wrapped across three pieces', `const v = 'see ${REPO}' + '-' + '${PRIVATE}';`],
+    ['a piece wrapped in `as`', `const v = ('${CMD}' as string) + '${CODE}';`],
+    ['a piece wrapped in `satisfies`', `const v = ('${CMD}' satisfies string) + '${CODE}';`],
+    ['a nested chain', `const v = 'x ' + ('${CMD}' + '${CODE}');`],
+    ['a run of literals behind an identifier', `const v = label + ' ${CMD}' + '${CODE}';`],
+    [
+      'two split values in one chain',
+      `const v = '${CMD}' + '${CODE}' + ' ${REPO}-' + '${PRIVATE}';`,
+    ],
+    ['a piece that is a hit, with more after the join', `const v = '${CMD}${CODE}' + 'ff';`],
+    ['an escaped piece beside a harmless join', `const v = '${REPO}\\x2d${PRIVATE}' + ' notes';`],
+    ['an escaped template', `const v = \`${REPO}\\x2d${PRIVATE}\`;`],
+    ['a literal split by a line continuation', `const v = '${REPO}-\\\n${PRIVATE}';`],
+  ])('reports %s once', (_label, code) => {
+    expect(run(code)).toHaveLength(1);
+  });
+
+  it('reports a chain at its start', () => {
+    const code = `const v = '${CMD}' + '${CODE}';`;
+    const [message] = new Linter().verify(code, [
+      {
+        plugins: { voltras: guard.default as never },
+        rules: { 'voltras/no-private-provenance': 'error' },
+      },
+    ]);
+    expect(message.column).toBe(code.indexOf(`'${CMD}'`) + 1);
+  });
+
+  it.each([
+    ['a snake_case name built in pieces', "const v = 'max_' + 'force_' + 'lbs';"],
+    ['ordinary words', "const v = 'Set ' + 'complete' + ', rest ' + 'now';"],
+    ['a word and a digit', "const v = 'add' + '1' + 'feed' + '2';"],
+    ['a name joined to an identifier', `const v = '${CMD}' + digits;`],
+    ['a name joined to a call', `const v = '${CMD}' + pad(value);`],
+    ['numeric addition', 'const v = 1 + 2 + 3;'],
+    ['snake_case identifiers', 'const max_force_lbs = 1; const cmd_ack_state = 2;'],
+  ])('lets %s through', (_label, code) => {
+    expect(run(code)).toEqual([]);
+  });
+
+  it.each([
+    ['a provenance keyword spelled with underscores', `${REPO}_${PRIVATE}`],
+    ['one spelled with doubled underscores', `${REPO}__${PRIVATE}`],
+    ['a named phase spelled with an underscore', ['validation', 'phase'].join('_')],
+  ])('flags %s', (_label, text) => {
+    expect(findProvenance(text).length).toBeGreaterThan(0);
+  });
+
+  it.each([
+    `${CMD.toUpperCase()}_0X_${CODE}`,
+    `${CMD.toUpperCase()}__0X__${CODE}`,
+    `${CMD}_id_${CODE}`,
+    `${CMD}0x_${CODE}`,
+  ])('flags the identifier %s, with the prefix as its own segment', (name) => {
+    expect(isCommandCodeIdentifier(name)).toBe(true);
+  });
+
+  // These still slip; CONTRIBUTING.md lists them. A test that starts failing
+  // here means the boundary text needs updating, not that something broke.
+  it.each([
+    ['a split around a variable', `const v = '${CMD}' + x + '${CODE}';`],
+    ['Array join', `const v = ['${CMD}', '${CODE}'].join('');`],
+    ['String concat', `const v = '${CMD}'.concat('${CODE}');`],
+    ['+=', `let v = '${CMD}'; v += '${CODE}';`],
+    ['a tagged template', `const v = String.raw\`${CMD}\` + '${CODE}';`],
+    ['a number literal in the chain', `const v = '${CMD}_' + 0x${CODE};`],
+    ['a template holding a literal', `const v = \`${CMD}\${'${CODE}'}\`;`],
+  ])('documents that %s is not caught', (_label, code) => {
+    expect(run(code)).toEqual([]);
   });
 });
 

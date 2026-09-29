@@ -30,28 +30,32 @@
 // They are covered instead by `scripts/audit-privacy.sh`, which reads them as
 // text and excludes only the sanctioned regeneration header.
 //
-// WHAT THIS RULE CANNOT SEE, named rather than left to be discovered:
+// WHAT THIS RULE DOES NOT CATCH, named rather than left to be discovered.
+// A `+` chain of adjacent string literals (and templates with no `${}`) IS
+// joined and scanned as one string (VW-224); everything below is not:
 //
-//   - A value SPLIT ACROSS A CONCATENATION. `'cmd' + '0x10'` is two string
-//     literals to the parser and neither half is a finding alone. Constant
-//     folding would close it and is not worth the machinery: deliberate
-//     evasion is not the threat model, because anyone evading would simply not
-//     write the value. What does happen is a long string wrapped to fit the
-//     line width, so keep a value on one line where the rule can see it.
+//   - A VALUE BUILT FROM VARIABLES OR CALLS. A literal split around an
+//     identifier, `[a, b].join('')`, `'a'.concat('b')`, `+=` and
+//     `String.fromCharCode(...)` are never evaluated.
+//   - A CHAIN PIECE THAT IS NOT A PLAIN STRING: a number literal, a tagged
+//     template, or a template holding a literal inside `${}`.
 //   - PROVENANCE PHRASED ORGANICALLY. A sentence saying where a number came
 //     from, carrying no path and no keyword, matches nothing here. That is out
 //     of scope by ruling rather than by oversight: this rule catches encoded
 //     values and named references, and prose is a review-checklist item. See
 //     CONTRIBUTING.md.
+//   - DELIBERATE EVASION. Anyone set on it can spell a value in a shape this
+//     rule does not know. The threat model is accidental disclosure, such as a
+//     long string wrapped to fit the line width.
 //
-// Naming both is the point. A guard that is silently narrower than it looks is
+// Naming these is the point. A guard that is silently narrower than it looks is
 // the failure this campaign is named after (VW-220).
 //
 // Messages name the shape and never the token. A CI log is as public as the
 // source it refused.
 
 const PROVENANCE =
-  /voltra-private|\bcaptures?\/|\bresearch\/|decompil|reverse[- ]engineer|validation-phase/gi;
+  /voltra[-_]+private|\bcaptures?\/|\bresearch\/|decompil|reverse[-_ ]+engineer|validation[-_]+phase/gi;
 
 /**
  * The one sanctioned line, excluded by SHAPE and only on the line it occupies.
@@ -90,7 +94,9 @@ const REGEN_HEADER = /\/\/ @generated [^\n]*Regenerate:[^\n]*/g;
  * out: both end in runs made only of hex letters, and neither is a number.
  */
 const SEGMENT_BOUNDARY = /[^A-Za-z0-9]+|(?<=[a-z])(?=[A-Z])|(?<=[A-Z0-9])(?=[A-Z][a-z])/;
-const CMD_SEGMENT = /^cmd(?:id)?$/i;
+const CMD_SEGMENT = /^cmd(?:id)?(?:0x)?$/i;
+/** A prefix written as its own segment, as in `CMD_0X_10` or `cmd_id_10`. */
+const CODE_PREFIX_SEGMENT = /^(?:id|0x|id0x)$/i;
 const CMD_WITH_CODE = /^cmd(?:id)?(?:0x)?[0-9a-f]{2,}$/i;
 const CODE_SEGMENT = /^(?:id)?(?:0x)?[0-9a-f]{2,}$/i;
 const HAS_DIGIT = /\d/;
@@ -144,9 +150,70 @@ export function isCommandCodeIdentifier(name) {
   return segments.some((segment, i) => {
     if (CMD_WITH_CODE.test(segment) && HAS_DIGIT.test(segment)) return true;
     if (!CMD_SEGMENT.test(segment)) return false;
-    const next = segments[i + 1];
+    let j = i + 1;
+    while (j < segments.length && CODE_PREFIX_SEGMENT.test(segments[j])) j++;
+    const next = segments[j];
     return next !== undefined && CODE_SEGMENT.test(next) && HAS_DIGIT.test(next);
   });
+}
+
+const TYPE_WRAPPERS = new Set(['TSAsExpression', 'TSSatisfiesExpression', 'TSNonNullExpression']);
+
+/** A literal's string value, or `null` for anything that would need evaluating. */
+function literalText(node) {
+  if (TYPE_WRAPPERS.has(node.type)) return literalText(node.expression);
+  if (node.type === 'Literal' && typeof node.value === 'string') return node.value;
+  if (node.type === 'TemplateLiteral' && node.expressions.length === 0) {
+    return node.quasis[0].value.cooked ?? null;
+  }
+  return null;
+}
+
+function isConcatenation(node) {
+  return node?.type === 'BinaryExpression' && node.operator === '+';
+}
+
+/** The leaves of a `+` chain, left to right. */
+function chainOperands(node) {
+  if (!isConcatenation(node)) return [node];
+  return [...chainOperands(node.left), ...chainOperands(node.right)];
+}
+
+/** Runs of adjacent literal pieces, each as its pieces' texts, in source order. */
+function literalRuns(operands) {
+  const runs = [[]];
+  for (const operand of operands) {
+    const text = literalText(operand);
+    if (text === null) runs.push([]);
+    else runs.at(-1).push(text);
+  }
+  return runs.filter((run) => run.length > 1);
+}
+
+/**
+ * The message for a shape that only exists once `pieces` are joined, or
+ * `undefined`. A shape inside one piece is reported by the other visitors.
+ */
+export function findAcrossJoin(pieces) {
+  const joined = pieces.join('');
+  const joins = [];
+  let offset = 0;
+  for (const piece of pieces.slice(0, -1)) joins.push((offset += piece.length));
+  const crossesJoin = ({ index, length }) =>
+    joins.some((join) => join > index && join < index + length);
+  if (findProvenance(joined).some(crossesJoin)) return 'provenance';
+  if (isCommandCodeIdentifier(joined) && !pieces.some(isCommandCodeIdentifier)) {
+    return 'identifier';
+  }
+  return undefined;
+}
+
+/**
+ * Whether escapes or a line continuation hide provenance from the whole-text
+ * scan, which reads source as written rather than as the string it denotes.
+ */
+export function isProvenanceHiddenByEscapes(raw, cooked) {
+  return findProvenance(cooked).length > findProvenance(raw).length;
 }
 
 const MESSAGES = {
@@ -196,17 +263,31 @@ const rule = {
           report(node.range[0], node.name.length, 'identifier');
       },
       Literal(node) {
-        if (typeof node.value === 'string' && isCommandCodeIdentifier(node.value)) {
+        if (typeof node.value !== 'string') return;
+        if (isCommandCodeIdentifier(node.value)) {
           report(node.range[0], node.raw.length, 'identifier');
+        }
+        if (isProvenanceHiddenByEscapes(node.raw, node.value)) {
+          report(node.range[0], node.raw.length, 'provenance');
         }
       },
       // A template literal is a string with different quotes. Without this the
       // two guards in this campaign disagreed on the same shape, and the one
       // that missed it guarded the repo that is actually published.
       TemplateElement(node) {
-        if (isCommandCodeIdentifier(node.value.raw)) {
-          report(node.range[0], node.value.raw.length, 'identifier');
+        const { raw, cooked } = node.value;
+        if (isCommandCodeIdentifier(cooked ?? raw)) {
+          report(node.range[0], raw.length, 'identifier');
         }
+        if (cooked != null && isProvenanceHiddenByEscapes(raw, cooked)) {
+          report(node.range[0], raw.length, 'provenance');
+        }
+      },
+      // Reported once per chain, at its start, and never for identifiers or calls.
+      BinaryExpression(node) {
+        if (node.operator !== '+' || isConcatenation(node.parent)) return;
+        const messageId = literalRuns(chainOperands(node)).map(findAcrossJoin).find(Boolean);
+        if (messageId) context.report({ node, messageId });
       },
     };
   },

@@ -69,6 +69,25 @@ Protocol-derived findings belong in the private repository's research tree.
 All three name the file and the shape and never the token. A build log is as
 public as the source it refused.
 
+**What the ESLint rule does not catch.** It joins a `+` chain of adjacent
+string literals (and templates with no `${}`) before scanning, so a keyword or
+a command code wrapped across `' + '` is caught, including a piece wrapped in
+`as` or `satisfies`. It decodes escapes and line continuations inside a
+literal. It does not catch:
+
+- a value built from variables or calls: a literal split around an identifier,
+  `[a, b].join('')`, `'a'.concat('b')`, `+=`, `String.fromCharCode(...)`;
+  nothing is evaluated;
+- a chain piece that is not a plain string: a number literal, a tagged
+  template, or a template holding a literal inside `${}`;
+- prose provenance: a sentence saying where a value came from, without a path
+  or a keyword (see "What no rule covers: prose" below);
+- deliberate evasion: anyone set on it can spell a value in a shape the rule
+  does not know. The rule is for accidents, not adversaries.
+
+`scripts/audit-privacy.sh` reads text, not a parse tree, so the join does not
+apply there.
+
 The first two read this repository, so an edit to this repository can satisfy
 them: a reworded comment looks like legitimate content to a content guard, and
 generated output has been edited to make the audit pass. The third exists for
