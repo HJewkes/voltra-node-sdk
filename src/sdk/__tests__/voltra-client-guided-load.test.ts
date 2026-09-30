@@ -2,7 +2,7 @@
  * Tests for the guided-load (direct-load, Phase 1g) flow on VoltraClient.
  *
  * Covers:
- *   - `startGuidedLoad` writes the BP_BASE_WEIGHT setter, the 0xAA 0x12
+ *   - `startGuidedLoad` writes the base-weight setter, the 0xAA 0x12
  *     trigger, and arms a 500ms polling loop for 18 seconds.
  *   - `onGuidedLoadState` fires synthesized 'armed' / 'timeout' / 'exited'
  *     transitions plus decoded transitions ('countdown' / 'active') driven
@@ -148,7 +148,7 @@ describe('VoltraClient — startGuidedLoad', () => {
     );
   });
 
-  it('writes BP_BASE_WEIGHT (setWeight) followed by the 0xAA 0x12 trigger', async () => {
+  it('writes the base weight (setWeight) followed by the 0xAA 0x12 trigger', async () => {
     await client.startGuidedLoad({ targetWeightLbs: 50 });
 
     // The first write should be a setWeight command (delegating to existing

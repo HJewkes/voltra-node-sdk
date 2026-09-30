@@ -1,7 +1,7 @@
 /**
  * Wire-byte tests for the rowing-frame builders (Bug 22).
  *
- * Verifies the EP_SCR_SWITCH and vendor-state-refresh frame layouts.
+ * Verifies the screen-switch and vendor-state-refresh frame layouts.
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -9,17 +9,13 @@ import {
   buildRowScrSwitchFrame,
   buildVendorStateRefreshFrame,
 } from '../rowing-frames';
-import protocolData from '../data/protocol-data.generated';
-import type { ProtocolData } from '../types';
-
-const protocol = protocolData as ProtocolData;
 
 describe('rowing-frames', () => {
   describe('ROW_START_ACTION_CODES', () => {
-    it('matches the protocol data action-code table, one code per preset', () => {
+    // The values themselves are pinned in rowing-frame-equivalence.test.ts.
+    it('has one distinct code per preset', () => {
       const codes = Object.values(ROW_START_ACTION_CODES);
 
-      expect(ROW_START_ACTION_CODES).toEqual(protocol.commands.rowing.actionCodes);
       expect(codes).toHaveLength(7);
       expect(new Set(codes).size).toBe(codes.length);
     });

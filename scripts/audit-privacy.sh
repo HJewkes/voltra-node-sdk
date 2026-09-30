@@ -225,12 +225,13 @@ report "No capture, research or derivation references" \
   '(captures?/(sessions|frames)|research/[A-Za-z0-9_.-]+\.(md|json)|validation[-_]+phase|decompil|reverse[-_ ]+engineer)' \
   "${RULE_TEXT[@]}"
 
-# The workspace this SDK is developed from keeps its audits, handoffs and
-# agent memory outside the repo. A path or note name from there is a citation
-# the reader cannot open, the same as a path into the private repo.
+# Notes kept outside the repo (audits, handoffs, agent memory) are citations
+# the reader cannot open, the same as a path into the private repo. Matched by
+# shape, never by directory: a date-stamped markdown file, or a memory note
+# name (type prefix plus a snake_case slug of two or more words).
 echo "4b. Checking for citations of workspace notes and agent memory"
 report "No citation of workspace notes or agent memory" \
-  '(sources/(archive|architecture|audits|integration-plans|notes|runbooks)/|FINDING-[0-9]{4}-|(^|[^A-Za-z0-9_])(feedback|project|reference)_[a-z0-9]+_[a-z0-9_]+)' \
+  '([A-Za-z0-9_.-]*20[0-9]{2}-[0-9]{2}-[0-9]{2}[A-Za-z0-9_.-]*\.md|(^|[^A-Za-z0-9_])(feedback|project|reference)_[a-z0-9]+_[a-z0-9_]+)' \
   "${RULE_TEXT[@]}"
 
 # A long hex run inside a .ts file is a value, and values ship here. The same

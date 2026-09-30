@@ -3,7 +3,7 @@
  * selected fitness mode.
  *
  * `prepareRecording()` used to write `Workout.PREPARE` before `Workout.SETUP`.
- * PREPARE is a single-param write of `FITNESS_WORKOUT_STATE = WeightTraining`
+ * PREPARE is a single-param training-mode write of WeightTraining
  * (functionally `setMode(WeightTraining)`), so it silently reset a
  * previously-selected Damper/Isokinetic mode back to WeightTraining right
  * before GO. These tests pin the corrected sequence: SETUP (+ GO) only, no
@@ -118,7 +118,7 @@ describe('VoltraClient — recording start no longer clobbers mode (SDK-01.13)',
 
     await flushAndAwait(client.startRecording());
 
-    // No PREPARE (= FITNESS_WORKOUT_STATE=WeightTraining) is written after the
+    // No PREPARE (a WeightTraining mode write) is written after the
     // Damper mode-select, so the device keeps the Damper mode into GO.
     expect(findWriteIndex(adapter, PREPARE)).toBe(-1);
     const goIdx = findWriteIndex(adapter, GO);

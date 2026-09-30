@@ -4,52 +4,48 @@
  * The protocol data carries a structured catalog in
  * `protocol.telemetry.parameterCatalog`. This test pins:
  *   - the catalog is populated and non-empty (no regression in codegen)
- *   - every wireLE the decoder's `KNOWN_PARAM_WIDTHS` lookup
- *     references resolves to a catalog entry (so future migrations have a
- *     1:1 source of truth)
- *   - the catalog and the hand-authored width table AGREE for every
- *     paramID *except* the two known Phase 2.7 width disagreements
- *     (`b04f` FITNESS_WORKOUT_STATE, `b053` FITNESS_INVERSE_CHAIN). Those
- *     two are explicitly excluded and tracked separately.
+ *   - every paramID below resolves to a catalog entry
+ *   - the catalog and the hand-written width expectations AGREE for every
+ *     paramID *except* the two known Phase 2.7 width disagreements (the
+ *     training-mode and inverse-chains registers), which are pinned apart.
  */
 
 import { describe, expect, it } from 'vitest';
 
-import { ParameterCatalog } from '../constants';
+import { ParamIdHex, ParameterCatalog } from '../constants';
 
 /**
- * paramID widths the SDK decoder treats authoritatively today, copied from
- * `telemetry-decoder.ts:KNOWN_PARAM_WIDTHS`. Kept here so this test
- * fails loudly if either side mutates without the other being updated.
+ * Value widths written out by hand, independent of the catalog, so this test
+ * fails loudly if the generated widths move.
  */
 const SDK_HAND_AUTHORED_WIDTHS: Readonly<Record<string, number>> = {
-  '863e': 2, // BP_BASE_WEIGHT
-  '873e': 2, // BP_CHAINS_WEIGHT
-  '883e': 2, // BP_ECCENTRIC_WEIGHT (signed)
-  '893e': 2, // BP_SET_FITNESS_MODE
-  '823e': 2, // BP_RUNTIME_POSITION_CM
-  '6a50': 2, // MC_DEFAULT_OFFLEN_CM
-  '6253': 2, // RESISTANCE_BAND_MAX_FORCE
-  b753: 2, // RESISTANCE_BAND_LEN
-  '3154': 2, // ISOMETRIC_MAX_FORCE
-  d253: 2, // ISOMETRIC_MAX_DURATION
-  '6153': 1, // RESISTANCE_BAND_ALGORITHM
-  b653: 1, // RESISTANCE_BAND_LEN_BY_ROM
-  e352: 1, // EP_RESISTANCE_BAND_INVERSE
-  '0651': 1, // FITNESS_ASSIST_MODE
-  b053: 1, // FITNESS_INVERSE_CHAIN — Phase 2.7 disagreement
-  c653: 1, // WEIGHT_TRAINING_EXTRA_MODE
-  b04f: 1, // FITNESS_WORKOUT_STATE — Phase 2.7 disagreement
-  '0351': 1, // FITNESS_DAMPER_RATIO_IDX
+  [ParamIdHex.BASE_WEIGHT]: 2,
+  [ParamIdHex.CHAINS]: 2,
+  [ParamIdHex.ECCENTRIC]: 2,
+  [ParamIdHex.BP_SET_FITNESS_MODE]: 2,
+  '823e': 2,
+  '6a50': 2,
+  '6253': 2,
+  b753: 2,
+  '3154': 2,
+  d253: 2,
+  '6153': 1,
+  b653: 1,
+  e352: 1,
+  '0651': 1,
+  [ParamIdHex.INVERSE_CHAINS]: 1,
+  c653: 1,
+  [ParamIdHex.TRAINING_MODE]: 1,
+  [ParamIdHex.DAMPER_LEVEL!]: 1,
 };
 
 /**
  * paramIDs whose catalog width disagrees with the SDK decoder. Resolution
  * deferred to Phase 2.7 pending on-device validation.
  */
-const PHASE_2_7_WIDTH_DISAGREEMENTS = new Set([
-  'b04f', // FITNESS_WORKOUT_STATE
-  'b053', // FITNESS_INVERSE_CHAIN
+const PHASE_2_7_WIDTH_DISAGREEMENTS = new Set<string>([
+  ParamIdHex.TRAINING_MODE,
+  ParamIdHex.INVERSE_CHAINS,
 ]);
 
 describe('ParameterCatalog (Phase 2.5)', () => {
@@ -74,10 +70,11 @@ describe('ParameterCatalog (Phase 2.5)', () => {
   it('Phase 2.7 width disagreements are preserved as catalog uint16 / SDK uint8', () => {
     // Sanity-pin the disagreement so resolution work in Phase 2.7 knows
     // exactly what it's reconciling.
-    expect(ParameterCatalog['b04f']?.valueWidth).toBe(2);
-    expect(SDK_HAND_AUTHORED_WIDTHS['b04f']).toBe(1);
-    expect(ParameterCatalog['b053']?.valueWidth).toBe(2);
-    expect(SDK_HAND_AUTHORED_WIDTHS['b053']).toBe(1);
+    expect(PHASE_2_7_WIDTH_DISAGREEMENTS.size).toBe(2);
+    for (const wireLE of PHASE_2_7_WIDTH_DISAGREEMENTS) {
+      expect(ParameterCatalog[wireLE]?.valueWidth).toBe(2);
+      expect(SDK_HAND_AUTHORED_WIDTHS[wireLE]).toBe(1);
+    }
   });
 
   it('every entry carries paramId / name / wireBE / wireLE / valueType / valueWidth metadata', () => {
@@ -91,12 +88,11 @@ describe('ParameterCatalog (Phase 2.5)', () => {
     }
   });
 
-  it('BP_ECCENTRIC_WEIGHT (0x883e) is declared int16 (signed) in the catalog', () => {
+  it('declares the eccentric register int16 (signed) in the catalog', () => {
     // Pin the signedness contract so future decoder migration knows it
     // must apply readInt16LE, not readUint16LE.
-    const entry = ParameterCatalog['883e'];
+    const entry = ParameterCatalog[ParamIdHex.ECCENTRIC];
     expect(entry).toBeDefined();
-    expect(entry.name).toBe('BP_ECCENTRIC_WEIGHT');
     expect(entry.valueType).toBe('int16');
   });
 });

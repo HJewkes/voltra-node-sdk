@@ -5,7 +5,7 @@
  *   - `setMode(TrainingMode.Rowing)` auto-routes to enterRowMode + startRow
  *     and NEVER writes the motor-engage value
  *   - `enterRowMode()` writes the existing rowing workout-state command
- *   - `startRow()` writes EP_SCR_SWITCH + vendor refresh and then schedules
+ *   - `startRow()` writes the screen switch + vendor refresh and then schedules
  *     reasserts at +750 / +1750 / +3000 ms
  *   - `startRow()` requires `enterRowMode()` first
  *   - reassert ticks are cancelled by `setMode()` to a different mode
@@ -88,7 +88,7 @@ function findWriteContaining(adapter: RecordingAdapter, sequence: number[]): num
   return adapter.writes.findIndex((w) => containsSequence(w, sequence));
 }
 
-/** Find a write carrying the EP_SCR_SWITCH rowing payload for `action`. */
+/** Find a write carrying the screen-switch rowing payload for `action`. */
 function findRowScrSwitchWrite(adapter: RecordingAdapter, action: number): number {
   const { screenSwitchParamField, screenSwitchTrailer } = protocol.commands.rowing;
   return findWriteContaining(adapter, [
@@ -124,10 +124,10 @@ describe('VoltraClient — Rowing two-stage entry (Bug 22)', () => {
   });
 
   describe('setMode(Rowing) auto-route', () => {
-    it('routes through EP_SCR_SWITCH, never via the motor-engage write', async () => {
+    it('routes through the screen switch, never via the motor-engage write', async () => {
       await client.setMode(TrainingMode.Rowing);
 
-      // EP_SCR_SWITCH commit for Just Row MUST appear.
+      // The screen-switch commit for Just Row MUST appear.
       expect(findRowScrSwitchWrite(adapter, ACTION.JustRow)).not.toBe(-1);
 
       // Engaging the motor from the rowing screen is the Bug 22 regression.
@@ -149,7 +149,7 @@ describe('VoltraClient — Rowing two-stage entry (Bug 22)', () => {
       expect(client.isRowingActive).toBe(true);
     });
 
-    it('writes the rowing workout-state frame followed by EP_SCR_SWITCH + vendor refresh', async () => {
+    it('writes the rowing workout-state frame followed by the screen switch + vendor refresh', async () => {
       await client.setMode(TrainingMode.Rowing);
 
       const enterRow = hexToBytes(protocol.commands.modes.rowing);
@@ -197,7 +197,7 @@ describe('VoltraClient — Rowing two-stage entry (Bug 22)', () => {
       await expect(client.startRow()).rejects.toBeInstanceOf(CommandError);
     });
 
-    it('writes EP_SCR_SWITCH with the Just Row action by default', async () => {
+    it('writes the screen switch with the Just Row action by default', async () => {
       await client.enterRowMode();
       adapter.writes.length = 0;
 
@@ -206,7 +206,7 @@ describe('VoltraClient — Rowing two-stage entry (Bug 22)', () => {
       expect(findRowScrSwitchWrite(adapter, ACTION.JustRow)).not.toBe(-1);
     });
 
-    it('writes the vendor state refresh frame after EP_SCR_SWITCH', async () => {
+    it('writes the vendor state refresh frame after the screen switch', async () => {
       await client.enterRowMode();
       adapter.writes.length = 0;
 
@@ -253,7 +253,7 @@ describe('VoltraClient — Rowing two-stage entry (Bug 22)', () => {
       await client.startRow('M500');
       adapter.writes.length = 0;
 
-      // Tick 0 at +750 ms: re-issues EP_SCR_SWITCH + vendor refresh.
+      // Tick 0 at +750 ms: re-issues the screen switch + vendor refresh.
       await vi.advanceTimersByTimeAsync(750);
       expect(findRowScrSwitchWrite(adapter, ACTION.M500)).not.toBe(-1);
       expect(findVendorRefreshWrite(adapter)).not.toBe(-1);

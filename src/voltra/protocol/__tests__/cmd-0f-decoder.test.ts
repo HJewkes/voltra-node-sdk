@@ -143,7 +143,7 @@ describe('decodeBulkParamResponse', () => {
     });
   });
 
-  it('treats BP_ECCENTRIC_WEIGHT (paramId 0x3e88) as a signed int16', () => {
+  it('treats the eccentric register as a signed int16', () => {
     // -50 as int16 LE = 0xCE 0xFF
     const data = buildBulkParamReadFrame([
       { paramIdHex: ParamIdHex.ECCENTRIC, valueBytes: [0xce, 0xff] },

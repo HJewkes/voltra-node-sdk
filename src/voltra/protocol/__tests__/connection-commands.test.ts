@@ -8,7 +8,7 @@ import { describe, it, expect } from 'vitest';
 import { Workout } from '../constants/connection-commands';
 
 describe('Workout.SETUP — multi-paramID read envelope', () => {
-  it('uses cmdID 0x0F (Type-C config envelope), not setter cmdID 0x11', () => {
+  it('uses the read cmdID 0x0F, not setter cmdID 0x11', () => {
     // Byte [10] is the cmd byte for the 19-byte parametric/config envelope.
     expect(Workout.SETUP[10]).toBe(0x0f);
     expect(Workout.SETUP[10]).not.toBe(0x11);
@@ -20,13 +20,13 @@ describe('Workout.SETUP — multi-paramID read envelope', () => {
     expect(Workout.SETUP[12]).toBe(0x00);
   });
 
-  it('queries paramID MC_DEFAULT_OFFLEN_CM (0x506a) at offsets [13..14]', () => {
+  it('queries the first register at offsets [13..14]', () => {
     // Param IDs are little-endian on the wire: 0x506a -> bytes `6a 50`.
     expect(Workout.SETUP[13]).toBe(0x6a);
     expect(Workout.SETUP[14]).toBe(0x50);
   });
 
-  it('queries paramID BP_RUNTIME_POSITION_CM (0x3e82) at offsets [15..16]', () => {
+  it('queries the runtime-position register at offsets [15..16]', () => {
     // Param IDs are little-endian on the wire: 0x3e82 -> bytes `82 3e`.
     expect(Workout.SETUP[15]).toBe(0x82);
     expect(Workout.SETUP[16]).toBe(0x3e);

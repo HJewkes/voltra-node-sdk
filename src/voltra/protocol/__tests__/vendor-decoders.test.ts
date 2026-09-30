@@ -416,8 +416,7 @@ describe('decodeVendorSetSummary — set totals', () => {
 // The peak-force / peak-power offsets are hypothesised, not vendor-confirmed.
 // These fixtures pin them against sets whose set-up conditions are known, so
 // the hypothesis is a standing regression rather than a one-off offline check.
-// Frames are inlined for CI portability (the capture files live in a sibling
-// repo that is not guaranteed to be checked out alongside this one).
+// Frames are inlined so the suite stays self-contained.
 // =============================================================================
 
 /** Weight mode, 20.0 lb target, eleven reps at a steady pace. */

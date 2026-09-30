@@ -41,7 +41,7 @@ describe('buildGuidedLoadTriggerFrame', () => {
     // Bytes 4-5: sender/receiver app->device 0xAA 0x10
     expect(frame[4]).toBe(0xaa);
     expect(frame[5]).toBe(0x10);
-    // Byte 10: inner cmd 0xAA (CMD_VENDOR)
+    // Byte 10: inner vendor cmd 0xAA
     expect(frame[10]).toBe(0xaa);
     // Byte 11: trigger payload 0x12
     expect(frame[11]).toBe(0x12);
@@ -93,13 +93,11 @@ describe('buildGuidedLoadExitFrame', () => {
     expect(frame[16]).toBe(GUIDED_LOAD_MODE_EXIT >> 8);
   });
 
-  it('exposes the mode-register values the protocol data lists', () => {
-    expect(GUIDED_LOAD_MODE_ARMED).toBe(guidedLoad.modes.armed);
-    expect(GUIDED_LOAD_MODE_ACTIVE).toBe(guidedLoad.modes.active);
-    expect(GUIDED_LOAD_MODE_EXIT).toBe(guidedLoad.modes.exit);
-    expect(
-      new Set([GUIDED_LOAD_MODE_ARMED, GUIDED_LOAD_MODE_ACTIVE, GUIDED_LOAD_MODE_EXIT]).size
-    ).toBe(3);
+  // The values themselves are pinned in guided-load-frame-equivalence.test.ts.
+  it('exposes three distinct mode-register values', () => {
+    const modes = [GUIDED_LOAD_MODE_ARMED, GUIDED_LOAD_MODE_ACTIVE, GUIDED_LOAD_MODE_EXIT];
+
+    expect(new Set(modes).size).toBe(3);
   });
 });
 
