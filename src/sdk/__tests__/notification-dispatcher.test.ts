@@ -3,6 +3,7 @@ import { createNotificationHandler, type NotificationCallbacks } from '../notifi
 import { TrainingMode, VendorSchemaVersion } from '../../voltra/protocol/constants';
 import type { TelemetryFrame } from '../../voltra/models/telemetry';
 import type { DeviceSettings, StateDumpEvent } from '../../voltra/protocol/types';
+import { classifyAssistReport } from '../../voltra/protocol/device-state';
 import type { PerRepEvent, SummaryEvent, SetSummaryEvent, InProgressEvent } from '../types';
 import { buildEnvelopedFrame } from '../../voltra/protocol/_factories';
 
@@ -153,16 +154,11 @@ describe('notification-dispatcher', () => {
   });
 
   it('dispatches onStateDump for cmd=0x07 state-dump frames', () => {
-    // Synthesize a state-dump payload mirroring the cmd=0x07 (aa 80 25)
-    // envelope contract documented in StateDumpEvent: trainingMode at
-    // offset 0, fitness-assist toggle at offset 1, weight tenths at offset
-    // 3 (uint16 LE), effective chain force tenths at offset 5, eccentric
-    // percent tenths at offset 7. Raw `assistMode = 8` is the asymmetric
-    // idle sentinel — consumers MUST receive it unmodified so they can
-    // apply the off-when-not-1 rule themselves.
+    // Synthetic event; the dispatcher must hand it to listeners unmodified.
     const event: StateDumpEvent = {
       trainingMode: TrainingMode.WeightTraining,
-      assistMode: 8, // idle; not 0 — see voltra-private A10/A11 research notes
+      assistMode: 0,
+      assist: classifyAssistReport(0),
       weightLbsTenths: 250,
       chainTargetForceTenths: 250,
       eccentricPercentTenths: 0,

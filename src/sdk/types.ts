@@ -183,10 +183,8 @@ export type BatteryUpdateListener = (battery: number) => void;
  * carrying chains-active flag, fitness-assist toggle, and chain target
  * weight).
  *
- * Unlike `SettingsUpdateListener`, the payload preserves the raw
- * `assistMode` byte — consumers should be aware that the assist-mode register
- * has asymmetric-off semantics, so only the "on" code means on and every
- * other value should be treated as off.
+ * Read `event.assist` for whether fitness assist is on; the raw
+ * `assistMode` byte is kept for compatibility.
  */
 export type StateDumpListener = (event: StateDumpEvent) => void;
 

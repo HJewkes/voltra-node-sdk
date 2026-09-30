@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`StateDumpEvent.assist` says whether fitness assist is on** (VW-217).
+  It is `'on'`, `'off'` or `'unknown'`, decoded through the generated
+  protocol data; `'unknown'` means the data does not classify the reported
+  value. The raw `assistMode` field stays. The new `AssistReport` type is
+  exported from the web and React Native entries. Minor, additive.
+
 ### Fixed
 
 - **`MockBLEAdapter` now reports weight and chains writes back** (VW-572).
