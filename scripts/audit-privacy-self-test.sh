@@ -47,6 +47,7 @@ NAME_LABEL="No reference to the private repo's name in src/"
 PACK_LABEL="No reference to the private repo's name in the non-dist files npm pack ships"
 PACKAGE_LABEL="No reference to the private repo's name in package.json beyond its build entry point"
 KEYWORD_LABEL="No capture, research or derivation references"
+NOTES_LABEL="No citation of workspace notes or agent memory"
 
 BASE_PACKAGE='{"name":"sandbox","version":"1.0.0","files":["dist"]}'
 
@@ -108,6 +109,20 @@ expect_caught "engineer keyword, doubled separator" "$KEYWORD_LABEL" notes.md "$
 expect_caught "engineer keyword, mixed separators" "$KEYWORD_LABEL" notes.md "${keyword}_ engineer it"
 expect_pass "near miss, other words" "read ${repo}_public/notes and the ${phase}_step list"
 expect_pass "bare repo name outside src" "clone ${repo}-private next to this repo"
+
+# VW-708: test paths are swept like any other path, and workspace notes and
+# agent memory are citations too.
+ws="sources"
+finding="FINDING"
+memo="feedback"
+expect_caught "repo path in a test file" "$PATH_LABEL" src/a.test.ts "// read ${repo}-private/notes"
+expect_caught "repo name in a test file" "$NAME_LABEL" src/a.test.ts "// see ${repo}-private"
+expect_caught "phase keyword in a test file" "$KEYWORD_LABEL" src/a.test.ts "// see the ${phase}-phase notes"
+expect_caught "workspace audit path" "$NOTES_LABEL" src/a.ts "// see ${ws}/audits/cross-talk.md"
+expect_caught "handoff finding name" "$NOTES_LABEL" notes.md "per the ${finding}-2026-01-01 handoff"
+expect_caught "agent memory note" "$NOTES_LABEL" src/a.test.ts "// per \`${memo}_write_fail_reconnect\`"
+expect_pass "near miss, one-part snake name" "const ${memo}_count = 1;" src/a.ts
+expect_pass "near miss, other sources tree" "see ${ws}/vendor/readme"
 
 # VW-701, VW-702: the files npm pack ships outside dist. The sanctioned build
 # path is the one form package.json may carry, and only in the script that runs it.
