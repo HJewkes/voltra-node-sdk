@@ -2,17 +2,9 @@
  * Decoder tests for the cmd=0x07 (52-byte aa80-25 envelope) and cmd=0x10
  * (multi-length async-state cascade) paths added in Phase 1a.
  *
- * Hex frames are captured on-device fixtures from
- * `voltra-private/captures/sessions/validation-phase-7-cmd0x10-recon-
- * 2026-05-06T21-38-19.events.json` (Campaign 3, VTR-212006). They are
- * inlined here so the SDK test suite stays self-contained — the canonical
- * source remains in voltra-private.
- *
- * Rowing-frame fixtures (`aa 95 25`, `aa 92`, `aa 93`) are synthesized:
- * the only on-device Rowing capture (Campaign 6.A) failed to engage Rowing
- * mode (Bug 22), so the byte layouts come from the Android-deep-scrub
- * audit (`aa-subtype-catalog-2026-05-07-android-deep.md`) and are tested
- * against synthetic frames built to those offsets.
+ * Hex frames are on-device fixtures, inlined so the suite stays
+ * self-contained. Rowing-frame fixtures are synthetic frames built to the
+ * layouts the protocol data describes.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -27,13 +19,13 @@ import {
 } from '../telemetry-decoder';
 import { TrainingMode, ParamIdHex } from '../constants';
 import { buildVendorRawFrame } from '../_factories';
-import { classifyAssistReport } from '../device-state';
+import { classifyAssistReport, classifyMotorReport, MOTOR_STATE_FIELD } from '../device-state';
 import protocolData from '../data/protocol-data.generated';
 import type { ProtocolData } from '../types';
 import { hexToBytes } from '../../../shared/utils';
 
 // =============================================================================
-// Phase 1a — captured frames (inlined from voltra-private capture)
+// Phase 1a — captured frames
 // =============================================================================
 
 /** cmd=0x10 single-param cascade: damperLevel=7 (uint8). */
@@ -50,7 +42,7 @@ const FRAME_CMD10_FULL_CASCADE_DAMPER =
 const FRAME_CMD10_FULL_CASCADE_CHAINS =
   '552e04a710aaa2002000100900863e1900873e1900883e0000893e0400025102035109b04f01e14e012451005a92';
 
-/** cmd=0x10 2-param structural / mode-switch (mode 8 = Isometric). */
+/** cmd=0x10 2-param structural / mode-switch to Isometric. */
 const FRAME_CMD10_MODE_SWITCH_ISOMETRIC = '551604fc10aa3a002000100200893e8500b04f089a5e';
 
 /** Trailer cmd=0x10 frame (post-cascade); 2 params, not all recognized. */
@@ -119,13 +111,12 @@ describe('decodeAsyncState', () => {
 
     expect(result).not.toBeNull();
     expect(result!.paramCount).toBe(1);
-    // Chains paramId is 0x873e (LE bytes -> 'CHAINS' constant in ParamIdHex).
     expect(result!.params[0].paramIdHex).toBe(ParamIdHex.CHAINS);
     expect(result!.params[0].value).toBe(25);
     expect(result!.params[0].byteLength).toBe(2);
   });
 
-  it('decodes a 2-param mode-switch (fitness-mode + trainingMode=Isometric)', () => {
+  it('decodes a 2-param mode-switch (motor state + trainingMode=Isometric)', () => {
     const data = hexToBytes(FRAME_CMD10_MODE_SWITCH_ISOMETRIC);
 
     const result = decodeAsyncState(data);
@@ -133,13 +124,9 @@ describe('decodeAsyncState', () => {
     expect(result).not.toBeNull();
     expect(result!.paramCount).toBe(2);
     expect(result!.params).toHaveLength(2);
-    // Param 1: 0x3e89 (fitness-mode), uint16 LE value 0x0085.
-    expect(result!.params[0].paramIdHex).toBe('893e');
-    expect(result!.params[0].value).toBe(0x0085);
+    expect(result!.params[0].paramIdHex).toBe(MOTOR_STATE_FIELD);
+    expect(classifyMotorReport(result!.params[0].value)).toBe('engaged');
     expect(result!.params[0].byteLength).toBe(2);
-    // Param 2: 0x4fb0 (trainingMode). Stored on-wire as uint8 (matches
-    // existing settingsUpdate decode path); only the lower byte of mode
-    // is sent for non-uint16 params, here 0x08 = Isometric.
     expect(result!.params[1].paramIdHex).toBe(ParamIdHex.TRAINING_MODE);
     expect(result!.params[1].value).toBe(TrainingMode.Isometric);
     expect(result!.params[1].byteLength).toBe(1);
@@ -170,8 +157,7 @@ describe('decodeAsyncState', () => {
 
 describe('decodeNotification - cmd=0x10 routing', () => {
   it('routes single TRAINING_MODE param to mode_confirmation', () => {
-    // Synthesize the canonical setMode(WeightTraining) bootstrap envelope:
-    // length 0x13, cmd=0x10, paramCount=1, paramId=b04f, value=01 (uint16).
+    // Synthesize the canonical setMode(WeightTraining) bootstrap envelope.
     const hex = '551304ec10aa00002000100100b04f0100bbcc';
     const data = hexToBytes(hex);
 
@@ -237,8 +223,6 @@ describe('decodeNotification - cmd=0x10 routing', () => {
       expect(result.settings.baseWeight).toBe(25);
       expect(result.settings.chains).toBe(25);
       expect(result.settings.trainingMode).toBe(TrainingMode.WeightTraining);
-      // Captured cascade has damperLevel=9 (UI level 10 — runs at damper
-      // ceiling for chains-engaged sweep).
       expect(result.settings.damperLevel).toBe(9);
     }
   });
@@ -253,8 +237,6 @@ describe('decodeNotification - cmd=0x10 routing', () => {
     if (result?.type === 'settings_update') {
       expect(result.settings.baseWeight).toBe(25);
       expect(result.settings.chains).toBe(0);
-      // Damper-set frame: damperLevel=7 (UI level 8) lingers, mode=Idle
-      // post-set since the cascade reflects the after-state of damper sweep.
       expect(result.settings.damperLevel).toBe(7);
       expect(result.settings.trainingMode).toBe(TrainingMode.Idle);
     }
@@ -279,14 +261,13 @@ describe('decodeNotification - cmd=0x10 routing', () => {
 // =============================================================================
 
 describe('decodeStateDump', () => {
-  it('decodes the assist-ON state dump (assistMode=2, transitional trainingMode)', () => {
+  it('decodes the assist-ON state dump (transitional trainingMode)', () => {
     const data = hexToBytes(FRAME_STATE_DUMP_ASSIST_ON);
 
     const event = decodeStateDump(data);
 
     expect(event).not.toBeNull();
-    expect(event!.assistMode).toBe(0x02);
-    // raw[0] = 0x00 → transitional / mid-mode-switch (TrainingMode.Idle).
+    expect(event!.assist).toBe('on');
     expect(event!.trainingMode).toBe(TrainingMode.Idle);
     expect(event!.weightLbsTenths).toBe(0);
     expect(event!.chainTargetForceTenths).toBe(0);
@@ -301,14 +282,9 @@ describe('decodeStateDump', () => {
     const event = decodeStateDump(data);
 
     expect(event).not.toBeNull();
-    // raw[0] = 0x01 → WeightTraining.
     expect(event!.trainingMode).toBe(TrainingMode.WeightTraining);
-    expect(event!.assistMode).toBe(0x00);
-    // Weight stored as uint16 LE tenths-of-pounds at payload offset 3:
-    // 0xfa = 250 = 25.0 lbs.
+    expect(event!.assist).toBe('off');
     expect(event!.weightLbsTenths).toBe(250);
-    // Effective chain force at offset 5 = min(chains, weight) × 10. With
-    // chains=25 and weight=25 the effective chain force is 25.0 lbs.
     expect(event!.chainTargetForceTenths).toBe(250);
     expect(event!.eccentricPercentTenths).toBe(0);
   });
@@ -319,7 +295,7 @@ describe('decodeStateDump', () => {
     const event = decodeStateDump(data);
 
     expect(event).not.toBeNull();
-    expect(event!.assistMode).toBe(0);
+    expect(event!.assist).toBe('off');
     expect(event!.trainingMode).toBe(TrainingMode.Idle);
     expect(event!.weightLbsTenths).toBe(0);
     expect(event!.chainTargetForceTenths).toBe(0);
@@ -362,9 +338,11 @@ describe('decodeStateDump - decoded assist', () => {
   });
 
   it('keeps the raw value beside the decoded one', () => {
-    const event = decodeStateDump(hexToBytes(FRAME_STATE_DUMP_ASSIST_ON))!;
+    const on = decodeStateDump(hexToBytes(FRAME_STATE_DUMP_ASSIST_ON))!;
+    const off = decodeStateDump(hexToBytes(FRAME_STATE_DUMP_CHAINS_25))!;
 
-    expect(classification.on).toContain(event.assistMode);
+    expect(classification.on).toContain(on.assistMode);
+    expect(classification.off).toContain(off.assistMode);
   });
 
   it('classifies every value the protocol data lists', () => {
@@ -500,7 +478,7 @@ function buildWaveformChunkFrame(params: {
 }
 
 describe('decodeWaveformChunk', () => {
-  it('decodes a CC-variant chunk (isometric marker)', () => {
+  it('decodes a chunk carrying the first variant marker', () => {
     const frame = buildWaveformChunkFrame({
       variant: 0xcc,
       chunkIndex: 1,
@@ -514,11 +492,11 @@ describe('decodeWaveformChunk', () => {
     expect(event!.chunkIndex).toBe(1);
     expect(event!.declaredSampleCount).toBe(4);
     expect(Array.from(event!.samples)).toEqual([100, 200, 300, 400]);
-    // Sample unit must NOT be 'newtons' — rowing samples are tenths-of-pounds.
+    // Sample unit must NOT be 'newtons'.
     expect(event!.sampleUnit).toBe('tenths-of-pounds');
   });
 
-  it('decodes a 0x82-variant chunk (rowing marker)', () => {
+  it('decodes a chunk carrying the second variant marker', () => {
     const frame = buildWaveformChunkFrame({
       variant: 0x82,
       chunkIndex: 2,
@@ -532,7 +510,7 @@ describe('decodeWaveformChunk', () => {
     expect(Array.from(event!.samples)).toEqual([50, 75]);
   });
 
-  it('decodes a 0xA8-variant chunk (alternate marker)', () => {
+  it('decodes a chunk carrying the third variant marker', () => {
     const frame = buildWaveformChunkFrame({
       variant: 0xa8,
       chunkIndex: 3,

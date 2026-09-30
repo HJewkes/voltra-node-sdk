@@ -2663,8 +2663,7 @@ export class VoltraClient {
    * pipe is jammed (supervision-timeout-adjacent or MTU-window collapse).
    * In that state `isLinkAlive()` still reports alive, the adapter throws
    * `Write failed`, and the SDK previously surfaced an opaque
-   * `CommandError`. Per `feedback_ble_write_fail_reconnect_not_retry`, a
-   * write failure means the consumer must reconnect — retrying the same
+   * `CommandError`. A write failure means the consumer must reconnect — retrying the same
    * setter is futile. Flip state to `'disconnected'`, fire the disconnect
    * listener path, and rethrow as `CONNECTION_LOST` so the next setter
    * call hits `ensureConnected()` and bails out immediately.

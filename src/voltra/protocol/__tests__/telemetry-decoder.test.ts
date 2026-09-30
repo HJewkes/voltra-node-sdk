@@ -753,8 +753,8 @@ function createSettingsUpdateBuffer(
  * Create a device_init notification buffer.
  * Header: 0x55 0x23, length: 35.
  *
- * Phase 0.5.2 hotfix: byte [11] of this frame is a sub-cmd byte (`0xa7` in
- * observed captures), NOT a battery percentage. The `byteAt11` argument is
+ * Phase 0.5.2 hotfix: byte [11] of this frame is a sub-cmd byte, NOT a
+ * battery percentage. The `byteAt11` argument is
  * named generically so tests can inject the on-wire sub-cmd byte and assert
  * the decoder no longer surfaces it as a battery reading.
  */
@@ -906,14 +906,9 @@ describe('decodeNotification – settings_update', () => {
   });
 
   it('decodes damperLevel from settings_update (paramId 0x5103, uint8)', () => {
-    // Wire byte order is `[0x03, 0x51]` = `'0351'` hex string. paramID
-    // 0x5103 (LE on wire). uint8 value path (not in Uint16ParamIds),
-    // opcode 0xc7 per phase-5 Block F. Pre-fix this test passed `'5103'`
-    // — which writes bytes `[0x51, 0x03]`, i.e., the WRONG endianness for
-    // what the device actually sends.
-    const buffer = createSettingsUpdateBuffer([
-      { paramIdHex: '0351', value: 7 }, // damper level 7 (UI displays "8")
-    ]);
+    // Param IDs are little-endian on the wire; uint8 value path (not in
+    // Uint16ParamIds). Pre-fix this test passed the big-endian spelling.
+    const buffer = createSettingsUpdateBuffer([{ paramIdHex: '0351', value: 7 }]);
 
     const result = decodeNotification(buffer);
 
@@ -927,7 +922,7 @@ describe('decodeNotification – settings_update', () => {
   it('decodes damperLevel alongside other params', () => {
     const buffer = createSettingsUpdateBuffer([
       { paramIdHex: ParamIdHex.BASE_WEIGHT, value: 100 },
-      { paramIdHex: '0351', value: 0 }, // damper level 0 (UI displays "1")
+      { paramIdHex: '0351', value: 0 },
       { paramIdHex: ParamIdHex.CHAINS, value: 25 },
     ]);
 

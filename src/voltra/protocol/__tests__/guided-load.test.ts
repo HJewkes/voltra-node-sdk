@@ -2,18 +2,17 @@
  * Tests for the guided-load (direct-load, Phase 1g) protocol helpers.
  *
  * Covers:
- *   - `buildGuidedLoadTriggerFrame` matches the on-wire Campaign 8 capture
- *     (`550e0466aa1000202000aa125231`).
+ *   - `buildGuidedLoadTriggerFrame` matches an on-wire fixture.
  *   - `buildGuidedLoadStatusReadFrame` carries the cmd `0x0F` byte, paramID
  *     count, and the 4 specific paramIDs at the documented offsets.
- *   - `buildGuidedLoadExitFrame` writes `BP_SET_FITNESS_MODE = 0x0004`
- *     (STRENGTH_READY) via cmd `0x11`.
+ *   - `buildGuidedLoadExitFrame` writes the protocol data's exit mode value
+ *     via cmd `0x11`.
  *   - `decodeGuidedLoadStatus` extracts the 4 status registers + the
  *     fitness-mode register from a multi-param / settings-update payload,
  *     respecting the uint8 vs uint16 sizing rules.
  */
 import { describe, it, expect } from 'vitest';
-import { bytesToHex } from '../../../shared/utils';
+import { bytesToHex, hexToBytes } from '../../../shared/utils';
 import {
   buildGuidedLoadTriggerFrame,
   buildGuidedLoadStatusReadFrame,
@@ -24,9 +23,14 @@ import {
   GUIDED_LOAD_MODE_EXIT,
 } from '../guided-load';
 import { NotificationConfigs } from '../constants';
+import protocolData from '../data/protocol-data.generated';
+import type { ProtocolData } from '../types';
+
+const { guidedLoad } = (protocolData as ProtocolData).commands;
+const status = guidedLoad.statusFields;
 
 describe('buildGuidedLoadTriggerFrame', () => {
-  it('produces the on-wire Campaign 8 capture', () => {
+  it('produces the on-wire fixture', () => {
     const frame = buildGuidedLoadTriggerFrame();
     expect(bytesToHex(frame)).toBe('550e0466aa1000202000aa125231');
   });
@@ -64,18 +68,9 @@ describe('buildGuidedLoadStatusReadFrame', () => {
     // bytes 11-12: count uint16 LE = 4
     expect(frame[11]).toBe(0x04);
     expect(frame[12]).toBe(0x00);
-    // bytes 13-14: 0x538D LE → 8d 53
-    expect(frame[13]).toBe(0x8d);
-    expect(frame[14]).toBe(0x53);
-    // bytes 15-16: 0x53C7 LE → c7 53
-    expect(frame[15]).toBe(0xc7);
-    expect(frame[16]).toBe(0x53);
-    // bytes 17-18: 0x53C8 LE → c8 53
-    expect(frame[17]).toBe(0xc8);
-    expect(frame[18]).toBe(0x53);
-    // bytes 19-20: 0x53C9 LE → c9 53
-    expect(frame[19]).toBe(0xc9);
-    expect(frame[20]).toBe(0x53);
+    const { primaryStatus, forceStatus, countdownMs, runtimeStatus } = guidedLoad.statusFields;
+    const ids = [primaryStatus, forceStatus, countdownMs, runtimeStatus].join('');
+    expect(bytesToHex(frame.slice(13, 21))).toBe(ids);
   });
 
   it('total frame length matches envelope + 10-byte payload', () => {
@@ -86,25 +81,25 @@ describe('buildGuidedLoadStatusReadFrame', () => {
 });
 
 describe('buildGuidedLoadExitFrame', () => {
-  it('writes BP_SET_FITNESS_MODE (0x3E89) := 0x0004 with cmd 0x11', () => {
+  it('writes the exit mode value to the mode register with cmd 0x11', () => {
     const frame = buildGuidedLoadExitFrame();
     // cmd byte
     expect(frame[10]).toBe(0x11);
     // reserved [0x01, 0x00]
     expect(frame[11]).toBe(0x01);
     expect(frame[12]).toBe(0x00);
-    // paramId LE: 0x89 0x3E
-    expect(frame[13]).toBe(0x89);
-    expect(frame[14]).toBe(0x3e);
-    // value LE: 0x04 0x00 (STRENGTH_READY)
-    expect(frame[15]).toBe(0x04);
-    expect(frame[16]).toBe(0x00);
+    expect(Array.from(frame.slice(13, 15))).toEqual(Array.from(hexToBytes(guidedLoad.modeField)));
+    expect(frame[15]).toBe(GUIDED_LOAD_MODE_EXIT & 0xff);
+    expect(frame[16]).toBe(GUIDED_LOAD_MODE_EXIT >> 8);
   });
 
-  it('exposes the documented mode-register raw values', () => {
-    expect(GUIDED_LOAD_MODE_ARMED).toBe(0x0026);
-    expect(GUIDED_LOAD_MODE_ACTIVE).toBe(0x0027);
-    expect(GUIDED_LOAD_MODE_EXIT).toBe(0x0004);
+  it('exposes the mode-register values the protocol data lists', () => {
+    expect(GUIDED_LOAD_MODE_ARMED).toBe(guidedLoad.modes.armed);
+    expect(GUIDED_LOAD_MODE_ACTIVE).toBe(guidedLoad.modes.active);
+    expect(GUIDED_LOAD_MODE_EXIT).toBe(guidedLoad.modes.exit);
+    expect(
+      new Set([GUIDED_LOAD_MODE_ARMED, GUIDED_LOAD_MODE_ACTIVE, GUIDED_LOAD_MODE_EXIT]).size
+    ).toBe(3);
   });
 });
 
@@ -170,16 +165,20 @@ describe('decodeGuidedLoadStatus', () => {
     expect(decodeGuidedLoadStatus(buf)).toBeNull();
   });
 
-  it('decodes primaryStatus (0x538D, uint8)', () => {
-    const buf = buildMultiParamPayload([{ paramIdLeHex: '8d53', value: 1, uint16: false }]);
+  it('decodes primaryStatus (uint8)', () => {
+    const buf = buildMultiParamPayload([
+      { paramIdLeHex: status.primaryStatus, value: 1, uint16: false },
+    ]);
     const out = decodeGuidedLoadStatus(buf);
     expect(out).not.toBeNull();
     expect(out!.primaryStatus).toBe(1);
     expect(out!.forceStatus).toBeUndefined();
   });
 
-  it('decodes countdownMs (0x53C8, uint16 LE) — 3000ms fits, 3 does not', () => {
-    const buf = buildMultiParamPayload([{ paramIdLeHex: 'c853', value: 3000, uint16: true }]);
+  it('decodes countdownMs (uint16 LE) — 3000ms fits, 3 does not', () => {
+    const buf = buildMultiParamPayload([
+      { paramIdLeHex: status.countdownMs, value: 3000, uint16: true },
+    ]);
     const out = decodeGuidedLoadStatus(buf);
     expect(out).not.toBeNull();
     expect(out!.countdownMs).toBe(3000);
@@ -187,11 +186,11 @@ describe('decodeGuidedLoadStatus', () => {
 
   it('decodes the 4 status registers + fitness-mode raw simultaneously', () => {
     const buf = buildMultiParamPayload([
-      { paramIdLeHex: '8d53', value: 1, uint16: false }, // primary
-      { paramIdLeHex: 'c753', value: 2, uint16: false }, // force
-      { paramIdLeHex: 'c853', value: 1500, uint16: true }, // countdown
-      { paramIdLeHex: 'c953', value: 0, uint16: false }, // runtime
-      { paramIdLeHex: '893e', value: 0x0026, uint16: true }, // fitness mode
+      { paramIdLeHex: status.primaryStatus, value: 1, uint16: false },
+      { paramIdLeHex: status.forceStatus, value: 2, uint16: false },
+      { paramIdLeHex: status.countdownMs, value: 1500, uint16: true },
+      { paramIdLeHex: status.runtimeStatus, value: 0, uint16: false },
+      { paramIdLeHex: guidedLoad.modeField, value: GUIDED_LOAD_MODE_ARMED, uint16: true },
     ]);
     const out = decodeGuidedLoadStatus(buf);
     expect(out).toEqual({
@@ -199,17 +198,17 @@ describe('decodeGuidedLoadStatus', () => {
       forceStatus: 2,
       countdownMs: 1500,
       runtimeStatus: 0,
-      fitnessModeRaw: 0x0026,
+      fitnessModeRaw: GUIDED_LOAD_MODE_ARMED,
     });
   });
 
   it('decodes from the settings_update variant header (0x2e) too', () => {
     const buf = buildMultiParamPayload(
-      [{ paramIdLeHex: '893e', value: 0x0027, uint16: true }],
+      [{ paramIdLeHex: guidedLoad.modeField, value: GUIDED_LOAD_MODE_ACTIVE, uint16: true }],
       'settingsUpdate'
     );
     const out = decodeGuidedLoadStatus(buf);
     expect(out).not.toBeNull();
-    expect(out!.fitnessModeRaw).toBe(0x0027);
+    expect(out!.fitnessModeRaw).toBe(GUIDED_LOAD_MODE_ACTIVE);
   });
 });

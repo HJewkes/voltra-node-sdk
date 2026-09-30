@@ -123,7 +123,6 @@ describe('decodeBulkParamResponse', () => {
       { paramIdHex: ParamIdHex.BASE_WEIGHT, valueBytes: [100, 0] },
       { paramIdHex: ParamIdHex.CHAINS, valueBytes: [20, 0] },
       { paramIdHex: ParamIdHex.ECCENTRIC, valueBytes: [50, 0] },
-      // 0xb04f = trainingMode (uint8): WeightTraining
       { paramIdHex: ParamIdHex.TRAINING_MODE, valueBytes: [TrainingMode.WeightTraining] },
       // Inverse chains is two bytes wide in the catalog. That width is
       // hypothesis-grade and no report of ours carries the register, so this
@@ -154,13 +153,10 @@ describe('decodeBulkParamResponse', () => {
   });
 
   it('decodes step-10 paramIds with their documented widths', () => {
-    // RESISTANCE_BAND_MAX_FORCE 0x5362 (LE 6253): uint16 = 100 lb
-    // FITNESS_ASSIST_MODE      0x5106 (LE 0651): uint8  = 8 (off, asymmetric)
-    // BP_RUNTIME_POSITION_CM   0x3e82 (LE 823e): uint16 = 130 cm
-    // FITNESS_WORKOUT_STATE    0x4FB0 (LE b04f): uint8  = 4 (Damper)
+    // Arbitrary values: this pins width-driven offset advancement, not meaning.
     const data = buildBulkParamReadFrame([
       { paramIdHex: '6253', valueBytes: [100, 0] },
-      { paramIdHex: '0651', valueBytes: [8] },
+      { paramIdHex: '0651', valueBytes: [1] },
       { paramIdHex: '823e', valueBytes: [130, 0] },
       { paramIdHex: 'b04f', valueBytes: [TrainingMode.Damper] },
     ]);
@@ -172,9 +168,9 @@ describe('decodeBulkParamResponse', () => {
   });
 
   it('aborts decoding on first paramId with unknown width (avoids mis-alignment)', () => {
-    // QUICK_CABLE_ADJUSTMENT 0x54bc (LE bc54) — width unknown to the SDK.
-    // Anything after it must be ignored to avoid mis-parsing subsequent
-    // bytes against the wrong field positions.
+    // A paramId the protocol data carries no width for. Anything after it
+    // must be ignored to avoid mis-parsing subsequent bytes against the
+    // wrong field positions.
     const data = buildBulkParamReadFrame([
       { paramIdHex: ParamIdHex.BASE_WEIGHT, valueBytes: [42, 0] },
       // unknown paramId aborts the loop

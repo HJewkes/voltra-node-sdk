@@ -1,8 +1,8 @@
 /**
  * Phase 2.5 — generated ParameterCatalog smoke tests.
  *
- * voltra-private's `parameters/` registry now emits a structured catalog
- * into the SDK via `protocol.telemetry.parameterCatalog`. This test pins:
+ * The protocol data carries a structured catalog in
+ * `protocol.telemetry.parameterCatalog`. This test pins:
  *   - the catalog is populated and non-empty (no regression in codegen)
  *   - every wireLE the decoder's `KNOWN_PARAM_WIDTHS` lookup
  *     references resolves to a catalog entry (so future migrations have a
@@ -37,25 +37,23 @@ const SDK_HAND_AUTHORED_WIDTHS: Readonly<Record<string, number>> = {
   b653: 1, // RESISTANCE_BAND_LEN_BY_ROM
   e352: 1, // EP_RESISTANCE_BAND_INVERSE
   '0651': 1, // FITNESS_ASSIST_MODE
-  b053: 1, // FITNESS_INVERSE_CHAIN — Phase 2.7 disagreement (vp = uint16/2)
+  b053: 1, // FITNESS_INVERSE_CHAIN — Phase 2.7 disagreement
   c653: 1, // WEIGHT_TRAINING_EXTRA_MODE
-  b04f: 1, // FITNESS_WORKOUT_STATE — Phase 2.7 disagreement (vp = uint16/2)
+  b04f: 1, // FITNESS_WORKOUT_STATE — Phase 2.7 disagreement
   '0351': 1, // FITNESS_DAMPER_RATIO_IDX
 };
 
 /**
- * paramIDs with documented width disagreements between voltra-private's
- * registry and the SDK decoder. Resolution deferred to Phase 2.7 pending
- * on-device validation. Listed in `voltra-private/src/protocol/parameters/
- * fitness/workout-state.ts` and `inverse-chain.ts` docblocks.
+ * paramIDs whose catalog width disagrees with the SDK decoder. Resolution
+ * deferred to Phase 2.7 pending on-device validation.
  */
 const PHASE_2_7_WIDTH_DISAGREEMENTS = new Set([
-  'b04f', // FITNESS_WORKOUT_STATE: vp=2, sdk=1
-  'b053', // FITNESS_INVERSE_CHAIN: vp=2, sdk=1
+  'b04f', // FITNESS_WORKOUT_STATE
+  'b053', // FITNESS_INVERSE_CHAIN
 ]);
 
 describe('ParameterCatalog (Phase 2.5)', () => {
-  it('is non-empty (regression: vp Phase 2.5 codegen emitted the catalog)', () => {
+  it('is non-empty (regression: codegen emitted the catalog)', () => {
     expect(Object.keys(ParameterCatalog).length).toBeGreaterThan(0);
   });
 

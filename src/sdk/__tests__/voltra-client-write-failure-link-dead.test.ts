@@ -11,10 +11,10 @@
  * supervision-timeout-adjacent or MTU-window collapse. In that state the
  * adapter throws `Write failed`, the SDK previously surfaced an opaque
  * `CommandError`, and consumers retried the same setter (which fails
- * identically). Observed on VTR-097082 2026-05-07T16-11-15 across three
- * setters in a row before disconnect/reconnect resolved cleanly.
+ * identically). Observed on hardware across three setters in a row before
+ * disconnect/reconnect resolved cleanly.
  *
- * Per `feedback_ble_write_fail_reconnect_not_retry`, the SDK must:
+ * So the SDK must:
  *   1. throw `ConnectionError(CONNECTION_LOST)` (not a CommandError),
  *   2. flip `connectionState` to 'disconnected' so the next setter call
  *      bails out via `ensureConnected()`,

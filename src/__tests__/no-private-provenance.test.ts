@@ -4,7 +4,8 @@
 // repo, which is what the guard exists to prevent.
 //
 // The rule is off for test paths (deferred to w5-14), so the fixtures below do
-// not trip it on their way past.
+// not trip it on their way past. They are assembled from parts so that
+// `npm run audit:privacy`, which does read test paths, never sees a keyword.
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { Linter } from 'eslint';
@@ -20,25 +21,26 @@ const findProvenance = guard.findProvenance as (text: string) => { index: number
 const findByteRuns = guard.findByteRuns as (text: string) => { index: number }[];
 const isCommandCodeIdentifier = guard.isCommandCodeIdentifier as (name: string) => boolean;
 
+const PRIVATE_REPO = ['voltra', 'private'].join('-');
+const PRIVATE_PATH = `// Inlined from ${PRIVATE_REPO}/src/protocol/enums.ts.`;
+
 describe('provenance', () => {
   it.each([
-    ['a path into the private repo', '// Inlined from voltra-private/src/protocol/enums.ts.'],
-    ['a capture session path', '// reproducer: captures/sessions/2026-01-01'],
-    ['a research document', '// see research/rowing-notes.md'],
-    ['a named validation phase', '// from the validation-phase-7 session'],
-    ['decompilation', '// decompiled from the vendor application'],
-    ['a trailing comment', 'const q = 1; // see voltra-private notes'],
+    ['a path into the private repo', PRIVATE_PATH],
+    ['a capture session path', `// reproducer: ${'capture'}s/${'session'}s/2026-01-01`],
+    ['a research document', `// see ${'research'}/rowing-notes.md`],
+    ['a named validation phase', `// from the ${'validation'}-phase-7 session`],
+    ['a vendor-app derivation', `// ${'de' + 'compil'}ed from the vendor application`],
+    ['a trailing comment', `const q = 1; // see ${PRIVATE_REPO} notes`],
   ])('flags %s', (_label, text) => {
     expect(findProvenance(text).length).toBeGreaterThan(0);
   });
 
   it('exempts the sanctioned regeneration header, and only that line', () => {
-    const header = '// @generated — do not edit. Regenerate: npm run build (from voltra-private)';
+    const header = `// @generated — do not edit. Regenerate: npm run build (from ${PRIVATE_REPO})`;
     expect(findProvenance(header)).toEqual([]);
     // The exclusion is the HEADER, not the FILE: anything below it still counts.
-    expect(
-      findProvenance(`${header}\n// Inlined from voltra-private/src/protocol/enums.ts.`).length
-    ).toBe(1);
+    expect(findProvenance(`${header}\n${PRIVATE_PATH}`).length).toBe(1);
   });
 });
 

@@ -15,9 +15,7 @@ describe('Workout.SETUP — multi-paramID read envelope', () => {
   });
 
   it('has reserved bytes [0x02, 0x00] at offsets [11..12]', () => {
-    // The Type-C "config / multi-paramID read" envelope is identified by
-    // cmdID 0x0F + reserved [0x02, 0x00]. cf. voltra-private docs:
-    // protocol-reference.md § "Workout Control" + Type taxonomy table.
+    // The multi-paramID read envelope carries these reserved bytes.
     expect(Workout.SETUP[11]).toBe(0x02);
     expect(Workout.SETUP[12]).toBe(0x00);
   });
@@ -35,8 +33,6 @@ describe('Workout.SETUP — multi-paramID read envelope', () => {
   });
 
   it('matches the canonical 19-byte SETUP frame', () => {
-    // Canonical bytes from voltra-private/docs/protocol-reference.md:
-    // 55 13 04 03 aa 10 15 00 20 00 0f 02 00 6a 50 82 3e 8f 2f
     const expected = new Uint8Array([
       0x55, 0x13, 0x04, 0x03, 0xaa, 0x10, 0x15, 0x00, 0x20, 0x00, 0x0f, 0x02, 0x00, 0x6a, 0x50,
       0x82, 0x3e, 0x8f, 0x2f,

@@ -3,7 +3,7 @@
  *
  * Verifies that:
  *   - `setMode(TrainingMode.Rowing)` auto-routes to enterRowMode + startRow
- *     and NEVER writes the strength-arm primitive (`0x3E89=5`)
+ *     and NEVER writes the motor-engage value
  *   - `enterRowMode()` writes the existing rowing workout-state command
  *   - `startRow()` writes EP_SCR_SWITCH + vendor refresh and then schedules
  *     reasserts at +750 / +1750 / +3000 ms
@@ -22,8 +22,11 @@ import { hexToBytes } from '../../shared/utils';
 import protocolData from '../../voltra/protocol/data/protocol-data.generated';
 import type { ProtocolData } from '../../voltra/protocol/types';
 import { TrainingMode } from '../../voltra/protocol/constants';
+import { MOTOR_REPORT_VALUES, MOTOR_STATE_FIELD } from '../../voltra/protocol/device-state';
+import type { RowStartActionKey } from '../../voltra/protocol/rowing-frames';
 
 const protocol = protocolData as ProtocolData;
+const ACTION = protocol.commands.rowing.actionCodes as Record<RowStartActionKey, number>;
 
 class RecordingAdapter extends BaseBLEAdapter {
   readonly writes: Uint8Array[] = [];
@@ -74,40 +77,33 @@ function findWrite(adapter: RecordingAdapter, expected: Uint8Array): number {
   return -1;
 }
 
-/**
- * Find a write that contains the EP_SCR_SWITCH rowing payload pattern
- * (`01 00 65 51 <action> 3E 00 01`) somewhere in the frame.
- */
-function findRowScrSwitchWrite(adapter: RecordingAdapter, action: number): number {
-  for (let i = 0; i < adapter.writes.length; i++) {
-    const w = adapter.writes[i];
-    for (let j = 0; j + 7 < w.length; j++) {
-      if (
-        w[j] === 0x01 &&
-        w[j + 1] === 0x00 &&
-        w[j + 2] === 0x65 &&
-        w[j + 3] === 0x51 &&
-        w[j + 4] === action &&
-        w[j + 5] === 0x3e &&
-        w[j + 6] === 0x00 &&
-        w[j + 7] === 0x01
-      ) {
-        return i;
-      }
-    }
+function containsSequence(frame: Uint8Array, sequence: number[]): boolean {
+  for (let j = 0; j + sequence.length <= frame.length; j++) {
+    if (sequence.every((b, k) => frame[j + k] === b)) return true;
   }
-  return -1;
+  return false;
 }
 
-/** Find a write that contains `0xAA 0x13 0x01` (vendor state refresh). */
+function findWriteContaining(adapter: RecordingAdapter, sequence: number[]): number {
+  return adapter.writes.findIndex((w) => containsSequence(w, sequence));
+}
+
+/** Find a write carrying the EP_SCR_SWITCH rowing payload for `action`. */
+function findRowScrSwitchWrite(adapter: RecordingAdapter, action: number): number {
+  const { screenSwitchParamField, screenSwitchTrailer } = protocol.commands.rowing;
+  return findWriteContaining(adapter, [
+    0x01,
+    0x00,
+    ...hexToBytes(screenSwitchParamField),
+    action,
+    ...hexToBytes(screenSwitchTrailer),
+  ]);
+}
+
+/** Find a write carrying the vendor state refresh payload. */
 function findVendorRefreshWrite(adapter: RecordingAdapter): number {
-  for (let i = 0; i < adapter.writes.length; i++) {
-    const w = adapter.writes[i];
-    for (let j = 0; j + 2 < w.length; j++) {
-      if (w[j] === 0xaa && w[j + 1] === 0x13 && w[j + 2] === 0x01) return i;
-    }
-  }
-  return -1;
+  const { vendorCmd, vendorRefreshPayload } = protocol.commands.rowing;
+  return findWriteContaining(adapter, [...hexToBytes(vendorCmd + vendorRefreshPayload)]);
 }
 
 describe('VoltraClient — Rowing two-stage entry (Bug 22)', () => {
@@ -128,31 +124,23 @@ describe('VoltraClient — Rowing two-stage entry (Bug 22)', () => {
   });
 
   describe('setMode(Rowing) auto-route', () => {
-    it('routes through EP_SCR_SWITCH, never via 0x3E89=5 (strength-arm)', async () => {
+    it('routes through EP_SCR_SWITCH, never via the motor-engage write', async () => {
       await client.setMode(TrainingMode.Rowing);
 
-      // EP_SCR_SWITCH commit for Just Row (action 0x03) MUST appear.
-      expect(findRowScrSwitchWrite(adapter, 0x03)).not.toBe(-1);
+      // EP_SCR_SWITCH commit for Just Row MUST appear.
+      expect(findRowScrSwitchWrite(adapter, ACTION.JustRow)).not.toBe(-1);
 
-      // The strength-arm primitive (BP_SET_FITNESS_MODE wire bytes
-      // `89 3E` followed by value `05 00`) MUST NOT appear in any frame.
-      // This is the Bug 22 invariant: writing 0x3E89=5 while in
-      // FITNESS_WORKOUT_STATE=3 (Rowing) is silently reinterpreted by
-      // firmware as strength behavior despite the rowing screen still
-      // being visible.
+      // Engaging the motor from the rowing screen is the Bug 22 regression.
+      const engaged = MOTOR_REPORT_VALUES.engaged;
+      const engageWrite = [
+        0x01,
+        0x00,
+        ...hexToBytes(MOTOR_STATE_FIELD),
+        engaged & 0xff,
+        engaged >> 8,
+      ];
       for (const frame of adapter.writes) {
-        for (let j = 0; j + 5 < frame.length; j++) {
-          if (
-            frame[j] === 0x01 &&
-            frame[j + 1] === 0x00 &&
-            frame[j + 2] === 0x89 &&
-            frame[j + 3] === 0x3e &&
-            frame[j + 4] === 0x05 &&
-            frame[j + 5] === 0x00
-          ) {
-            throw new Error('setMode(Rowing) emitted strength-arm 0x3E89=5 — Bug 22 regression');
-          }
-        }
+        expect(containsSequence(frame, engageWrite)).toBe(false);
       }
     });
 
@@ -166,7 +154,7 @@ describe('VoltraClient — Rowing two-stage entry (Bug 22)', () => {
 
       const enterRow = hexToBytes(protocol.commands.modes.rowing);
       const enterIdx = findWrite(adapter, enterRow);
-      const scrIdx = findRowScrSwitchWrite(adapter, 0x03);
+      const scrIdx = findRowScrSwitchWrite(adapter, ACTION.JustRow);
       const refreshIdx = findVendorRefreshWrite(adapter);
 
       expect(enterIdx).not.toBe(-1);
@@ -209,13 +197,13 @@ describe('VoltraClient — Rowing two-stage entry (Bug 22)', () => {
       await expect(client.startRow()).rejects.toBeInstanceOf(CommandError);
     });
 
-    it('writes EP_SCR_SWITCH with action 0x03 (Just Row) by default', async () => {
+    it('writes EP_SCR_SWITCH with the Just Row action by default', async () => {
       await client.enterRowMode();
       adapter.writes.length = 0;
 
       await client.startRow();
 
-      expect(findRowScrSwitchWrite(adapter, 0x03)).not.toBe(-1);
+      expect(findRowScrSwitchWrite(adapter, ACTION.JustRow)).not.toBe(-1);
     });
 
     it('writes the vendor state refresh frame after EP_SCR_SWITCH', async () => {
@@ -224,26 +212,18 @@ describe('VoltraClient — Rowing two-stage entry (Bug 22)', () => {
 
       await client.startRow();
 
-      const scrIdx = findRowScrSwitchWrite(adapter, 0x03);
+      const scrIdx = findRowScrSwitchWrite(adapter, ACTION.JustRow);
       const refreshIdx = findVendorRefreshWrite(adapter);
       expect(scrIdx).not.toBe(-1);
       expect(refreshIdx).toBeGreaterThan(scrIdx);
     });
 
     it('uses a different action code per distance preset', async () => {
-      const cases: Array<
-        ['JustRow' | 'M50' | 'M100' | 'M500' | 'M1000' | 'M2000' | 'M5000', number]
-      > = [
-        ['JustRow', 0x03],
-        ['M50', 0x06],
-        ['M100', 0x07],
-        ['M500', 0x08],
-        ['M1000', 0x09],
-        ['M2000', 0x0a],
-        ['M5000', 0x0b],
-      ];
+      const presets = Object.keys(ACTION) as RowStartActionKey[];
+      expect(new Set(Object.values(ACTION)).size).toBe(presets.length);
 
-      for (const [preset, action] of cases) {
+      for (const preset of presets) {
+        const action = ACTION[preset];
         await client.enterRowMode();
         adapter.writes.length = 0;
         await client.startRow(preset);
@@ -275,20 +255,20 @@ describe('VoltraClient — Rowing two-stage entry (Bug 22)', () => {
 
       // Tick 0 at +750 ms: re-issues EP_SCR_SWITCH + vendor refresh.
       await vi.advanceTimersByTimeAsync(750);
-      expect(findRowScrSwitchWrite(adapter, 0x08)).not.toBe(-1);
+      expect(findRowScrSwitchWrite(adapter, ACTION.M500)).not.toBe(-1);
       expect(findVendorRefreshWrite(adapter)).not.toBe(-1);
 
       adapter.writes.length = 0;
 
       // Tick 1 at +1750 ms (additional 1000 ms).
       await vi.advanceTimersByTimeAsync(1000);
-      expect(findRowScrSwitchWrite(adapter, 0x08)).not.toBe(-1);
+      expect(findRowScrSwitchWrite(adapter, ACTION.M500)).not.toBe(-1);
 
       adapter.writes.length = 0;
 
       // Tick 2 at +3000 ms (additional 1250 ms).
       await vi.advanceTimersByTimeAsync(1250);
-      expect(findRowScrSwitchWrite(adapter, 0x08)).not.toBe(-1);
+      expect(findRowScrSwitchWrite(adapter, ACTION.M500)).not.toBe(-1);
 
       adapter.writes.length = 0;
 
@@ -310,7 +290,7 @@ describe('VoltraClient — Rowing two-stage entry (Bug 22)', () => {
       await vi.advanceTimersByTimeAsync(5000);
 
       // No additional rowing-related frames after setMode() returned.
-      expect(findRowScrSwitchWrite(adapter, 0x03)).toBe(-1);
+      expect(findRowScrSwitchWrite(adapter, ACTION.JustRow)).toBe(-1);
       expect(adapter.writes).toHaveLength(writesAfterSetMode);
     });
 
@@ -322,7 +302,7 @@ describe('VoltraClient — Rowing two-stage entry (Bug 22)', () => {
       await client.disconnect();
       await vi.advanceTimersByTimeAsync(5000);
 
-      expect(findRowScrSwitchWrite(adapter, 0x03)).toBe(-1);
+      expect(findRowScrSwitchWrite(adapter, ACTION.JustRow)).toBe(-1);
     });
 
     it('a second startRow() supersedes the first attempt', async () => {
@@ -335,11 +315,11 @@ describe('VoltraClient — Rowing two-stage entry (Bug 22)', () => {
       adapter.writes.length = 0;
 
       // Advance past the original +3000 ms window — only ticks for the
-      // second attempt (action 0x09) should fire, and the first attempt's
-      // ticks (action 0x03) should NOT.
+      // second attempt should fire, and the first attempt's
+      // ticks should NOT.
       await vi.advanceTimersByTimeAsync(3500);
-      expect(findRowScrSwitchWrite(adapter, 0x03)).toBe(-1);
-      expect(findRowScrSwitchWrite(adapter, 0x09)).not.toBe(-1);
+      expect(findRowScrSwitchWrite(adapter, ACTION.JustRow)).toBe(-1);
+      expect(findRowScrSwitchWrite(adapter, ACTION.M1000)).not.toBe(-1);
     });
   });
 
@@ -351,7 +331,7 @@ describe('VoltraClient — Rowing two-stage entry (Bug 22)', () => {
 
       // Stage 2: commit Just Row.
       await client.startRow();
-      const scrSwitchIdx = findRowScrSwitchWrite(adapter, 0x03);
+      const scrSwitchIdx = findRowScrSwitchWrite(adapter, ACTION.JustRow);
       const vendorRefreshIdx = findVendorRefreshWrite(adapter);
 
       // Ordering: [..., enterRow @ N-1, scrSwitch @ N, refresh @ N+1].

@@ -9,9 +9,7 @@
  *     the configured `frameLength`)
  *
  * `decodeVendorPerRep` also has one end-to-end test against a real
- * on-device capture from voltra-private's phase-5 validation session
- * (2026-05-06, VTR-212006). Inline hex is used rather than reading from
- * disk so the test stays self-contained in CI.
+ * on-device fixture, inlined so the test stays self-contained in CI.
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -253,11 +251,7 @@ describe('decodeVendorPerRep', () => {
   });
 
   it('decodes a real on-device perRep capture (50 lb weight mode)', () => {
-    // Captured 2026-05-06 from VTR-212006 during voltra-private's phase-5
-    // validation session (block D, 50 lb weight mode). Label in the
-    // capture file: `vendor.perRep`. Inline rather than disk-read for CI
-    // portability — capture file lives in a sibling repo not guaranteed
-    // to be checked out alongside this one.
+    // On-device fixture taken in 50 lb weight mode.
     const realCaptureHex =
       '554a04c610aa4a072000aa823b011a03000000f4010000000000005203810282038102cb00000075000000f40100004a060000010000520375000000bc0000004a060000000000006f1f';
     const frame = hexToBytes(realCaptureHex);
