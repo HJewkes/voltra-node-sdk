@@ -27,6 +27,9 @@ import {
 } from '../telemetry-decoder';
 import { TrainingMode, ParamIdHex } from '../constants';
 import { buildVendorRawFrame } from '../_factories';
+import { classifyAssistReport } from '../device-state';
+import protocolData from '../data/protocol-data.generated';
+import type { ProtocolData } from '../types';
 import { hexToBytes } from '../../../shared/utils';
 
 // =============================================================================
@@ -338,6 +341,47 @@ describe('decodeStateDump', () => {
     const event = decodeStateDump(truncated);
 
     expect(event).toBeNull();
+  });
+});
+
+describe('decodeStateDump - decoded assist', () => {
+  const classification = (protocolData as ProtocolData).telemetry.stateDump!.assistMode;
+
+  it('reports assist on for the captured assist-on dump', () => {
+    const event = decodeStateDump(hexToBytes(FRAME_STATE_DUMP_ASSIST_ON))!;
+
+    expect(event.assist).toBe('on');
+  });
+
+  it('reports assist off for the captured dumps taken with assist off', () => {
+    const chains = decodeStateDump(hexToBytes(FRAME_STATE_DUMP_CHAINS_25))!;
+    const baseline = decodeStateDump(hexToBytes(FRAME_STATE_DUMP_DAMPER_BASELINE))!;
+
+    expect(chains.assist).toBe('off');
+    expect(baseline.assist).toBe('off');
+  });
+
+  it('keeps the raw value beside the decoded one', () => {
+    const event = decodeStateDump(hexToBytes(FRAME_STATE_DUMP_ASSIST_ON))!;
+
+    expect(classification.on).toContain(event.assistMode);
+  });
+
+  it('classifies every value the protocol data lists', () => {
+    const on = classification.on.map(classifyAssistReport);
+    const off = classification.off.map(classifyAssistReport);
+
+    expect(on.length).toBeGreaterThan(0);
+    expect(off.length).toBeGreaterThan(0);
+    expect(new Set(on)).toEqual(new Set(['on']));
+    expect(new Set(off)).toEqual(new Set(['off']));
+  });
+
+  it('reports unknown for a value the protocol data lists on neither side', () => {
+    const listed = new Set([...classification.on, ...classification.off]);
+    const unlisted = Array.from({ length: 256 }, (_, v) => v).find((v) => !listed.has(v))!;
+
+    expect(classifyAssistReport(unlisted)).toBe('unknown');
   });
 });
 

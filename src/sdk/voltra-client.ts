@@ -2121,9 +2121,9 @@ export class VoltraClient {
    * weight in tenths of pounds. Use this listener to react to assist-mode
    * transitions (Bug 26) and chain-engagement state changes.
    *
-   * The raw `assistMode` byte is preserved. The assist-mode register has
-   * asymmetric-off semantics: only the "on" code means on, and every other
-   * value should be treated as off.
+   * `event.assist` says whether fitness assist is on, or `'unknown'` when
+   * the protocol data does not classify the reported value. The raw
+   * `assistMode` byte is kept for compatibility.
    *
    * @param listener State-dump listener
    * @returns Unsubscribe function

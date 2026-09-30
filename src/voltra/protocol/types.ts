@@ -6,7 +6,7 @@
  */
 
 import type { TrainingMode } from './constants';
-import type { MotorReport } from './device-state';
+import type { AssistReport, MotorReport } from './device-state';
 
 // =============================================================================
 // Root Protocol Structure
@@ -276,6 +276,14 @@ export interface TelemetryConfig {
   vendorMessages: VendorMessagesConfig;
   /** Connection-acceptance report descriptor; optional for older protocol data */
   acceptanceReport?: AcceptanceReportConfig;
+  /** State-dump value classifications; optional for older protocol data */
+  stateDump?: StateDumpConfig;
+}
+
+/** How to read meaning out of a state dump's raw fields. */
+export interface StateDumpConfig {
+  /** Raw assist values that mean assist is on, and that it is off */
+  assistMode: { on: number[]; off: number[] };
 }
 
 /**
@@ -612,8 +620,13 @@ export interface StateDumpEvent {
    * consumers wanting the typed enum should narrow with the enum's values.
    */
   trainingMode: TrainingMode;
-  /** Fitness-assist toggle. */
+  /** Fitness-assist toggle, raw. Prefer {@link StateDumpEvent.assist}. */
   assistMode: number;
+  /**
+   * Whether fitness assist is on, decoded from `assistMode`. `'unknown'`
+   * means the protocol data does not classify the reported value.
+   */
+  assist: AssistReport;
   /**
    * Active weight setting in tenths of pounds (uint16 LE). Mirrors the
    * async-state cascade `baseWeight` × 10. Zero in non-WeightTraining modes.

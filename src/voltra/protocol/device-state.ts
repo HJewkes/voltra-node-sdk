@@ -90,6 +90,22 @@ export function classifyMotorReport(value: number): MotorReport | null {
 }
 
 /**
+ * Whether the device reported fitness assist as on or off.
+ *
+ * `'unknown'` covers a value the protocol data lists on neither side, and
+ * protocol data too old to carry the classification at all.
+ */
+export type AssistReport = 'on' | 'off' | 'unknown';
+
+/** Classify a state dump's raw assist value through the protocol data. */
+export function classifyAssistReport(value: number): AssistReport {
+  const classification = protocol.telemetry.stateDump?.assistMode;
+  if (classification?.on.includes(value)) return 'on';
+  if (classification?.off.includes(value)) return 'off';
+  return 'unknown';
+}
+
+/**
  * True when the frame is the core-state read {@link buildCoreStateReadFrame}
  * produces. The sequence field and checksums are ignored, so a read built with
  * any sequence matches.

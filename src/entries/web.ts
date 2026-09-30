@@ -225,6 +225,7 @@ export type {
 export type { VoltraConnectionState } from '../voltra/models/connection';
 
 export type { DeviceSettings, StateDumpEvent } from '../voltra/protocol/types';
+export type { AssistReport } from '../voltra/protocol/device-state';
 
 // =============================================================================
 // Telemetry

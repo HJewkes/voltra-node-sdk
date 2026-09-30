@@ -22,7 +22,7 @@ import {
 import { decodeParameterReport, resolveReportWidth } from './parameter-report';
 import type { ParameterReportLayout } from './parameter-report';
 import { createFrame, type TelemetryFrame } from '../models/telemetry/frame';
-import { classifyMotorReport, MOTOR_STATE_FIELD } from './device-state';
+import { classifyAssistReport, classifyMotorReport, MOTOR_STATE_FIELD } from './device-state';
 import { FRAME_MARKER, sealEnvelope } from './frame-envelope';
 import { bytesEqual, bytesToHex, hexToBytes } from '../../shared/utils';
 import type {
@@ -644,6 +644,7 @@ export function decodeStateDump(data: Uint8Array): StateDumpEvent | null {
   return {
     trainingMode: raw[0] as TrainingMode,
     assistMode: raw[1],
+    assist: classifyAssistReport(raw[1]),
     weightLbsTenths: readUint16LE(raw, 3),
     chainTargetForceTenths: readUint16LE(raw, 5),
     eccentricPercentTenths: readUint16LE(raw, 7),
