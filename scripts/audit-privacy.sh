@@ -35,7 +35,6 @@ cd "$REPO_ROOT"
 failed=0
 pass() { echo "  PASS  $1"; }
 fail() { echo "  FAIL  $1"; failed=1; }
-note() { echo "  NOTE  $1"; }
 
 # The sanctioned regeneration header, and nothing else. Generated output has to
 # tell a contributor where to edit instead, so this one line may name the
@@ -54,13 +53,6 @@ BARE_NAME='voltra[-_]+private'
 # check and reset immediately after, so it can never leak into another sweep.
 # Compared against the match, never the line.
 SANCTIONED='__no_sanctioned_form__'
-
-# Test trees still hold captures and citations from before this audit ran
-# anywhere. Converting them to synthetic fixtures is tracked separately
-# (w5-14). They are COUNTED and reported on every run and they do not fail the
-# build: an exclusion that governs what gets FIXED must never govern what gets
-# COUNTED.
-TEST_PATH='(^|/)(__tests__|test)/|\.test\.'
 
 # Where the rule is DEFINED and WRITTEN DOWN, as opposed to applied. A pattern
 # definition is not a citation, and a document that states what may not appear
@@ -102,13 +94,8 @@ sweep() {
 report() {
   local label="$1" pattern="$2"
   shift 2
-  local all blocking deferred
-  all="$(sweep "$pattern" "$@")"
-  blocking="$(printf '%s' "$all" | grep -avE -- "$TEST_PATH")"
-  deferred="$(printf '%s' "$all" | grep -aE -- "$TEST_PATH")"
-  if [ -n "$deferred" ]; then
-    note "$(printf '%s\n' "$deferred" | wc -l | tr -d ' ') in test paths, counted and deferred to w5-14"
-  fi
+  local blocking
+  blocking="$(sweep "$pattern" "$@")"
   if [ -n "$blocking" ]; then
     fail "$label"
     # File and line only. The match is dropped on purpose: a build log is as
@@ -160,16 +147,11 @@ SANCTIONED='__no_sanctioned_form__'
 echo "3b. Checking for the private repo's name in src/"
 # Only a line that STARTS with the header is sanctioned. A header comment
 # appended to a line that names the repo is not the header.
-bare_all="$(git ls-files -- 'src/*' | while IFS= read -r file; do
+bare_name="$(git ls-files -- 'src/*' | while IFS= read -r file; do
   [ -f "$file" ] || continue
   grep -aniE --binary-files=text -- "$BARE_NAME" "$file" \
     | grep -avE -- "^[0-9]+:$SANCTIONED_HEADER" | sed "s|^|$file:|" | sed 's/^\([^:]*:[0-9]*\):.*/\1/'
 done)"
-bare_name="$(printf '%s' "$bare_all" | grep -avE -- "$TEST_PATH")"
-bare_deferred="$(printf '%s' "$bare_all" | grep -aE -- "$TEST_PATH")"
-if [ -n "$bare_deferred" ]; then
-  note "$(printf '%s\n' "$bare_deferred" | wc -l | tr -d ' ') in test paths, counted and deferred to w5-14"
-fi
 if [ -n "$bare_name" ]; then
   fail "No reference to the private repo's name in src/"
   printf '%s\n' "$bare_name" | sed 's/^/        /'
@@ -241,6 +223,15 @@ fi
 echo "4. Checking for capture, research and derivation references"
 report "No capture, research or derivation references" \
   '(captures?/(sessions|frames)|research/[A-Za-z0-9_.-]+\.(md|json)|validation[-_]+phase|decompil|reverse[-_ ]+engineer)' \
+  "${RULE_TEXT[@]}"
+
+# Notes kept outside the repo (audits, handoffs, agent memory) are citations
+# the reader cannot open, the same as a path into the private repo. Matched by
+# shape, never by directory: a date-stamped markdown file, or a memory note
+# name (type prefix plus a snake_case slug of two or more words).
+echo "4b. Checking for citations of workspace notes and agent memory"
+report "No citation of workspace notes or agent memory" \
+  '([A-Za-z0-9_.-]*20[0-9]{2}-[0-9]{2}-[0-9]{2}[A-Za-z0-9_.-]*\.md|(^|[^A-Za-z0-9_])(feedback|project|reference)_[a-z0-9]+_[a-z0-9_]+)' \
   "${RULE_TEXT[@]}"
 
 # A long hex run inside a .ts file is a value, and values ship here. The same

@@ -104,7 +104,7 @@ export class MockBLEAdapter extends BaseBLEAdapter {
    * error WITHOUT touching `linkAlive`. Models a stuck GATT write pipe
    * (supervision-timeout-adjacent / MTU-window collapse) where the writeChar
    * handle is intact but the underlying queue rejects. Bug 30 follow-up
-   * reproducer; see `feedback_ble_write_fail_reconnect_not_retry`.
+   * reproducer.
    */
   private nextWriteError: Error | null = null;
 

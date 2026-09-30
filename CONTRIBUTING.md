@@ -162,6 +162,11 @@ behaviour, read the prose and ask whether a reader could reconstruct anything
 from it. The same applies to a device serial, which no shape separates from a
 documentation placeholder.
 
+Tests are where such pairs creep in: a comment saying what a raw value means,
+or a literal asserted against a fixture whose name gives the meaning. Take the
+expected value from the generated protocol data or an exported constant
+instead, and assert the decoded field where one exists.
+
 ### Exemptions
 
 Exemptions are inline, at the site, with a stated reason after `--`, and the
@@ -174,6 +179,7 @@ still carry command codes. They are a known finding, kept only because renaming
 a published union member is a breaking API change; the rename belongs in a
 major release, not in a lint fix.
 
-Test trees are exempt by path glob pending their own follow-up (w5-14). The
-audit still **counts** and reports what is in them on every run: an exclusion
-that governs what gets fixed must never govern what gets counted.
+Test trees are exempt from the ESLint rule by path glob pending their own
+follow-up (w5-14); what remains there is command codes in symbol names.
+`npm run audit:privacy` reads test paths like any other and fails on a finding
+in them.

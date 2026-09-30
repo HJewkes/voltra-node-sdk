@@ -1,8 +1,6 @@
 /**
  * Bug 30 regression — `ensureConnected()` consults adapter link liveness.
  *
- * Reproducer: `voltra-private/captures/sessions/2026-05-07T10-12-37/`.
- *
  * The state-split: `VoltraClient._connectionState` and the BLE adapter's
  * write-channel handle (Web/Node Bluetooth `writeChar`, native device
  * handle) are independent. `gattserverdisconnected` racing the connect

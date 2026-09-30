@@ -13,7 +13,7 @@ describe('ReassertScheduler', () => {
     vi.useRealTimers();
   });
 
-  it('default delays match the Android +750/+1750/+3000 ms cadence', () => {
+  it('default delays are +750/+1750/+3000 ms', () => {
     expect([...DEFAULT_REASSERT_DELAYS_MS]).toEqual([750, 1750, 3000]);
   });
 

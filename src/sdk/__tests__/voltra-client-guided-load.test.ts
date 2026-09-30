@@ -2,13 +2,12 @@
  * Tests for the guided-load (direct-load, Phase 1g) flow on VoltraClient.
  *
  * Covers:
- *   - `startGuidedLoad` writes the BP_BASE_WEIGHT setter, the 0xAA 0x12
+ *   - `startGuidedLoad` writes the base-weight setter, the 0xAA 0x12
  *     trigger, and arms a 500ms polling loop for 18 seconds.
  *   - `onGuidedLoadState` fires synthesized 'armed' / 'timeout' / 'exited'
  *     transitions plus decoded transitions ('countdown' / 'active') driven
  *     by injected multi-param status notifications.
- *   - `exitGuidedLoad` cancels the polling loop and writes the
- *     BP_SET_FITNESS_MODE = 0x0004 frame.
+ *   - `exitGuidedLoad` cancels the polling loop and writes the exit frame.
  *   - Polling stops automatically once the device reports 'active'.
  *
  * Uses vitest fake timers exclusively for timing — no real-time waits.
@@ -23,9 +22,15 @@ import {
   buildGuidedLoadStatusReadFrame,
   buildGuidedLoadTriggerFrame,
   buildGuidedLoadExitFrame,
+  GUIDED_LOAD_MODE_ACTIVE,
+  GUIDED_LOAD_MODE_ARMED,
 } from '../../voltra/protocol/guided-load';
 import { NotificationConfigs } from '../../voltra/protocol/constants';
 import type { GuidedLoadState } from '../types';
+import protocolData from '../../voltra/protocol/data/protocol-data.generated';
+import type { ProtocolData } from '../../voltra/protocol/types';
+
+const { guidedLoad } = (protocolData as ProtocolData).commands;
 
 class RecordingAdapter extends BaseBLEAdapter {
   readonly writes: Uint8Array[] = [];
@@ -143,7 +148,7 @@ describe('VoltraClient — startGuidedLoad', () => {
     );
   });
 
-  it('writes BP_BASE_WEIGHT (setWeight) followed by the 0xAA 0x12 trigger', async () => {
+  it('writes the base weight (setWeight) followed by the 0xAA 0x12 trigger', async () => {
     await client.startGuidedLoad({ targetWeightLbs: 50 });
 
     // The first write should be a setWeight command (delegating to existing
@@ -206,7 +211,7 @@ describe('VoltraClient — startGuidedLoad', () => {
     expect(adapter.writes.filter((w) => bytesEqual(w, expectedRead)).length).toBe(1);
   });
 
-  it('transitions to countdown when 0x53C8 reports a non-zero countdown', async () => {
+  it('transitions to countdown when the countdown register reports non-zero', async () => {
     const seen: GuidedLoadState[] = [];
     client.onGuidedLoadState((s) => seen.push(s));
     await client.startGuidedLoad({ targetWeightLbs: 50 });
@@ -214,8 +219,8 @@ describe('VoltraClient — startGuidedLoad', () => {
 
     adapter.inject(
       buildMultiParamNotification([
-        { paramIdLeHex: '893e', value: 0x0026, uint16: true }, // mode=READY
-        { paramIdLeHex: 'c853', value: 2500, uint16: true }, // countdown=2500ms
+        { paramIdLeHex: guidedLoad.modeField, value: GUIDED_LOAD_MODE_ARMED, uint16: true },
+        { paramIdLeHex: guidedLoad.statusFields.countdownMs, value: 2500, uint16: true },
       ])
     );
 
@@ -223,10 +228,10 @@ describe('VoltraClient — startGuidedLoad', () => {
     const last = seen[seen.length - 1];
     expect(last.phase).toBe('countdown');
     expect(last.countdownRemainingMs).toBe(2500);
-    expect(last.fitnessModeRaw).toBe(0x0026);
+    expect(last.fitnessModeRaw).toBe(GUIDED_LOAD_MODE_ARMED);
   });
 
-  it('transitions to active when fitness-mode flips to 0x0027 and stops polling', async () => {
+  it('transitions to active when the mode register reports active and stops polling', async () => {
     const seen: GuidedLoadState[] = [];
     client.onGuidedLoadState((s) => seen.push(s));
     await client.startGuidedLoad({ targetWeightLbs: 50 });
@@ -239,13 +244,13 @@ describe('VoltraClient — startGuidedLoad', () => {
 
     adapter.inject(
       buildMultiParamNotification([
-        { paramIdLeHex: '893e', value: 0x0027, uint16: true }, // mode=ACTIVE
+        { paramIdLeHex: guidedLoad.modeField, value: GUIDED_LOAD_MODE_ACTIVE, uint16: true },
       ])
     );
 
     const last = seen[seen.length - 1];
     expect(last.phase).toBe('active');
-    expect(last.fitnessModeRaw).toBe(0x0027);
+    expect(last.fitnessModeRaw).toBe(GUIDED_LOAD_MODE_ACTIVE);
 
     // Advancing further should NOT produce additional poll writes — the
     // client auto-stops polling once 'active' arrives.

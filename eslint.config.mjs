@@ -19,8 +19,8 @@ export default tseslint.config(
     rules: { 'voltras/no-private-provenance': 'error' },
   },
   {
-    // The 20 test files under `src/**/__tests__/` hold captures and citations
-    // that predate this rule; converting them to synthetic fixtures is w5-14.
+    // Test files still carry command codes in symbol names that predate this
+    // rule; renaming them is w5-14. audit:privacy covers citations here.
     files: ['src/**/__tests__/**', 'src/**/*.test.ts', 'src/**/*.spec.ts', 'test/**'],
     rules: { 'voltras/no-private-provenance': 'off' },
   },

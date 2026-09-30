@@ -2,10 +2,6 @@
  * Slot-routing regression — adapter-level unexpected disconnect propagates
  * to client connection state even when `autoReconnect=false`.
  *
- * Background:
- *   `sources/audits/ble-slot-routing-2026-05-08.md`
- *   `sources/audits/sdk-slot-routing-code-trace-2026-05-08.md`
- *
  * The "Fix C" case: previously `setupDisconnectMonitor` short-circuited with
  * `return null` when `options.autoReconnect === false`, so adapter-level
  * `gattserverdisconnected` events never reached the client. The client's

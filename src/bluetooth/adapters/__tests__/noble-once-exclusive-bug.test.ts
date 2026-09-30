@@ -2,8 +2,6 @@
  * Regression: `@stoprocent/noble`'s `onceExclusive` corruption under
  * concurrent operations.
  *
- * Filed 2026-05-11 alongside `sources/archive/handoffs/FINDING-2026-05-10-cascade-write-hang.md`.
- *
  * Root cause: `Characteristic.write()` registers its result callback via
  * `onceExclusive('write', cb)`. `onceExclusive` REMOVES any previously
  * registered listener before adding the new one — so 3 concurrent
@@ -21,12 +19,11 @@
  *
  *  2. The exact failure mode: only the LAST registrant fires; prior
  *     callbacks never fire, even after multiple subsequent emits. (The
- *     subtle secondary bug in the FINDING — that the last callback resolves
+ *     subtle secondary bug — that the last callback resolves
  *     on whichever ACK arrives FIRST regardless of which write that ACK was
  *     for — is a property of `once` semantics and is implicit here.)
  *
- * See: sources/archive/handoffs/FINDING-2026-05-10-cascade-write-hang.md §"Root cause"
- *      voltra-node-sdk/src/bluetooth/adapters/node-noble.ts:write()
+ * See: src/bluetooth/adapters/node-noble.ts write()
  */
 
 import { describe, it, expect } from 'vitest';
@@ -75,9 +72,7 @@ describe('@stoprocent/noble onceExclusive — concurrent-operation corruption', 
   });
 
   it('also corrupts a 2-call concurrent pattern (not just 3+)', () => {
-    // The earlier finding (`FINDING-2026-05-10-cascade-write-hang.md`)
-    // listed "test if 2-write concurrent also hangs" as an open question.
-    // This unit test settles it: 2 concurrent writes hit the same bug.
+    // Two concurrent writes hit the same bug, not only three or more.
     const emitter = new NobleEventEmitter() as NobleEventEmitterShape;
     const fired: string[] = [];
 

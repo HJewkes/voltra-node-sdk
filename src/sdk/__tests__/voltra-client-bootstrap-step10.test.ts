@@ -3,7 +3,7 @@
  *
  * The bulk-read packet was appended to `Init.SEQUENCE` in 0.7.0 as
  * the Bug 17 fix (post-reconnect settings cascade). On real hardware
- * (VTR-097082, 2026-05-07) this packet caused the firmware to drop the GATT
+ * this packet caused the firmware to drop the GATT
  * link mid-bootstrap, producing the `_connectionState='connected'` /
  * `writeChar=null` state split documented in Bug 30. The 0.7.2 hotfix
  * reverts that append.
