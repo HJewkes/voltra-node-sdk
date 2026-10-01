@@ -5,6 +5,9 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    // Threads die with the parent; forks outlive a killed vitest and hold memory.
+    pool: 'threads',
+    maxWorkers: process.env.CI ? 2 : 4,
     include: ['src/**/*.test.ts', 'src/**/*.spec.ts'],
     coverage: {
       provider: 'v8',
