@@ -142,4 +142,18 @@ expect_pass "repo name in an unpacked file" "clone ${repo}-private first" CHANGE
 expect_pass "only the sanctioned path in its script" "" README.md
 expect_pass "sanctioned path in generate:protocol" "$(pkg_json "\"scripts\":{\"generate:protocol\":\"npx tsx $sanctioned\"}")" package.json
 
+# VW-738: grep skips a file holding a NUL byte as binary unless it is forced to
+# read text. The audit forces it; this pins that. The fixture is built here, at
+# run time, so no binary file is committed.
+audit_output "src/a.ts" "// see ${repo}-private" >/dev/null
+printf '\0// see %s-%s\n' "$repo" "private" > "$SANDBOX/repo/src/a.ts"
+(cd "$SANDBOX/repo" && git add -A)
+nul_out="$(cd "$SANDBOX/repo" && bash scripts/audit-privacy.sh 2>&1)"
+if ! printf '%s\n' "$nul_out" | grep -qF -- "FAIL  $NAME_LABEL"; then
+  echo "FAIL  repo name in a file holding a NUL byte: check \"$NAME_LABEL\" did not fail" >&2
+  failures=$((failures + 1))
+else
+  echo "PASS  repo name in a file holding a NUL byte: caught by its check"
+fi
+
 [ "$failures" -eq 0 ] || exit 1
