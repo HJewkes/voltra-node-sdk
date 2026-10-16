@@ -39,7 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: '20'
       - run: npm run audit:privacy
@@ -90,7 +90,7 @@ jobs:
           repository: HJewkes/voltra-private
           ssh-key: ${{ secrets.VOLTRA_PRIVATE_DEPLOY_KEY }}
           path: .voltra-private
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: '20'
       - name: Install generator dependencies
