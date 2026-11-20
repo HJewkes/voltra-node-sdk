@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-11-20
+
 ### Added
 
 - **`StateDumpEvent.assist` says whether fitness assist is on** (VW-217).
@@ -23,6 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `confirmedSettings` kept the old one. The mock now emits that report one
   tick after the write, and answers later core-state reads with the weight
   last written.
+- **The mock's full-pull range of motion matches hardware** (SDK-02.10).
+  Full pulls now come from one per-mode table inside the roughly 850 to
+  1300 mm band real full pulls span, and the `TelemetryFrame.position` doc
+  no longer says about 600 mm is a full pull.
+- **The mock's position ramp agrees with its velocity field** (VW-590).
+  Concentric phases last range of motion over mean speed, and peak
+  velocities rise to plausible values, so position and velocity agree within
+  20% in every moving mode.
 
 ## [0.15.0] - 2026-09-17
 
