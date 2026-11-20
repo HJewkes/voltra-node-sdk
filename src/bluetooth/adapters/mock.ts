@@ -79,7 +79,7 @@ export class MockBLEAdapter extends BaseBLEAdapter {
   // Mutable so `configure()` can override runtime-relevant fields mid-stream.
   // Connect-time fields (scanDelayMs, connectDelayMs, deviceId, deviceName)
   // remain effective only on subsequent connect cycles.
-  private config: Required<Omit<MockBLEConfig, 'device' | 'sessionConfig'>>;
+  private config: Required<Omit<MockBLEConfig, 'device' | 'sessionConfig' | 'random'>>;
   private readonly deviceParams: ResolvedDeviceParams;
   private currentBattery: number;
   private motorEngagedSince: number | null = null;
@@ -119,9 +119,13 @@ export class MockBLEAdapter extends BaseBLEAdapter {
   private repPlan: PlannedRepProfile[] | null = null;
   private repPlanStartTime = 0;
 
+  private readonly random: () => number;
+
   constructor(config?: MockBLEConfig & MockBLEErrorConfig) {
     super();
-    const { errorScenario, errorConfig, device, sessionConfig, ...bleConfig } = config ?? {};
+    const { errorScenario, errorConfig, device, sessionConfig, random, ...bleConfig } =
+      config ?? {};
+    this.random = random ?? Math.random;
     this.config = { ...MOCK_DEFAULTS, ...bleConfig };
     this.deviceParams = resolveDeviceParams(device);
     this.currentBattery = this.deviceParams.batteryLevel;
@@ -309,7 +313,7 @@ export class MockBLEAdapter extends BaseBLEAdapter {
    * `deviceName`) only take effect on the next `scan` / `connect` call.
    * Pass only the fields you want to change; others are preserved.
    */
-  configure(partial: Partial<Omit<MockBLEConfig, 'device' | 'sessionConfig'>>): void {
+  configure(partial: Partial<Omit<MockBLEConfig, 'device' | 'sessionConfig' | 'random'>>): void {
     this.config = { ...this.config, ...partial };
     if (partial.trainingMode !== undefined) {
       this.activeMode = partial.trainingMode;
@@ -365,7 +369,7 @@ export class MockBLEAdapter extends BaseBLEAdapter {
    * Get simulated RSSI with gaussian noise around the base value.
    */
   getRssi(): number {
-    return this.deviceParams.rssi + gaussianNoise(RSSI_NOISE_STD_DEV);
+    return this.deviceParams.rssi + gaussianNoise(RSSI_NOISE_STD_DEV, this.random);
   }
 
   // ===========================================================================
@@ -629,8 +633,8 @@ function resolveDeviceParams(config?: DeviceParameterConfig): ResolvedDevicePara
 /**
  * Box-Muller transform: generates gaussian-distributed random values.
  */
-function gaussianNoise(stdDev: number): number {
-  const u1 = Math.random() || 1e-10;
-  const u2 = Math.random();
+function gaussianNoise(stdDev: number, random: () => number): number {
+  const u1 = random() || 1e-10;
+  const u2 = random();
   return stdDev * Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
 }

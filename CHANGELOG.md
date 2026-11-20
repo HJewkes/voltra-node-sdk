@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Mock RSSI noise tests no longer flake** (VW-969). `MockBLEConfig` takes an
+  optional `random` source (default `Math.random`) for the mock's RSSI noise,
+  and the noise tests use a seeded PRNG. Backward compatible.
+
 ## [0.16.0] - 2026-11-20
 
 ### Added

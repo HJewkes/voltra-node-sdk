@@ -84,6 +84,8 @@ export interface MockBLEConfig {
   device?: DeviceParameterConfig;
   /** Session-level config for multi-set simulation */
   sessionConfig?: MockSessionConfig;
+  /** Uniform [0, 1) source for RSSI noise; defaults to Math.random. Inject a seeded one for determinism. */
+  random?: () => number;
 }
 
 export const MOCK_DEFAULTS = {
