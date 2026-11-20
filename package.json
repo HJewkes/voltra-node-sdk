@@ -139,7 +139,7 @@
   },
   "optionalDependencies": {
     "@stoprocent/noble": "^2.5.3",
-    "webbluetooth": "^3.4.0"
+    "webbluetooth": "^7.1.0"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.0.1",
