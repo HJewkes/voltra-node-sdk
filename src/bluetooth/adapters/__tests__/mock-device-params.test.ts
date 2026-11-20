@@ -21,6 +21,18 @@ afterEach(() => {
 // Helpers
 // =============================================================================
 
+/** mulberry32: small deterministic PRNG so noise assertions cannot flake. */
+function seededRandom(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 async function connectAdapter(adapter: MockBLEAdapter): Promise<void> {
   const p = adapter.connect('mock-voltra-001');
   vi.advanceTimersByTime(0);
@@ -51,7 +63,7 @@ describe('MockBLEAdapter device parameters', () => {
     });
 
     it('scan returns RSSI near the default base value', async () => {
-      const adapter = new MockBLEAdapter({ scanDelayMs: 0 });
+      const adapter = new MockBLEAdapter({ scanDelayMs: 0, random: seededRandom(1) });
 
       const rssiValues: number[] = [];
       for (let i = 0; i < 500; i++) {
@@ -195,6 +207,7 @@ describe('MockBLEAdapter device parameters', () => {
     it('returns values within expected noise range', () => {
       const adapter = new MockBLEAdapter({
         device: { rssi: -70 },
+        random: seededRandom(2),
       });
 
       const samples: number[] = [];
@@ -213,6 +226,7 @@ describe('MockBLEAdapter device parameters', () => {
     it('noise has approximate gaussian distribution (mean near base)', () => {
       const adapter = new MockBLEAdapter({
         device: { rssi: -50 },
+        random: seededRandom(3),
       });
 
       const samples: number[] = [];
@@ -230,6 +244,7 @@ describe('MockBLEAdapter device parameters', () => {
       const adapter = new MockBLEAdapter({
         scanDelayMs: 0,
         device: { rssi: -80 },
+        random: seededRandom(4),
       });
 
       const scanPromise = adapter.scan(5);
